@@ -92,7 +92,7 @@ SlopeMate/
 
 ## Contact
 - **Email**: pjh030331@gmail.com
-- **Docs**: `PRIVACY_POLICY.md`
+- **Docs**: `https://woolly-devourer-5d2.notion.site/2be3ed084bab800b8544cbc4a1140929`
 
 ---
 
