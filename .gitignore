@@ -1,2 +1,6 @@
 # API Keys - Info.plist에 API 키가 있으므로 커밋하지 않음
 SlopeMate/Info.plist
+
+# Docs - 제외
+Docs/
+docs/
