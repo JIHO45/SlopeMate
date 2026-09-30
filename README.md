@@ -34,7 +34,7 @@ SlopeMate is a SwiftUI iOS app that surfaces live weather and operating info for
 
 1. **Clone the repo**
    ```bash
-   git clone https://github.com/USERNAME/SlopeMate.git
+   git clone https://github.com/JIHO45/SlopeMate.git
    cd SlopeMate
    ```
 
