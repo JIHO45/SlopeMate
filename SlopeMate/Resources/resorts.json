@@ -1,0 +1,170 @@
+[
+  {
+    "id": "high1",
+    "name": "하이원 리조트",
+    "latitude": 37.2067,
+    "longitude": 128.839,
+    "homePageURL": "https://www.high1.com",
+    "slopeStatusURL": "https://www.high1.com/ski/slopeView.do?key=748&mode=p",
+    "webCamURL": null,
+    "hours": {
+      "day": "09:00 - 16:00",
+      "night": "18:00 - 22:00",
+      "lateNight": null
+    }
+  },
+  {
+    "id": "yongpyong",
+    "name": "모나 용평",
+    "latitude": 37.645,
+    "longitude": 128.681,
+    "homePageURL": "https://www.yongpyong.co.kr",
+    "slopeStatusURL": "https://www.yongpyong.co.kr/kor/skiNboard/slope/openStatusBoard.do",
+    "webCamURL": "https://www.yongpyong.co.kr/kor/guide/realTimeNews/ypResortWebcam.do",
+    "hours": {
+      "day": "09:00 - 17:00",
+      "night": "18:30 - 22:00",
+      "lateNight": null
+    }
+  },
+  {
+    "id": "vivaldi",
+    "name": "비발디파크",
+    "latitude": 37.648,
+    "longitude": 127.684,
+    "homePageURL": "https://www.sonohotelsresorts.com/vp",
+    "slopeStatusURL": "https://www.sonohotelsresorts.com/skiboard/status",
+    "webCamURL": null,
+    "hours": {
+      "day": "08:30 - 16:30",
+      "night": "18:30 - 22:30",
+      "lateNight": "22:00 - 익일 03:00"
+    }
+  },
+  {
+    "id": "phoenix",
+    "name": "휘닉스 평창",
+    "latitude": 37.5834,
+    "longitude": 128.3254,
+    "homePageURL": "https://phoenixhnr.co.kr/pyeongchang/index",
+    "slopeStatusURL": "https://phoenixhnr.co.kr/static/pyeongchang/snowpark/slope-lift",
+    "webCamURL": "https://phoenixhnr.co.kr/page/pyeongchang/guide/operation/sketchMovie",
+    "hours": {
+      "day": "09:00 - 16:00",
+      "night": "18:00 - 22:00",
+      "lateNight": "22:00 - 24:00"
+    }
+  },
+  {
+    "id": "wellihilli",
+    "name": "웰리힐리파크",
+    "latitude": 37.4906,
+    "longitude": 128.2506,
+    "homePageURL": "https://www.wellihillipark.com",
+    "slopeStatusURL": "https://m.wellihillipark.com/snowpark/schedule/open-slope",
+    "webCamURL": "https://m.wellihillipark.com/customer/webcam",
+    "hours": {
+      "day": "09:00 - 16:30",
+      "night": "18:30 - 22:30",
+      "lateNight": "22:30 - 24:00"
+    }
+  },
+  {
+    "id": "alpensia",
+    "name": "알펜시아",
+    "latitude": 37.6628,
+    "longitude": 128.6814,
+    "homePageURL": "https://www.alpensia.com",
+    "slopeStatusURL": "https://www.alpensia.com/ski/slope-now.do",
+    "webCamURL": "https://www.alpensia.com/guide/web-cam.do",
+    "hours": {
+      "day": "09:00 - 17:00",
+      "night": "18:30 - 21:30",
+      "lateNight": null
+    }
+  },
+  {
+    "id": "elysian",
+    "name": "엘리시안 강촌",
+    "latitude": 37.8164,
+    "longitude": 127.587,
+    "homePageURL": "https://www.elysian.co.kr",
+    "slopeStatusURL": "https://www.elysian.co.kr/about-gangchon/sky#guide-to-using-slopes",
+    "webCamURL": null,
+    "hours": {
+      "day": "09:00 - 17:00",
+      "night": "18:30 - 24:00(일~목)",
+      "lateNight": "18:30 - 03:00 (금,토)"
+    }
+  },
+  {
+    "id": "o2",
+    "name": "오투리조트",
+    "latitude": 37.1775,
+    "longitude": 128.9478,
+    "homePageURL": "https://www.o2resort.com",
+    "slopeStatusURL": "https://www.o2resort.com/SKI/slopeOpen.jsp",
+    "webCamURL": "https://www.o2resort.com/SKI/liftInfo.jsp",
+    "hours": {
+      "day": "09:00 - 16:30",
+      "night": "18:00 - 21:30",
+      "lateNight": null
+    }
+  },
+  {
+    "id": "konjiam",
+    "name": "곤지암 리조트",
+    "latitude": 37.3369,
+    "longitude": 127.2936,
+    "homePageURL": "https://www.konjiamresort.co.kr",
+    "slopeStatusURL": "https://www.konjiamresort.co.kr/ski/slopeOpenClose.dev",
+    "webCamURL": "https://www.konjiamresort.co.kr/ski/liveCam.dev",
+    "hours": {
+      "day": "09:00 - 17:00",
+      "night": "19:00 - 22:00",
+      "lateNight": "22:00 - 02:00"
+    }
+  },
+  {
+    "id": "jisan",
+    "name": "지산 포레스트",
+    "latitude": 37.2167,
+    "longitude": 127.3453,
+    "homePageURL": "https://www.jisanresort.co.kr",
+    "slopeStatusURL": "https://www.jisanresort.co.kr/m/ski/slopes/info.asp",
+    "webCamURL": "https://www.jisanresort.co.kr/m/ski/slopes/webcam.asp",
+    "hours": {
+      "day": "09:00 - 17:00",
+      "night": "18:30 - 23:00",
+      "lateNight": "23:00 - 02:00"
+    }
+  },
+  {
+    "id": "muju",
+    "name": "무주 덕유산",
+    "latitude": 35.8908,
+    "longitude": 127.7369,
+    "homePageURL": "https://www.mdysresort.com",
+    "slopeStatusURL": "https://www.mdysresort.com/convert_main_slope_221207.asp",
+    "webCamURL": "https://www.mdysresort.com/guide/webcam.asp",
+    "hours": {
+      "day": "09:30 - 16:00",
+      "night": "18:30 - 22:00",
+      "lateNight": "22:00 - 24:00"
+    }
+  },
+  {
+    "id": "edenvalley",
+    "name": "에덴밸리",
+    "latitude": 35.4289,
+    "longitude": 128.9844,
+    "homePageURL": "http://www.edenvalley.co.kr",
+    "slopeStatusURL": "https://www.edenvalley.co.kr/Ski/View.asp?location=01-1",
+    "webCamURL": "https://www.edenvalley.co.kr/CS/cam_pop1.asp",
+    "hours": {
+      "day": "10:00 - 17:00",
+      "night": "19:00 - 23:00",
+      "lateNight": null
+    }
+  }
+]

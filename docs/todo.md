@@ -11,15 +11,14 @@
 
 ## M0. 개발 준비 (11월 중순)
 
-- [ ] 마지막 날씨 앱 상태에 git 태그 `v1-weather` 붙이기
-- [ ] `Resort.swift`의 12곳 데이터(이름, 좌표, 홈페이지·현황·웹캠 URL, 운영 시간)를 새 리조트 데이터 파일(JSON 등)로 옮기기 (R1, R7, R34 출발점)
-- [ ] 날씨 앱 코드 삭제: `HomeView`, `ResortDetailView`, `SafariView`, `WeatherIconView`, `WeatherService`, `ResortWeatherStore`, `DateManager`, `WeatherModels`, `Resort.swift`
-- [ ] Info.plist의 `OPEN_WEATHER_API_KEY` 항목과 `Info.plist.example` 제거, README 갱신
-- [ ] Xcode 프로젝트·번들 ID·서명·앱 아이콘은 그대로 유지하고 빌드되는지 확인
-- [ ] 버전 번호 2.0으로 설정
-- [ ] GRDB 의존성 추가
-- [ ] TestFlight 테스터 정하기 (12월 중순 첫 배포 전까지)
-- [ ] 테스터 현장 기록 양식 만들기 (06-verification 4장)
+- [x] 마지막 날씨 앱 상태에 git 태그 `v1-weather` 붙이기 (2026-11-08)
+- [x] `Resort.swift`의 12곳 데이터(이름, 좌표, 홈페이지·현황·웹캠 URL, 운영 시간)를 새 리조트 데이터 파일(JSON 등)로 옮기기 (R1, R7, R34 출발점) (2026-11-08)
+- [x] 날씨 앱 코드 삭제: `HomeView`, `ResortDetailView`, `SafariView`, `WeatherIconView`, `WeatherService`, `ResortWeatherStore`, `DateManager`, `WeatherModels`, `Resort.swift` (2026-11-08)
+- [x] Info.plist의 `OPEN_WEATHER_API_KEY` 항목과 `Info.plist.example` 제거, README 갱신 (2026-11-08)
+- [x] Xcode 프로젝트·번들 ID·서명·앱 아이콘은 그대로 유지하고 빌드되는지 확인 (2026-11-08)
+- [x] 버전 번호 2.0으로 설정 (2026-11-08)
+- [x] GRDB 의존성 추가 (2026-11-08)
+- [x] 테스터 현장 기록 양식 만들기 (06-verification 4장) → [tester-form](tester-form.md) (2026-11-08)
 
 ## M1. 기록 엔진 → TestFlight 첫 배포 (12월 중순 목표)
 
@@ -34,6 +33,7 @@
 - [ ] 상승·하강 판정, 지도 없이 동작 (R3)
 - [ ] 기록 재생 테스트 틀 (06-verification 1장)
 - [ ] 최소 화면: 리조트 선택, 시작·종료, 하루 기록 합계
+- [ ] TestFlight 테스터 정하기 (아는 사람들에게 연락, 첫 배포 전까지)
 - [ ] TestFlight 내부 배포
 
 ## M2. 기록 앱 모양 갖추기 (1월)
