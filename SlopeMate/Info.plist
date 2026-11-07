@@ -4,5 +4,13 @@
 <dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>스키장에서 하강 횟수와 거리를 기록하려면 위치가 필요해요. 위치 기록은 이 iPhone에만 저장되고 SlopeMate 서버로 보내지 않아요.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>기압계로 고도를 재면 리프트와 하강을 더 정확히 구분할 수 있어요. 고도 기록도 이 iPhone에만 저장돼요.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 </dict>
 </plist>

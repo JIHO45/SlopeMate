@@ -1,0 +1,184 @@
+import Foundation
+import Testing
+@testable import SlopeMate
+
+/// 합성 트랙: 2초 간격, 북쪽으로 이동.
+struct Track {
+    var t = Date(timeIntervalSince1970: 1_800_000_000)
+    var lat = 37.2
+    var alt = 0.0
+    var seq = 0
+    var baro = true
+    var baroZero = 0.0
+    var pts: [Point] = []
+    let rec = UUID()
+
+    mutating func go(_ secs: Int, climb: Double, speed: Double) {
+        for _ in 0..<secs / 2 {
+            t += 2
+            alt += climb * 2 / Double(secs)
+            lat += speed * 2 / 111_195
+            add(speed: speed)
+        }
+    }
+    mutating func add(speed: Double) {
+        pts.append(Point(recordingId: rec, t: t, lat: lat, lon: 128.8, hAcc: 5, gpsAlt: alt + 700, vAcc: 5, speed: speed,
+                         baroAlt: baro ? alt - baroZero : nil, baroT: baro ? t : nil, seq: seq))
+    }
+    /// 수신 재시작: 기압 상대고도가 0부터 다시 시작
+    mutating func restart() { seq += 1; baroZero = alt; t += 30 }
+    mutating func lap() { go(300, climb: 300, speed: 3); go(180, climb: -300, speed: 10) }
+}
+
+struct RunDetectorTests {
+    @Test func threeLaps() {
+        var tr = Track()
+        for _ in 0..<3 { tr.lap() }
+        let s = RunDetector.detect(tr.pts)
+        #expect(s.runs.count == 3)
+        #expect(!s.usedGPSAltitude)
+        for r in s.runs {
+            #expect(abs(r.drop - 300) < 1)
+            #expect(abs(r.distance - 1800) < 40)
+            #expect(abs(r.avgSpeed - 10) < 0.3)
+        }
+    }
+
+    /// 재시작 경계를 넘어 고도차를 계산하지 않고, 하강 중 재시작해도 하강 1회로 합친다(R4 중복 금지).
+    @Test func restartBoundary() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)
+        tr.restart()
+        tr.go(90, climb: -150, speed: 10)
+        tr.lap()
+        let s = RunDetector.detect(tr.pts)
+        #expect(s.runs.count == 2)
+        #expect(abs(s.runs[0].drop - 300) < 5) // 2초 샘플 경계 오차
+        #expect(abs(s.drop - 600) < 5)
+    }
+
+    /// 기압계가 중간에 멈춰 GPS 고도(기준 +700m)로 바뀌어도 두 기준을 섞지 않는다.
+    @Test func altitudeSourceSwitch() {
+        var tr = Track()
+        tr.lap()
+        tr.baro = false
+        tr.lap()
+        let s = RunDetector.detect(tr.pts)
+        #expect(s.runs.count == 2)
+        #expect(s.usedGPSAltitude)
+        #expect(s.runs.allSatisfy { abs($0.drop - 300) < 1 })
+    }
+
+    /// 기압 값이 잠깐 오래돼도(사이에 끼인 GPS 점) 하강이 쪼개지지 않는다.
+    @Test func staleBaroBlip() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)
+        tr.baro = false
+        tr.go(10, climb: -20, speed: 10)
+        tr.baro = true
+        tr.go(80, climb: -130, speed: 10)
+        let s = RunDetector.detect(tr.pts)
+        #expect(s.runs.count == 1)
+        #expect(!s.usedGPSAltitude)
+    }
+
+    /// 기압 첫 값보다 위치가 먼저 와도 "고도 정확도 낮음"을 띄우지 않는다.
+    @Test func firstPointsBeforeBaro() {
+        var tr = Track()
+        tr.baro = false
+        tr.go(4, climb: 0, speed: 0)
+        tr.baro = true
+        tr.lap()
+        #expect(!RunDetector.detect(tr.pts).usedGPSAltitude)
+    }
+
+    @Test func gpsOnly() {
+        var tr = Track()
+        tr.baro = false
+        for _ in 0..<3 { tr.lap() }
+        let s = RunDetector.detect(tr.pts)
+        #expect(s.runs.count == 3)
+        #expect(s.usedGPSAltitude)
+    }
+
+    /// 하강 중 2분 정지: 평균 속도에서 빠지고, 하강은 1회.
+    @Test func stopDuringRun() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)
+        tr.t += 120 // 멈춰 있으면 liveUpdates가 쉬어서 점이 없음
+        tr.add(speed: 0)
+        tr.go(90, climb: -150, speed: 10)
+        let s = RunDetector.detect(tr.pts)
+        #expect(s.runs.count == 1)
+        #expect(abs(s.runs[0].avgSpeed - 10) < 0.3)
+    }
+
+    /// 슬로프 중간의 작은 오르막(10m)은 하강을 나누지 않는다.
+    @Test func smallBumpKeepsOneRun() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)
+        tr.go(20, climb: 10, speed: 5)
+        tr.go(90, climb: -160, speed: 10)
+        #expect(RunDetector.detect(tr.pts).runs.count == 1)
+    }
+
+    /// 1km 튄 점은 거리에서 빠진다.
+    @Test func gpsSpikeFiltered() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)
+        var spike = tr.pts.last!
+        spike.t += 1
+        spike.lat += 0.01
+        tr.pts.append(spike)
+        tr.go(90, climb: -150, speed: 10)
+        let s = RunDetector.detect(tr.pts)
+        #expect(s.runs.count == 1)
+        #expect(abs(s.runs[0].distance - 1800) < 40)
+    }
+
+    /// 정확도가 나쁜 점은 버린다.
+    @Test func badAccuracyDropped() {
+        var tr = Track()
+        tr.lap()
+        for i in tr.pts.indices { tr.pts[i].hAcc = 80 }
+        #expect(RunDetector.detect(tr.pts).runs.isEmpty)
+    }
+}
+
+/// 06-verification 1장: Replays/의 기록 파일(R22 형식)과 기대 결과를 짝지어 확인한다.
+struct ReplayTests {
+    struct Expected: Decodable {
+        var runs: Int
+        var distance: [Double]?
+        var drop: [Double]?
+        var avgSpeed: [Double]?
+    }
+
+    static var files: [URL] {
+        let dir = Bundle(for: Anchor.self).resourceURL!
+        let all = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? []
+        return all.filter { $0.pathExtension == "json" && !$0.lastPathComponent.hasSuffix(".expected.json") }
+    }
+
+    @Test func hasReplays() { #expect(!Self.files.isEmpty) }
+
+    @Test(arguments: files) func replay(_ url: URL) throws {
+        let file = try RecordingFile.decoder.decode(RecordingFile.self, from: Data(contentsOf: url))
+        let expURL = url.deletingPathExtension().appendingPathExtension("expected.json")
+        let exp = try JSONDecoder().decode(Expected.self, from: Data(contentsOf: expURL))
+        let s = RunDetector.detect(file.points)
+        #expect(s.runs.count == exp.runs, "\(url.lastPathComponent)")
+        func within(_ v: Double, _ r: [Double]?) -> Bool { r.map { $0[0] <= v && v <= $0[1] } ?? true }
+        #expect(within(s.distance, exp.distance), "distance \(s.distance)")
+        #expect(within(s.drop, exp.drop), "drop \(s.drop)")
+        let avg = s.runs.isEmpty ? 0 : s.runs.map(\.avgSpeed).reduce(0, +) / Double(s.runs.count)
+        #expect(within(avg, exp.avgSpeed), "avgSpeed \(avg)")
+    }
+}
+
+final class Anchor {}

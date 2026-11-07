@@ -16,6 +16,10 @@ open SlopeMate/SlopeMate.xcodeproj
 
 Scheme `SlopeMate`, iOS 17.6 이상. API 키는 필요 없다.
 
+빌드 설정: `Debug`, `TestFlight`에는 테스트 기록 내보내기(R22)가 들어 있고 `Release`(앱스토어)에는 없다. TestFlight 배포는 `TestFlight` 설정으로 아카이브한다.
+
+테스트 기록 재생: `SlopeMateTests/Replays/`에 내보낸 기록 파일(`*.json`)과 기대 결과(`*.expected.json`)를 두면 테스트가 하강 횟수·거리·고도차를 확인한다.
+
 ## 구성
 
 | 영역 | 내용 |
