@@ -1,0 +1,15 @@
+{
+  "_comment": "리조트별 OSM 범위. area = 스키장 영역(landuse=winter_sports), around = 리조트 좌표 반경(m, 영역이 없을 때).",
+  "high1": { "area": "way/32083800" },
+  "yongpyong": { "area": "way/377688820" },
+  "vivaldi": { "area": "way/1266096853" },
+  "phoenix": { "area": "way/556756203" },
+  "wellihilli": { "area": "way/1389260953", "_note": "OSM 이름이 '알펜시아 리조트'로 잘못 붙어 있지만 위치는 웰리힐리" },
+  "alpensia": { "area": "relation/6958726" },
+  "elysian": { "area": "way/1469668996" },
+  "o2": { "area": "way/791217772" },
+  "konjiam": { "area": "way/469518150" },
+  "jisan": { "area": "way/471307387" },
+  "muju": { "around": 3000 },
+  "edenvalley": { "area": "way/900624624" }
+}
