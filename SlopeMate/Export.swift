@@ -1,14 +1,32 @@
 #if TESTFLIGHT
+import StoreKit
 import SwiftUI
 
 /// R22 테스트 기록 내보내기. TESTFLIGHT 빌드 설정(Debug, TestFlight)에만 들어간다. Release에는 없다.
+/// 외부 테스트라 TestFlight 빌드를 앱스토어에 잘못 제출할 수 있으므로, 앱스토어에서 받은 앱이면 화면에 띄우지 않는다.
 struct ExportSection: View {
     let recorder: Recorder
+    @State private var allowed = false
     @State private var askConsent = false
     @State private var files: [(Recording, URL)] = []
     @State private var error: String?
 
     var body: some View {
+        Group { if allowed { section } }
+            .task { allowed = await Self.notAppStore() }
+    }
+
+    /// TestFlight(sandbox)나 Xcode에서 설치한 앱만 허용. 확인할 수 없으면 막는다.
+    static func notAppStore() async -> Bool {
+        #if DEBUG
+        return true
+        #else
+        guard let t = try? await AppTransaction.shared else { return false }
+        return t.unsafePayloadValue.environment != .production
+        #endif
+    }
+
+    private var section: some View {
         Section("테스트 기록 내보내기") {
             if files.isEmpty {
                 Button("오늘 기록 파일 만들기") { askConsent = true }
