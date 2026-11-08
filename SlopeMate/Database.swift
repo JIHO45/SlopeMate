@@ -153,6 +153,21 @@ nonisolated final class AppDatabase: Sendable {
                 t.column("toT", .datetime).notNull()
             }
         }
+        m.registerMigration("v3") { db in
+            try db.create(table: "season_pass") { t in
+                t.primaryKey("id", .blob)
+                t.column("season", .text).notNull().indexed()
+                t.column("name", .text).notNull()
+                t.column("price", .integer).notNull()
+                t.column("dayTicketPrice", .integer).notNull()
+                t.column("sortOrder", .integer).notNull()
+            }
+            try db.create(table: "pass_resort") { t in
+                t.column("passId", .blob).notNull().references("season_pass", onDelete: .cascade)
+                t.column("resortId", .text).notNull()
+                t.primaryKey(["passId", "resortId"])
+            }
+        }
         return m
     }
 
