@@ -8,8 +8,10 @@ nonisolated struct Recording: Codable, Hashable, Identifiable, FetchableRecord, 
     var resortId: String
     var startedAt: Date
     var endedAt: Date?
-    /// user, interrupted(끊긴 뒤 이어서 기록 안 함), storage(저장 실패)
+    /// user, interrupted(끊긴 뒤 이어서 기록 안 함), storage(저장 실패), dayEnd(영업일 끝에 닫음, R49)
     var endReason: String?
+    /// 차량 구간을 마지막으로 성공적으로 조회한 시각 (R49)
+    var vehicleQueriedAt: Date?
 }
 
 nonisolated struct Point: Codable, Hashable, FetchableRecord, MutablePersistableRecord {
@@ -50,12 +52,37 @@ nonisolated struct Gap: Codable, Hashable, FetchableRecord, MutablePersistableRe
     mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
+/// 동작 센서가 차량 이동으로 판단한 구간. 하강·거리에서 뺀다(R49).
+nonisolated struct VehicleInterval: Codable, Hashable, FetchableRecord, PersistableRecord {
+    var recordingId: UUID
+    var fromT: Date
+    var toT: Date
+
+    static let databaseTableName = "vehicle"
+    var interval: DateInterval { DateInterval(start: fromT, end: max(fromT, toT)) }
+}
+
 /// 기록 1건 전체. R22 내보내기 파일과 재생 테스트 파일의 형식.
 nonisolated struct RecordingFile: Codable {
     var recording: Recording
     var points: [Point]
     var restarts: [Restart]
     var gaps: [Gap]
+    var vehicle: [VehicleInterval] = []
+
+    init(recording: Recording, points: [Point], restarts: [Restart], gaps: [Gap], vehicle: [VehicleInterval] = []) {
+        (self.recording, self.points, self.restarts, self.gaps, self.vehicle) = (recording, points, restarts, gaps, vehicle)
+    }
+
+    /// vehicle이 없는 이전 파일도 읽는다
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        recording = try c.decode(Recording.self, forKey: .recording)
+        points = try c.decode([Point].self, forKey: .points)
+        restarts = try c.decode([Restart].self, forKey: .restarts)
+        gaps = try c.decode([Gap].self, forKey: .gaps)
+        vehicle = try c.decodeIfPresent([VehicleInterval].self, forKey: .vehicle) ?? []
+    }
 
     static let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -116,6 +143,14 @@ nonisolated final class AppDatabase: Sendable {
                 t.column("fromT", .datetime).notNull()
                 t.column("toT", .datetime)
                 t.column("reason", .text).notNull()
+            }
+        }
+        m.registerMigration("v2") { db in
+            try db.alter(table: "recording") { $0.add(column: "vehicleQueriedAt", .datetime) }
+            try db.create(table: "vehicle") { t in
+                t.column("recordingId", .blob).notNull().indexed().references("recording")
+                t.column("fromT", .datetime).notNull()
+                t.column("toT", .datetime).notNull()
             }
         }
         return m
@@ -203,6 +238,33 @@ nonisolated final class AppDatabase: Sendable {
         }
     }
 
+    /// 종료를 잊은 기록(R49): 마지막 위치점 시각으로 끝낸다. 위치점이 없으면 시작 시각.
+    func endAtLastPoint(_ rec: Recording, reason: String) throws {
+        try queue.write { db in
+            let last = try Date.fetchOne(db, sql: "SELECT MAX(t) FROM point WHERE recordingId = ?", arguments: [rec.id]) ?? rec.startedAt
+            try db.execute(sql: "UPDATE gap SET toT = ? WHERE recordingId = ? AND toT IS NULL", arguments: [last, rec.id])
+            try db.execute(sql: "UPDATE recording SET endedAt = ?, endReason = ? WHERE id = ?", arguments: [last, reason, rec.id])
+        }
+    }
+
+    /// 기록 중 실시간으로 받은 차량 구간 하나를 더한다. 조회 시각은 바꾸지 않는다(끝난 뒤 조회가 전체를 다시 채움).
+    func addVehicle(_ rec: Recording, _ interval: DateInterval) throws {
+        try queue.write { try VehicleInterval(recordingId: rec.id, fromT: interval.start, toT: interval.end).insert($0) }
+    }
+
+    /// 차량 구간을 바꾼다. 더 최근에 시작한 조회가 이미 저장됐으면 쓰지 않고 false.
+    @discardableResult
+    func setVehicle(_ rec: Recording, _ intervals: [DateInterval], queriedAt: Date) throws -> Bool {
+        try queue.write { db in
+            let stored = try Date.fetchOne(db, sql: "SELECT vehicleQueriedAt FROM recording WHERE id = ?", arguments: [rec.id])
+            if let stored, stored >= queriedAt { return false }
+            try VehicleInterval.filter(Column("recordingId") == rec.id).deleteAll(db)
+            for i in intervals { try VehicleInterval(recordingId: rec.id, fromT: i.start, toT: i.end).insert(db) }
+            try db.execute(sql: "UPDATE recording SET vehicleQueriedAt = ? WHERE id = ?", arguments: [queriedAt, rec.id])
+            return true
+        }
+    }
+
     /// 이어서 기록하지 않는 끊긴 기록: 마지막 위치점부터 min(지금, 영업일 끝)까지를 "기록 없음"으로 남기고 끝낸다.
     func endInterrupted(_ rec: Recording, now: Date) throws {
         try queue.write { db in
@@ -224,6 +286,21 @@ nonisolated final class AppDatabase: Sendable {
         try queue.read { try Recording.filter(Column("startedAt") >= since).order(Column("startedAt")).fetchAll($0) }
     }
 
+    func vehicle(_ rec: Recording) throws -> [DateInterval] {
+        try queue.read { try VehicleInterval.filter(Column("recordingId") == rec.id).order(Column("fromT")).fetchAll($0).map(\.interval) }
+    }
+
+    /// 차량 구간을 다시 조회할 끝난 기록: 시작이 6일 이내(활동 기록 보관 7일 안에서 전체 범위 조회 가능)이고,
+    /// 끝난 뒤 15분이 지나 조회한 적이 없음(활동 기록이 늦게 들어올 수 있음).
+    func recordingsNeedingVehicle(now: Date) throws -> [Recording] {
+        try queue.read { db in
+            try Recording.fetchAll(db, sql: """
+                SELECT * FROM recording WHERE endedAt IS NOT NULL AND startedAt >= ?
+                AND (vehicleQueriedAt IS NULL OR vehicleQueriedAt < datetime(endedAt, '+15 minutes'))
+                """, arguments: [now.addingTimeInterval(-6 * 86400)])
+        }
+    }
+
     func points(_ rec: Recording) throws -> [Point] {
         try queue.read { try Point.filter(Column("recordingId") == rec.id).order(Column("t")).fetchAll($0) }
     }
@@ -235,7 +312,8 @@ nonisolated final class AppDatabase: Sendable {
                 recording: try Recording.fetchOne(db, key: rec.id) ?? rec,
                 points: try Point.filter(byRec).order(Column("t")).fetchAll(db),
                 restarts: try Restart.filter(byRec).order(Column("seq")).fetchAll(db),
-                gaps: try Gap.filter(byRec).order(Column("fromT")).fetchAll(db))
+                gaps: try Gap.filter(byRec).order(Column("fromT")).fetchAll(db),
+                vehicle: try VehicleInterval.filter(byRec).order(Column("fromT")).fetchAll(db))
         }
     }
 }

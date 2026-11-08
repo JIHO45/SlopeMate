@@ -82,11 +82,80 @@ struct DatabaseTests {
         #expect(try db.unfinished() == nil)
     }
 
+    // MARK: R49
+
+    @Test func endAtLastPoint() throws {
+        let db = try AppDatabase(path: path)
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let rec = try db.createRecording(resortId: "high1", at: t0)
+        var p = point(rec, t0 + 600)
+        try db.insert(&p)
+        try db.endAtLastPoint(rec, reason: "dayEnd")
+        let f = try db.file(rec)
+        #expect(abs(f.recording.endedAt!.timeIntervalSince(t0 + 600)) < 0.01 && f.recording.endReason == "dayEnd")
+        // 위치점이 없으면 시작 시각
+        let empty = try db.createRecording(resortId: "high1", at: t0)
+        try db.endAtLastPoint(empty, reason: "dayEnd")
+        #expect(abs(try db.file(empty).recording.endedAt!.timeIntervalSince(t0)) < 0.01)
+    }
+
+    @Test func vehicleNewerQueryWins() throws {
+        let db = try AppDatabase(path: path)
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let rec = try db.createRecording(resortId: "high1", at: t0)
+        let a = [DateInterval(start: t0 + 10, end: t0 + 20)], b = [DateInterval(start: t0 + 30, end: t0 + 40)]
+        #expect(try db.setVehicle(rec, b, queriedAt: t0 + 200))
+        #expect(try !db.setVehicle(rec, a, queriedAt: t0 + 100)) // 늦게 끝난 옛 조회는 덮어쓰지 않음
+        #expect(try db.vehicle(rec) == b)
+        #expect(try db.setVehicle(rec, [], queriedAt: t0 + 300))  // 성공한 빈 결과는 지운다
+        #expect(try db.vehicle(rec).isEmpty)
+    }
+
+    @Test func recordingsNeedingVehicle() throws {
+        let db = try AppDatabase(path: path)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let recent = try db.createRecording(resortId: "high1", at: now - 7200)
+        try db.end(recent, at: now - 3600, reason: "user")
+        try db.setVehicle(recent, [], queriedAt: now - 3600) // 끝나자마자 조회 → 다시 조회 대상
+        let done = try db.createRecording(resortId: "high1", at: now - 7200)
+        try db.end(done, at: now - 3600, reason: "user")
+        try db.setVehicle(done, [], queriedAt: now - 600)   // 15분 지나 조회함
+        let old = try db.createRecording(resortId: "high1", at: now - 7 * 86400)
+        try db.end(old, at: now - 7 * 86400 + 3600, reason: "user")
+        #expect(try db.recordingsNeedingVehicle(now: now).map(\.id) == [recent.id])
+    }
+
+    @Test func oldFileWithoutVehicleDecodes() throws {
+        let rec = Recording(id: UUID(), resortId: "high1", startedAt: Date(timeIntervalSince1970: 0))
+        var json = try JSONSerialization.jsonObject(with: RecordingFile.encoder.encode(RecordingFile(recording: rec, points: [], restarts: [], gaps: []))) as! [String: Any]
+        json["vehicle"] = nil
+        let f = try RecordingFile.decoder.decode(RecordingFile.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(f.vehicle.isEmpty)
+    }
+
+    /// v1만 있던 DB를 최신까지 올려도 위치점이 남는다.
+    @Test func upgradeFromV1KeepsPoints() throws {
+        do {
+            let db = try AppDatabase(path: path)
+            let rec = try db.createRecording(resortId: "high1", at: Date())
+            var p = point(rec, Date())
+            try db.insert(&p)
+            try db.queue.write { db in
+                for t in ["vehicle"] { try db.execute(sql: "DROP TABLE \(t)") }
+                try db.execute(sql: "ALTER TABLE recording DROP COLUMN vehicleQueriedAt")
+                try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier != 'v1'")
+            }
+        }
+        let db = try AppDatabase(path: path)
+        #expect(try db.queue.read { try Point.fetchCount($0) } == 1)
+        #expect(try db.queue.read { try AppDatabase.migrator.appliedIdentifiers($0) } == Set(AppDatabase.migrator.migrations))
+    }
+
     // MARK: 마이그레이션 (R4: 앱 업데이트 후에도 기록이 남는다)
 
-    func v2(fail: Bool) -> DatabaseMigrator {
+    func next(fail: Bool) -> DatabaseMigrator {
         var m = AppDatabase.migrator
-        m.registerMigration("v2") { db in
+        m.registerMigration("test-next") { db in
             try db.alter(table: "recording") { $0.add(column: "note", .text) }
             if fail { throw DatabaseError(message: "boom") }
         }
@@ -101,7 +170,7 @@ struct DatabaseTests {
             var p = point(rec, Date())
             try db.insert(&p) // 체크포인트 전이라 WAL에만 있음
         }
-        _ = try AppDatabase(path: path, migrator: v2(fail: false))
+        _ = try AppDatabase(path: path, migrator: next(fail: false))
         let backup = try DatabaseQueue(path: path + ".premigration")
         #expect(try backup.read { try Point.fetchCount($0) } == 1)
     }
@@ -113,18 +182,18 @@ struct DatabaseTests {
             var p = point(rec, Date())
             try db.insert(&p)
         }
-        #expect(throws: (any Error).self) { try AppDatabase(path: path, migrator: v2(fail: true)) }
+        #expect(throws: (any Error).self) { try AppDatabase(path: path, migrator: next(fail: true)) }
         let db = try AppDatabase(path: path)
         #expect(try db.queue.read { try Point.fetchCount($0) } == 1)
-        #expect(try db.queue.read { try AppDatabase.migrator.appliedIdentifiers($0) } == ["v1"])
+        #expect(try db.queue.read { try AppDatabase.migrator.appliedIdentifiers($0) } == Set(AppDatabase.migrator.migrations))
     }
 
     @Test func backupFailureBlocksMigration() throws {
         _ = try AppDatabase(path: path)
         // 백업 경로 자리에 폴더를 만들어 백업을 실패시킨다
         try FileManager.default.createDirectory(atPath: path + ".premigration/x", withIntermediateDirectories: true)
-        #expect(throws: (any Error).self) { try AppDatabase(path: path, migrator: v2(fail: false)) }
+        #expect(throws: (any Error).self) { try AppDatabase(path: path, migrator: next(fail: false)) }
         let q = try DatabaseQueue(path: path)
-        #expect(try q.read { try v2(fail: false).appliedIdentifiers($0) } == ["v1"])
+        #expect(try q.read { try next(fail: false).appliedIdentifiers($0) } == Set(AppDatabase.migrator.migrations))
     }
 }

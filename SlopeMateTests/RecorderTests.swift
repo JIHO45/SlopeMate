@@ -51,11 +51,56 @@ struct RecorderTests {
     }
 
     @Test func nextBusinessDayEnds() throws {
-        let (db, _) = try unfinished(lastPointAgo: 60, now: noon)
+        let (db, rec) = try unfinished(lastPointAgo: 60, now: noon)
         let r = Recorder(db: db)
         r.handleLaunch(locationRelaunch: false, now: noon + 86400)
         #expect(r.pendingResume == nil && r.recording == nil)
         #expect(try db.unfinished() == nil)
+        // R49: 마지막 위치점 시각으로, "기록 없음" 구간 없이 닫는다
+        let f = try db.file(rec)
+        #expect(f.recording.endReason == "dayEnd")
+        #expect(abs(f.recording.endedAt!.timeIntervalSince(noon - 60)) < 0.01)
+        #expect(f.gaps.isEmpty)
+    }
+
+    /// R49 실시간: 차량 이동이 시작되면 바로 판정에서 빼고, 끝나면 구간으로 저장한다.
+    @Test func liveVehicleActivity() throws {
+        let (db, rec) = try unfinished(lastPointAgo: 60, now: noon)
+        let r = Recorder(db: db)
+        r.recording = rec
+        r.status = .recording
+        r.activityChanged(start: noon - 600, automotive: true)
+        #expect(r.vehicle.isEmpty) // 아직 이어지는 중
+        r.activityChanged(start: noon - 300, automotive: true) // 차량이 이어짐: 시작은 그대로
+        r.activityChanged(start: noon - 60, automotive: false)
+        #expect(r.vehicle == [DateInterval(start: noon - 600, end: noon - 60)])
+        #expect(try db.vehicle(rec).count == 1)
+    }
+
+    /// R49: 앱이 밤을 넘겨 살아 있고 위치가 오지 않아도(권한 꺼짐 등) 앞으로 오면 닫는다.
+    @Test func becameActiveAfterDayEndCloses() throws {
+        let (db, rec) = try unfinished(lastPointAgo: 60, now: noon)
+        let r = Recorder(db: db)
+        r.recording = rec
+        r.status = .paused(.denied)
+        r.becameActive(now: noon + 86400)
+        #expect(r.recording == nil)
+        let f = try db.file(rec)
+        #expect(f.recording.endReason == "dayEnd" && abs(f.recording.endedAt!.timeIntervalSince(noon - 60)) < 0.01)
+    }
+
+    /// R49: 기록 중 영업일 끝(06:00)이 지난 첫 위치는 저장하지 않고 기록을 닫는다.
+    @Test func firstPointAfterDayEndCloses() throws {
+        let (db, rec) = try unfinished(lastPointAgo: 60, now: noon)
+        let r = Recorder(db: db)
+        r.recording = rec
+        r.points = try db.points(rec)
+        r.status = .recording
+        let next6am = BusinessDay.end(of: rec.startedAt)
+        r.save(CLLocation(coordinate: .init(latitude: 37, longitude: 128), altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: next6am + 1))
+        #expect(r.recording == nil && r.status == .idle)
+        let f = try db.file(rec)
+        #expect(f.recording.endReason == "dayEnd" && f.points.count == 1)
     }
 
     /// 저장 실패로 끝난 표시도 못 남긴 기록은 자동으로 이어가지 않는다.

@@ -58,6 +58,36 @@ struct RunDetectorTests {
         #expect(abs(s.drop - 600) < 5)
     }
 
+    /// R49: 차량 구간 안에 점이 하나도 없어도 앞뒤를 잇지 않는다. 산 위에서 차를 타고 내려온 고도차는 하강이 아니다.
+    @Test func vehicleGapWithoutPoints() {
+        var tr = Track()
+        tr.lap()
+        tr.go(300, climb: 300, speed: 3)        // 리프트로 올라감
+        let carFrom = tr.t
+        tr.t += 1800; tr.alt -= 600; tr.lat += 0.2 // 30분 동안 점 없이 600m 아래로(차)
+        let carTo = tr.t
+        tr.go(60, climb: 0, speed: 0.5)          // 주차장에서 조금 걸음
+        #expect(RunDetector.detect(tr.pts).runs.count == 2) // 차량 구간을 모르면 하강으로 셈
+        let s = RunDetector.detect(tr.pts, vehicle: [DateInterval(start: carFrom, end: carTo)])
+        #expect(s.runs.count == 1)
+    }
+
+    /// R49: 차량 구간 안의 점은 버리고, 앞뒤 하강을 합치지 않는다.
+    @Test func vehicleSplitsWithoutMerging() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)         // 하강 중
+        let carFrom = tr.t
+        tr.go(120, climb: -200, speed: 15)        // 차량
+        let carTo = tr.t
+        tr.go(90, climb: -100, speed: 10)
+        let s = RunDetector.detect(tr.pts, vehicle: [DateInterval(start: carFrom, end: carTo)])
+        #expect(s.runs.count == 2) // 차에서 내린 뒤 걸어 내려간 것은 따로 센다. 차 앞뒤를 하나로 합치지 않음
+        #expect(abs(s.runs[0].drop - 150) < 5)
+        #expect(abs(s.runs[1].drop - 100) < 5)
+        #expect(s.runs.allSatisfy { $0.end <= carFrom || $0.start >= carTo })
+    }
+
     /// 기압계가 중간에 멈춰 GPS 고도(기준 +700m)로 바뀌어도 두 기준을 섞지 않는다.
     @Test func altitudeSourceSwitch() {
         var tr = Track()
@@ -171,7 +201,7 @@ struct ReplayTests {
         let file = try RecordingFile.decoder.decode(RecordingFile.self, from: Data(contentsOf: url))
         let expURL = url.deletingPathExtension().appendingPathExtension("expected.json")
         let exp = try JSONDecoder().decode(Expected.self, from: Data(contentsOf: expURL))
-        let s = RunDetector.detect(file.points)
+        let s = RunDetector.detect(file.points, vehicle: file.vehicle.map(\.interval))
         #expect(s.runs.count == exp.runs, "\(url.lastPathComponent)")
         func within(_ v: Double, _ r: [Double]?) -> Bool { r.map { $0[0] <= v && v <= $0[1] } ?? true }
         #expect(within(s.distance, exp.distance), "distance \(s.distance)")
