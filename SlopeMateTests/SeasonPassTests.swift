@@ -66,4 +66,16 @@ struct SeasonPassTests {
         try db.deletePass(b.id)
         #expect(try db.passes(season: "2026-27").map(\.pass.name) == ["A"])
     }
+
+    @Test func homeResorts() throws {
+        let db = try AppDatabase(path: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".sqlite").path)
+        try db.setHomeResorts(["high1", "o2"])
+        #expect(try db.homeResorts() == ["high1", "o2"])
+        try db.setHomeResorts(["o2"])
+        #expect(try db.homeResorts() == ["o2"])
+        #expect(AppDatabase.defaultResort(homes: ["high1", "o2"], last: "o2") == "o2")
+        #expect(AppDatabase.defaultResort(homes: ["high1", "o2"], last: "vivaldi") == "high1") // 한 번 고른 홈 밖 리조트는 기본값 아님
+        #expect(AppDatabase.defaultResort(homes: [], last: "vivaldi") == "vivaldi")
+        #expect(AppDatabase.defaultResort(homes: [], last: nil) == nil)
+    }
 }

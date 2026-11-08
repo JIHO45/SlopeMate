@@ -168,6 +168,12 @@ nonisolated final class AppDatabase: Sendable {
                 t.primaryKey(["passId", "resortId"])
             }
         }
+        m.registerMigration("v4") { db in
+            try db.create(table: "home_resort") { t in
+                t.primaryKey("resortId", .text)
+                t.column("sortOrder", .integer).notNull()
+            }
+        }
         return m
     }
 
@@ -289,6 +295,28 @@ nonisolated final class AppDatabase: Sendable {
             try db.execute(sql: "UPDATE gap SET toT = ? WHERE recordingId = ? AND toT IS NULL", arguments: [end, rec.id])
             try db.execute(sql: "UPDATE recording SET endedAt = ?, endReason = 'interrupted' WHERE id = ?", arguments: [end, rec.id])
         }
+    }
+
+    // MARK: 홈 리조트 (R1)
+
+    func homeResorts() throws -> [String] {
+        try queue.read { try String.fetchAll($0, sql: "SELECT resortId FROM home_resort ORDER BY sortOrder") }
+    }
+
+    func setHomeResorts(_ ids: [String]) throws {
+        try queue.write { db in
+            try db.execute(sql: "DELETE FROM home_resort")
+            for (i, id) in ids.enumerated() {
+                try db.execute(sql: "INSERT OR IGNORE INTO home_resort (resortId, sortOrder) VALUES (?, ?)", arguments: [id, i])
+            }
+        }
+    }
+
+    /// 기록 시작 기본 리조트: 마지막으로 기록한 리조트가 홈 리조트면 그것, 아니면 첫 홈 리조트.
+    /// 홈에 없는 리조트로 한 번 기록한 것은 기본값이 되지 않는다(R1 "이번 기록에만").
+    nonisolated static func defaultResort(homes: [String], last: String?) -> String? {
+        if let last, homes.contains(last) { return last }
+        return homes.first ?? last
     }
 
     // MARK: 읽기
