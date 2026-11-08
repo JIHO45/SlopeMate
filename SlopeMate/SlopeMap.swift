@@ -2,7 +2,7 @@ import Foundation
 
 /// 앱에 내장한 OSM 슬로프·리프트 (tools/osm/build.py가 만든 maps/osm-<리조트>.json). R9, R50.
 /// 좌표는 [위도, 경도]. 데이터: © OpenStreetMap contributors, ODbL.
-struct SlopeMap: Decodable {
+nonisolated struct SlopeMap: Decodable {
     struct Slope: Decodable, Identifiable {
         let id: String          // 우리 ID (예: high1-s03). OSM ID는 바뀔 수 있어 참고용
         let name: String?
@@ -25,6 +25,15 @@ struct SlopeMap: Decodable {
     let osmTimestamp: String
     let slopes: [Slope]
     let lifts: [Lift]
+
+    /// 리조트별로 한 번만 읽는다.
+    @MainActor static func cached(resortId: String) -> SlopeMap? {
+        if let hit = cache[resortId] { return hit }
+        let map = load(resortId: resortId)
+        cache[resortId] = .some(map)
+        return map
+    }
+    @MainActor private static var cache: [String: SlopeMap?] = [:]
 
     /// 지도 파일이 없는 리조트는 nil (R50: 목록 화면으로 대체).
     static func load(resortId: String, bundle: Bundle = .main) -> SlopeMap? {

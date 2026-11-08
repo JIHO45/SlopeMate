@@ -88,6 +88,26 @@ struct RunDetectorTests {
         #expect(s.runs.allSatisfy { $0.end <= carFrom || $0.start >= carTo })
     }
 
+    /// R9: 재시작으로 나뉜 하강은 합친 뒤 전체 점으로 한 번 맞춘다. 뒤 조각만 덮는 슬로프는 절반이라 이름을 붙이지 않는다.
+    @Test func slopeMatchedAfterMerge() throws {
+        func map(_ fromLat: Double, _ toLat: Double) throws -> SlopeMap {
+            let json = #"{"resort_id":"t","source":"","osm_timestamp":"","lifts":[],"slopes":[{"id":"t-s01","osm_ids":[],"lines":[[[\#(fromLat),128.8],[\#(toLat),128.8]]]}]}"#
+            let d = JSONDecoder()
+            d.keyDecodingStrategy = .convertFromSnakeCase
+            return try d.decode(SlopeMap.self, from: Data(json.utf8))
+        }
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)
+        let half = tr.lat
+        tr.restart()
+        tr.go(90, climb: -150, speed: 10)
+        let whole = RunDetector.detect(tr.pts, map: try map(37.2, 37.25))
+        #expect(whole.runs.count == 1 && whole.runs[0].slopeId == "t-s01")
+        let back = RunDetector.detect(tr.pts, map: try map(half, 37.25))
+        #expect(back.runs.count == 1 && back.runs[0].slopeId == nil)
+    }
+
     /// 기압계가 중간에 멈춰 GPS 고도(기준 +700m)로 바뀌어도 두 기준을 섞지 않는다.
     @Test func altitudeSourceSwitch() {
         var tr = Track()

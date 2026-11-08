@@ -22,6 +22,7 @@ nonisolated enum RunDetector {
         var maxSpeed: Double     // m/s
         var avgSpeed: Double     // m/s, 정지 시간 제외
         var movingTime: Double   // s
+        var slopeId: String? = nil // 우리 슬로프 ID(R9). 지도가 없거나 애매하면 nil
     }
 
     struct Summary {
@@ -38,10 +39,11 @@ nonisolated enum RunDetector {
     }
 
     /// vehicle: 차량 이동 구간(R49). 그 안의 점은 버리고, 구간 앞뒤는 seq 재시작처럼 끊되 하강을 합치지 않는다.
-    static func detect(_ points: [Point], vehicle: [DateInterval] = [], params p: Params = Params()) -> Summary {
+    /// map: 있으면 하강마다 슬로프를 붙인다(R9). 재시작으로 나뉜 조각을 합친 뒤 한 번 맞춘다.
+    static func detect(_ points: [Point], vehicle: [DateInterval] = [], map: SlopeMap? = nil, params p: Params = Params()) -> Summary {
         var summary = Summary()
-        // (하강, 계열 첫 샘플에서 시작, 구간 끝까지 하강 중, 차량 구간 번호)
-        var pieces: [(run: Run, openStart: Bool, openEnd: Bool, part: Int)] = []
+        // (하강, 계열 첫 샘플에서 시작, 구간 끝까지 하강 중, 차량 구간 번호, 하강에 쓴 정제된 점)
+        var pieces: [(run: Run, openStart: Bool, openEnd: Bool, part: Int, pts: [Point])] = []
         let vehicle = vehicle.sorted { $0.start < $1.start }
         let kept = clean(points, p).filter { pt in !vehicle.contains { $0.start <= pt.t && pt.t <= $0.end } }
         // 차량 구간 번호: 점보다 앞에서 끝난 차량 구간 수
@@ -61,13 +63,14 @@ nonisolated enum RunDetector {
                 for (j, (a, b)) in found.enumerated() {
                     pieces.append((stats(pts, from: a, to: b, p),
                                    openStart: i == 0 && a.t == se.samples[0].t,
-                                   openEnd: i == series.count - 1 && j == found.count - 1 && openEnd, part: key.part))
+                                   openEnd: i == series.count - 1 && j == found.count - 1 && openEnd, part: key.part,
+                                   pts: pts.filter { $0.t >= a.t && $0.t <= b.t }))
                 }
             }
         }
         // 하강 중 재시작: 앞 seq 끝까지 이어진 하강과 다음 seq 처음부터의 하강은 1회로 합친다(R4 중복 금지).
         // 고도차는 각 seq 안에서만 계산해 더한다.
-        var merged: [(run: Run, openEnd: Bool, part: Int)] = []
+        var merged: [(run: Run, openEnd: Bool, part: Int, pts: [Point])] = []
         for pc in pieces {
             if let last = merged.last, last.openEnd, pc.openStart, last.part == pc.part {
                 var r = last.run
@@ -77,12 +80,16 @@ nonisolated enum RunDetector {
                 r.maxSpeed = max(r.maxSpeed, pc.run.maxSpeed)
                 r.movingTime += pc.run.movingTime
                 r.avgSpeed = r.movingTime > 0 ? r.distance / r.movingTime : 0
-                merged[merged.count - 1] = (r, pc.openEnd, pc.part)
+                merged[merged.count - 1] = (r, pc.openEnd, pc.part, last.pts + pc.pts)
             } else {
-                merged.append((pc.run, pc.openEnd, pc.part))
+                merged.append((pc.run, pc.openEnd, pc.part, pc.pts))
             }
         }
-        summary.runs = merged.map(\.run)
+        summary.runs = merged.map { m in
+            var r = m.run
+            if let map { r.slopeId = SlopeMatcher.match(m.pts, map: map) }
+            return r
+        }
         return summary
     }
 

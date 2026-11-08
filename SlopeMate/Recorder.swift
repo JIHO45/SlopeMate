@@ -323,7 +323,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         do {
             todayRecordings = try db.recordings(since: BusinessDay.start(of: .now))
             earlierToday = try todayRecordings.filter { $0.id != recording?.id }
-                .map { RunDetector.detect(try db.points($0), vehicle: try db.vehicle($0)) }
+                .map { RunDetector.detect(try db.points($0), vehicle: try db.vehicle($0), map: SlopeMap.cached(resortId: $0.resortId)) }
                 .reduce(RunDetector.Summary(), +)
         } catch {
             status = .failed("기록을 읽지 못했어요. \(error.localizedDescription)")
