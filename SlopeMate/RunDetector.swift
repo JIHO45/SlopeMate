@@ -12,9 +12,12 @@ nonisolated enum RunDetector {
         var maxSpeed = 40.0      // m/s, 직전 점 대비 이보다 빠르면 튐으로 봄
         var stopSpeed = 1.0      // m/s, 두 점 사이 속도가 이보다 느리면 정지 시간
         var baroMaxAge = 10.0    // s, 위치점과 기압 측정 시각 차이 한계
+        var climbStartBand = 5.0 // m, 상승 최저점 + 이 높이 안의 마지막 점부터 "실제로 오르는 중" (R10)
+        var stationRadius = 50.0 // m, 탑승장 반경 (R10)
+        var maxWait = 30 * 60.0  // s, 이보다 오래 머물면 줄이 아닌 체류로 보고 버림 (R10)
     }
 
-    struct Run: Equatable {
+    struct Run: Equatable, Codable {
         var start: Date
         var end: Date
         var distance: Double     // m, 수평
@@ -25,8 +28,19 @@ nonisolated enum RunDetector {
         var slopeId: String? = nil // 우리 슬로프 ID(R9). 지도가 없거나 애매하면 nil
     }
 
-    struct Summary {
+    /// 상승(리프트) 구간 (05-design 3장 1·4).
+    struct Ascent: Equatable, Codable {
+        var start: Date          // 오르기 전 최저점
+        var end: Date            // 최고점
+        var rise: Double         // m
+        var liftId: String? = nil
+        var boardAt: Date? = nil // 탑승 시각(탑승장 반경 안 마지막 점)
+        var waitSec: Double? = nil // 리프트 대기(R10). 판단이 안 되면 nil
+    }
+
+    struct Summary: Codable {
         var runs: [Run] = []
+        var ascents: [Ascent] = []
         /// 기압 없이 GPS 고도로 판정한 구간이 있음 → "고도 정확도 낮음"
         var usedGPSAltitude = false
         var distance: Double { runs.reduce(0) { $0 + $1.distance } }
@@ -34,7 +48,7 @@ nonisolated enum RunDetector {
         var maxSpeed: Double { runs.map(\.maxSpeed).max() ?? 0 }
 
         static func + (a: Summary, b: Summary) -> Summary {
-            Summary(runs: a.runs + b.runs, usedGPSAltitude: a.usedGPSAltitude || b.usedGPSAltitude)
+            Summary(runs: a.runs + b.runs, ascents: a.ascents + b.ascents, usedGPSAltitude: a.usedGPSAltitude || b.usedGPSAltitude)
         }
     }
 
@@ -66,6 +80,9 @@ nonisolated enum RunDetector {
                                    openEnd: i == series.count - 1 && j == found.count - 1 && openEnd, part: key.part,
                                    pts: pts.filter { $0.t >= a.t && $0.t <= b.t }))
                 }
+                for c in climbs(se.samples, found, openEnd: openEnd) where c.hi.alt - c.lo.alt >= p.minClimb {
+                    summary.ascents.append(ascent(c, se.samples, pts, map: map, p))
+                }
             }
         }
         // 하강 중 재시작: 앞 seq 끝까지 이어진 하강과 다음 seq 처음부터의 하강은 1회로 합친다(R4 중복 금지).
@@ -91,6 +108,53 @@ nonisolated enum RunDetector {
             return r
         }
         return summary
+    }
+
+    // MARK: 상승·리프트 대기 (R10)
+
+    typealias Climb = (from: Date, lo: Sample, hi: Sample, open: Bool)
+
+    /// 하강 사이 구간마다 (구간 시작, 최고점 전 최저점, 최고점, 끝에서 아직 오르는 중).
+    /// 구간: 계열 시작 ~ 첫 하강 시작, 하강 끝 ~ 다음 하강 시작, 마지막 하강 끝 ~ 계열 끝(하강 중으로 끝나지 않았을 때).
+    static func climbs(_ s: [Sample], _ runs: [(Sample, Sample)], openEnd: Bool) -> [Climb] {
+        guard let first = s.first, let last = s.last else { return [] }
+        var segs: [(Date, Date?)] = []
+        var from = first.t
+        for (hi, lo) in runs { segs.append((from, hi.t)); from = lo.t }
+        if !openEnd { segs.append((from, nil)) }
+        return segs.compactMap { a, b in
+            let seg = s.filter { x in x.t >= a && (b.map { x.t <= $0 } ?? true) }
+            guard let hi = seg.max(by: { $0.alt < $1.alt }),
+                  let lo = seg.filter({ $0.t <= hi.t }).min(by: { $0.alt < $1.alt }) else { return nil }
+            return (a, lo, hi, b == nil && hi.t == last.t)
+        }
+    }
+
+    /// 리프트를 식별하고 대기를 잰다. 리프트는 실제로 오르는 점으로만 맞춰 줄에서 오래 서 있어도 흐려지지 않게 한다.
+    static func ascent(_ c: Climb, _ samples: [Sample], _ pts: [Point], map: SlopeMap?, _ p: Params) -> Ascent {
+        var a = Ascent(start: c.lo.t, end: c.hi.t, rise: c.hi.alt - c.lo.alt)
+        guard let map else { return a }
+        let climbStart = samples.last { $0.t >= c.lo.t && $0.t <= c.hi.t && $0.alt <= c.lo.alt + p.climbStartBand }?.t ?? c.lo.t
+        let climb = pts.filter { $0.t >= climbStart && $0.t <= c.hi.t }
+        guard let lift = SlopeMatcher.matchLift(climb, map: map) else { return a }
+        a.liftId = lift.id
+        // 아직 오르는 중이면 대기를 재지 않는다
+        guard !c.open, let first = climb.first, let e0 = lift.line.first, let e1 = lift.line.last else { return a }
+        func d(_ x: Point, _ e: [Double]) -> Double {
+            distance(x, Point(recordingId: x.recordingId, t: x.t, lat: e[0], lon: e[1], hAcc: 0, gpsAlt: 0, vAcc: 0, speed: 0, seq: x.seq))
+        }
+        // 탑승장 = 오르기 시작한 점에 가까운 끝 (지도에는 끝점 고도가 없음)
+        let station = d(first, e0) <= d(first, e1) ? e0 : e1
+        let near = { (x: Point) in x.t >= c.from && d(x, station) <= p.stationRadius }
+        guard let board = pts.lastIndex(where: { $0.t <= c.hi.t && near($0) }) else { return a }
+        var i = board
+        while i > 0, near(pts[i - 1]) { i -= 1 }
+        // 수신 시작부터 탑승장에 있었으면 도착 시각을 모른다
+        guard i > 0 else { return a }
+        let wait = pts[board].t.timeIntervalSince(pts[i].t)
+        a.boardAt = pts[board].t
+        if wait <= p.maxWait { a.waitSec = wait }
+        return a
     }
 
     // MARK: 단계

@@ -174,6 +174,17 @@ nonisolated final class AppDatabase: Sendable {
                 t.column("sortOrder", .integer).notNull()
             }
         }
+        m.registerMigration("v5") { db in
+            try db.create(table: "lift_wait") { t in
+                t.column("recordingId", .blob).notNull().references("recording", onDelete: .cascade)
+                t.column("boardAt", .datetime).notNull()
+                t.column("resortId", .text).notNull()
+                t.column("liftId", .text).notNull()
+                t.column("waitSec", .double).notNull()
+                t.column("sendState", .text).notNull().indexed()
+                t.primaryKey(["recordingId", "boardAt"])
+            }
+        }
         return m
     }
 
