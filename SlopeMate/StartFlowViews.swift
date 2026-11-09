@@ -167,12 +167,18 @@ private struct SheetHeader: View {
 /// 첫 실행에 한 번, 탭 위 전체 화면. 고른 순서가 S3 목록 순서가 된다. 저장에 성공해야 완료로 남긴다.
 struct HomeSetupView: View {
     let db: AppDatabase
+    /// 설정에서 열 때만: 저장하지 않고 닫는다
+    var cancel: (() -> Void)? = nil
     var done: () -> Void
     @State private var picked: [String] = []
     @State private var saveError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let cancel {
+                Button("취소", action: cancel).font(.body.weight(.semibold)).foregroundStyle(Color.accentText)
+                    .frame(minHeight: 44).padding(.horizontal, 20).padding(.top, 8)
+            }
             VStack(alignment: .leading, spacing: 8) {
                 Text("자주 가는 리조트").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
                 Text("선택한 리조트를 기록 시작 화면에 먼저 보여드려요. 여러 곳을 선택할 수 있어요.")

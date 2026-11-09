@@ -40,7 +40,10 @@ nonisolated enum Settings {
 
     static func setConsent(_ on: Bool, db: AppDatabase, now: Date = .now) throws {
         if on {
-            if consentSince == nil { d.set(now, forKey: "consentSince") }
+            guard consentSince == nil else { return }
+            // 끌 때 폐기에 실패해 남은 이전 표본을 먼저 버린다. 실패하면 켜지 않는다.
+            try db.dropPendingSamples()
+            d.set(now, forKey: "consentSince")
         } else {
             d.removeObject(forKey: "consentSince")
             try db.dropPendingSamples()

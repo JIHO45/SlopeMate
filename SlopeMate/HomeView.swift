@@ -18,6 +18,7 @@ struct HomeView: View {
     var setupShown = false
     /// 앱을 켰을 때 이어지는 기록이면 한 번만 S5를 연다. 탭을 오갈 때는 다시 열지 않는다.
     @State private var launched = false
+    @State private var settingsEdits = 0
     /// S3·동의 시트
     @State private var step: StartStep?
     /// S3에서 고른 리조트. 시트가 닫힌 뒤 동의(첫 기록) → 권한(S4) → 시작으로 넘긴다.
@@ -125,7 +126,7 @@ struct HomeView: View {
     }
 
     private var reloadKey: String {
-        "\(recorder.recording?.id.uuidString ?? "-")-\(recorder.todayRecordings.count)-\(recorder.today.runs.count)-\(setupShown)"
+        "\(recorder.recording?.id.uuidString ?? "-")-\(recorder.todayRecordings.count)-\(recorder.today.runs.count)-\(setupShown)-\(settingsEdits)"
     }
 
     // MARK: 위: 홈 리조트, 설정, 이번 시즌
@@ -138,8 +139,7 @@ struct HomeView: View {
                     .font(.subheadline).foregroundStyle(Color.secondaryText)
                 Spacer()
                 NavigationLink {
-                    // B7이 S17 설정을 만든다
-                    Text("설정").navigationTitle("설정")
+                    SettingsView(db: recorder.db) { settingsEdits += 1 }
                 } label: {
                     Image(systemName: "gearshape").font(.title3).frame(width: 44, height: 44).glassCircle()
                 }

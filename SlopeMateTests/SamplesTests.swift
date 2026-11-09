@@ -149,6 +149,22 @@ struct SamplesTests {
         #expect(try db.snowRatings(rec).map(\.sendState) == ["dropped"])
     }
 
+    /// 끌 때 폐기에 실패해 pending이 남아도, 다시 켜기 전에 버려 과거 표본이 살아나지 않는다
+    @Test func reconsentDropsLeftoverPending() throws {
+        let db = try db()
+        let rec = try db.createRecording(resortId: "test", at: Date(timeIntervalSince1970: 0))
+        let run = RunDetector.Run(start: Date(timeIntervalSince1970: 100), end: Date(timeIntervalSince1970: 200), distance: 0, drop: 0,
+                                  maxSpeed: 0, avgSpeed: 0, movingTime: 0, slopeId: "S")
+        try Settings.setConsent(false, db: db)
+        try Settings.setConsent(true, db: db, now: run.end)
+        #expect(try db.rate(rec, run: run, value: .ice, now: run.end + 10))
+        // 동의 시각만 지워지고 폐기는 안 된 상태
+        UserDefaults.standard.removeObject(forKey: "consentSince")
+        try Settings.setConsent(true, db: db, now: run.end + 20)
+        #expect(try db.snowRatings(rec).map(\.sendState) == ["dropped"])
+        try Settings.setConsent(false, db: db)
+    }
+
     /// 끝난 기록의 결과 저장과 리프트 표본: 동의 전 탑승은 dropped, 차량 재판정으로 사라지면 미전송 표본은 지운다
     @Test func cacheSyncsLiftWaits() throws {
         let db = try db()
