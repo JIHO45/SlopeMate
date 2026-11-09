@@ -52,6 +52,7 @@ struct DayMapView: View {
     private var now: Date? { started ? clock.time(at: progress) : nil }
     private var playingRun: Int? { now.flatMap { t in day.runs.firstIndex { $0.start <= t && t <= $0.end } } }
     private var title: String { "\(RecordFormat.monthDay(day.date)) · \(Resort.name(day.resortId))" }
+    private var small: Bool { detent == .fraction(0.25) }
     private var sheetHeight: CGFloat { sheetSize ?? size.height * (detent == .fraction(0.5) ? 0.5 : 0.25) }
 
     var body: some View {
@@ -72,6 +73,7 @@ struct DayMapView: View {
         .accessibilityLabel("\(Resort.name(day.resortId)) 전체 슬로프 지도\(hasRuns ? " 위 오늘 경로" : "")")
         .overlay(alignment: .bottomTrailing) {
             Text("© OpenStreetMap").font(.caption).foregroundStyle(Color.secondaryText)
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge) // 출처 표시가 지도를 가리지 않게
                 .padding(.trailing, 16).padding(.bottom, sheetHeight + 8)
                 .ignoresSafeArea()
         }
@@ -161,6 +163,7 @@ struct DayMapView: View {
                 Image(systemName: playing ? "pause.fill" : "play.fill")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(Color.onAccent)
+                    .dynamicTypeSize(...DynamicTypeSize.xxLarge) // 원 안에 머물게
                     .frame(width: 44, height: 44)
                     .background(Color.accentFill, in: Circle())
             }
@@ -180,8 +183,12 @@ struct DayMapView: View {
     private var sheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             if hasRuns {
-                playBar
-                DaySummary(day: day).padding(.leading, 4)
+                // 25% 시트일 때만 재생 막대와 합계가 들어가게 글씨 크기를 묶는다. 50%와 목록은 끝까지 커진다.
+                VStack(alignment: .leading, spacing: 12) {
+                    playBar
+                    DaySummary(day: day, compact: small).padding(.leading, 4)
+                }
+                .dynamicTypeSize(.xSmall...(small ? .accessibility1 : .accessibility5))
                 ScrollView {
                     DayRunList(day: day, gaps: gaps, ratings: ratings, highlight: selected ?? playingRun, pinned: true, onTap: seek)
                         .padding(.bottom, 24)

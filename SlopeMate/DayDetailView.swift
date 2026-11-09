@@ -82,13 +82,16 @@ struct DayDetailView: View {
 /// 합계: 큰 횟수 + 거리·고도차·최고 속도 한 줄 + "고도 정확도 낮음". 목록형은 카드에, 지도형은 시트에 넣는다
 struct DaySummary: View {
     let day: Stats.Day
+    /// 지도의 25% 시트처럼 자리가 좁을 때만 합계 줄을 한 줄로 줄인다. 나머지는 줄바꿈해 큰 글씨를 지킨다.
+    var compact = false
 
     var body: some View {
         let t = Stats.totals([day])
         VStack(alignment: .leading, spacing: 4) {
-            (Text("\(t.runs)").font(.system(size: 34, weight: .bold)) + Text("회").font(.title3.weight(.bold)))
+            (Text("\(t.runs)").font(.largeTitle.weight(.bold)) + Text("회").font(.title3.weight(.bold)))
                 .foregroundStyle(Color.accentText).monospacedDigit()
             Text(Self.line(t)).font(.subheadline).foregroundStyle(Color.secondaryText)
+                .lineLimit(compact ? 1 : nil).minimumScaleFactor(compact ? 0.6 : 1)
             if day.usedGPSAltitude {
                 Label("고도 정확도 낮음", systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
@@ -116,6 +119,7 @@ struct DayRunList: View {
     var highlight: Int? = nil
     var pinned = false
     var onTap: ((Int) -> Void)? = nil
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private enum Row: Identifiable {
         case run(Int, RunDetector.Run)
@@ -196,13 +200,16 @@ struct DayRunList: View {
     private func runRow(_ i: Int, _ r: RunDetector.Run) -> some View {
         let slope = SlopeNames.isShown(day.resortId) ? r.slopeId.flatMap { id in SlopeMap.cached(resortId: day.resortId)?.slopes.first { $0.id == id } } : nil
         let on = highlight == i
-        return HStack(spacing: 12) {
+        // 아주 큰 글씨에서는 한 줄에 다 들어가지 않으니 세로로 쌓는다
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
             Text(RecordFormat.time(r.start)).foregroundStyle(on ? Color.accentText : Color.secondaryText).fontWeight(on ? .semibold : nil)
-            HStack(spacing: 8) {
+            let nameLayout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 8))
+            nameLayout {
                 if let c = slope?.difficulty.flatMap({ DayDetailView.difficultyColor($0) }) {
                     Circle().fill(c).frame(width: 10, height: 10).accessibilityHidden(true)
                 }
-                Text(slope?.name ?? "하강 \(i + 1)").lineLimit(1).fontWeight(on ? .semibold : nil)
+                Text(slope?.name ?? "하강 \(i + 1)").lineLimit(typeSize.isAccessibilitySize ? nil : 1).fontWeight(on ? .semibold : nil)
                 if let rating = ratings[i] {
                     Text(DayDetailView.snowName(rating.value))
                         .font(.caption)
@@ -213,8 +220,10 @@ struct DayRunList: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(RecordFormat.km(r.distance))
-            Text(RecordFormat.kmh(r.maxSpeed)).foregroundStyle(Color.secondaryText).frame(minWidth: 64, alignment: .trailing)
+            Text(RecordFormat.kmh(r.maxSpeed)).foregroundStyle(Color.secondaryText)
+                .frame(minWidth: typeSize.isAccessibilitySize ? nil : 64, alignment: .trailing)
         }
+        .padding(.vertical, typeSize.isAccessibilitySize ? 8 : 0)
         .font(.subheadline).monospacedDigit()
         .foregroundStyle(Color.primaryText)
         .padding(.horizontal, 16)

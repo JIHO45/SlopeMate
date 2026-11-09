@@ -95,8 +95,11 @@ struct RecordingBar: View {
                 .padding(.horizontal, 16)
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
+                // 탭 막대처럼 한 줄에 머문다. 아주 큰 글씨에서는 길게 누르면 확대해 보여 준다.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             }
             .buttonStyle(.plain)
+            .accessibilityShowsLargeContentViewer()
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(stopped ? "기록 멈춤" : "기록 중"), \(Resort.name(rec.resortId)), \(runs)회")
             .accessibilityValue(Text(rec.startedAt, style: .timer))
