@@ -264,7 +264,7 @@ struct HomeView: View {
             HomeCard(icon: "cloud.sun", label: name) {
                 Text("날씨를 불러오지 못했어요").font(.headline)
             } footer: {
-                Button { weatherRetry += 1 } label: {
+                Button { DebugFailures.weatherFails = false; weatherRetry += 1 } label: {
                     Label("다시 시도", systemImage: "arrow.clockwise")
                         .font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText)
                         .padding(.horizontal, 18).frame(minHeight: 44)

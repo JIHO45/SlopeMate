@@ -346,6 +346,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
                       hAcc: loc.horizontalAccuracy, gpsAlt: loc.altitude, vAcc: loc.verticalAccuracy, speed: loc.speed,
                       baroAlt: lastBaro?.alt, baroT: lastBaro?.t, seq: seq)
         do {
+            if DebugFailures.on("-SMFailSave") { throw DebugFailures.Injected() }
             try db.insert(&p)
             points.append(p)
             updateAlerts()

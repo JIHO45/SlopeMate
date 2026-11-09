@@ -104,6 +104,7 @@ nonisolated enum Weather {
         let t = now()
         let cached = snapshots[resort.id].flatMap { t.timeIntervalSince($0.fetchedAt) < Weather.maxAge ? $0 : nil }
         if let cached { return cached }
+        if DebugFailures.weatherFails { throw DebugFailures.Injected() }
         let s = try await fetch(resort, t)
         snapshots[resort.id] = s
         return s

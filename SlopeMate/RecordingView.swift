@@ -233,10 +233,12 @@ struct RecordingView: View {
                          action: ("설정 열기", { openURL(URL(string: UIApplication.openSettingsURLString)!) }))
         } else if let gap = recorder.autoResumedGap {
             StatusBanner(kind: .info, icon: "arrow.clockwise", title: "자동으로 이어서 기록 중", message: autoResumedText(gap))
-        } else if battery >= 0, battery <= 0.15, UIDevice.current.batteryState != .charging {
+        } else if let level = DebugFailures.batteryLevel ?? (UIDevice.current.batteryState == .charging ? nil : battery),
+                  level >= 0, level <= 0.15 {
             StatusBanner(kind: .warning, icon: "battery.25", title: "배터리가 부족해요",
-                         message: "\(Int((battery * 100).rounded()))% 남음 · 지금까지 기록은 저장돼 있어요")
-        } else if recorder.status == .recording, let p = recorder.points.last, p.hAcc > RunDetector.Params().maxHAcc {
+                         message: "\(Int((level * 100).rounded()))% 남음 · 지금까지 기록은 저장돼 있어요")
+        } else if recorder.status == .recording, let p = recorder.points.last,
+                  (DebugFailures.weakSignal ? RunDetector.Params().maxHAcc + 1 : p.hAcc) > RunDetector.Params().maxHAcc {
             StatusBanner(kind: .warning, icon: "exclamationmark.triangle", title: "위치 신호가 약해요",
                          message: "기록은 계속돼요. 하늘이 트인 곳에서 나아질 수 있어요")
         }

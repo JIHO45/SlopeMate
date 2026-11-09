@@ -189,6 +189,7 @@ struct DayMapView: View {
                     DaySummary(day: day, compact: small).padding(.leading, 4)
                 }
                 .dynamicTypeSize(.xSmall...(small ? .accessibility1 : .accessibility5))
+                .fixedSize(horizontal: false, vertical: true) // 목록에 밀려 세로로 눌리면 합계 글씨가 줄어든다
                 ScrollView {
                     DayRunList(day: day, gaps: gaps, ratings: ratings, highlight: selected ?? playingRun, pinned: true, onTap: seek)
                         .padding(.bottom, 24)
@@ -235,6 +236,10 @@ struct DayMapView: View {
         withoutAnimation { showMaking = true }
         making = Task {
             do {
+                if DebugFailures.once("-SMFailVideoOnce") {
+                    try await Task.sleep(for: .seconds(1)) // 만드는 중 화면이 뜬 뒤 실패
+                    throw DebugFailures.Injected()
+                }
                 let url = try await ShareVideo.make(c) { p in Task { @MainActor in makeProgress = p } }
                 withoutAnimation { showMaking = false }
                 try? await Task.sleep(for: .milliseconds(350)) // 만드는 중 창이 닫힌 뒤 공유 시트
