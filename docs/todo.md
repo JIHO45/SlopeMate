@@ -57,7 +57,7 @@
 - [x] 설질 평가 저장: 하강별 답, 30분 뒤 닫힘, 보낼 상태(pending/sent/dropped) (R11, R12 동의 시각) → `SnowRating`, `SnowPrompt`, `Settings` (2026-11-09)
 - [ ] (사용자) Apple Developer에서 SlopeMate App ID에 WeatherKit 기능 켜기 — WeatherKit 작업 전에 (R33)
 - [x] WeatherKit 날씨 조회·캐시: 홈 리조트별 오늘·시간대별·7일, 실패·데이터 없음 처리 (R33) → `Weather`, `WeatherCache` — 실제 조회는 WeatherKit 켠 뒤 기기 확인 (2026-11-09)
-- [ ] 예상 설질 첫 규칙: 기온 변화·습도·바람, 계산 근거 문구 (R39)
+- [x] 예상 설질 첫 규칙: 기온 변화·습도·바람, 계산 근거 문구 (R39) → `SnowForecast` (2026-11-09)
 - [ ] 슬로프 이름 표시 켜고 끄기: 리조트별 설정 값 읽기(지금은 모두 꺼짐), 서버 파일은 서버 기능에서 (R9)
 
 **B. 화면** (화면마다 보고 고쳐야 해서 순서대로 나눠 진행. 확정 시안은 07-visual-design 6장)
