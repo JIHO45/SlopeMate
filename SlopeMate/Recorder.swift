@@ -271,7 +271,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             }
             recording = nil
             points = []
-            status = .failed("저장하지 못해 기록을 멈췄어요. 저장 공간을 확인해 주세요. 여기까지의 기록은 남아 있어요.")
+            status = .failed("저장하지 못해 기록을 멈췄어요. 마지막으로 저장된 기록은 ‘하루 기록 보기’에서 확인할 수 있어요. 기기 저장 공간이 부족해요. 공간을 비운 뒤 다시 시작하세요")
             loadToday()
         }
     }
@@ -350,7 +350,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         if let last = ForgottenStop.latestReliable(points), let resort = Resort.all.first(where: { $0.id == rec.resortId }),
            ForgottenStop.isFar(lat: last.lat, lon: last.lon, from: resort),
            ForgottenStop.farAlertAllowed(sentAt: ForgottenStop.farSentAt(rec), summary) {
-            ForgottenStop.sendFar()
+            ForgottenStop.sendFar(resortName: resort.name)
             ForgottenStop.setFarSent(rec, now)
         }
     }

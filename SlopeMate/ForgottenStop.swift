@@ -87,16 +87,16 @@ nonisolated enum ForgottenStop {
     static func scheduleIdle(at deadline: Date?, now: Date = .now, sendNow: Bool = false) {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [idleID])
-        let body = content("한 시간 넘게 하강이 없어요. 스키장을 떠났다면 기록을 끝내 주세요.")
+        let body = content("1시간 동안 하강이 없었어요. 다 탔으면 앱에서 종료해 주세요")
         if sendNow { return center.add(UNNotificationRequest(identifier: idleID + ".now", content: body, trigger: nil)) }
         guard let deadline, deadline > now else { return }
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: deadline.timeIntervalSince(now), repeats: false)
         center.add(UNNotificationRequest(identifier: idleID, content: body, trigger: trigger))
     }
 
-    static func sendFar() {
+    static func sendFar(resortName: String) {
         UNUserNotificationCenter.current().add(UNNotificationRequest(
-            identifier: "forgottenStop.far", content: content("리조트에서 멀어졌어요. 스키장을 떠났다면 기록을 끝내 주세요."), trigger: nil))
+            identifier: "forgottenStop.far", content: content("\(resortName)에서 5km 넘게 벗어났어요. 스키장을 떠났으면 앱에서 종료해 주세요"), trigger: nil))
     }
 
     private static func content(_ body: String) -> UNMutableNotificationContent {
