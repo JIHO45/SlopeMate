@@ -162,6 +162,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         do { try db.end(rec, at: .now, reason: "user") } catch {
             // 끝난 표시를 못 남겨도 위치점은 남아 있다. 다음 실행 때 끊긴 기록으로 처리된다.
             status = .failed("기록 종료를 저장하지 못했어요. \(error.localizedDescription)")
+            showLive()
             return
         }
         finished(rec)
@@ -169,7 +170,16 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
 
     /// 기록이 끝난 뒤 정리: 알림을 지우고, 차량 구간을 조회한다(활동 기록이 늦게 들어오면 다음 실행 때 다시 조회).
     private func finished(_ rec: Recording) {
-        live.end(recordingId: rec.id, recording?.id == rec.id ? liveState() : nil)
+        // 카드에는 저장된 종료 시각과 그날 합계를 보여준다. 복구 화면에서 끝낸 기록은 저장된 기록으로 합계를 만든다.
+        let stored = (try? db.queue.read { try Recording.fetchOne($0, key: rec.id) }) ?? rec
+        var final = recording?.id == rec.id ? liveState() : nil
+        if final == nil, live.hasCard(rec.id) {
+            // 일반 종료와 같은 기준: 그 영업일의 모든 리조트 합계
+            let date = BusinessDay.start(of: stored.startedAt)
+            let runs = ((try? HomeData.days(db, since: date)) ?? []).filter { $0.date == date }.flatMap(\.runs)
+            final = .init(startedAt: stored.startedAt, runs: runs.count, distance: runs.reduce(0) { $0 + $1.distance })
+        }
+        live.end(recordingId: rec.id, final, endedAt: stored.endedAt ?? .now)
         ForgottenStop.scheduleIdle(at: nil)
         ForgottenStop.setFarSent(rec, nil)
         ForgottenStop.setIdleDeadline(rec, nil)
@@ -309,6 +319,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             guard let self, !Task.isCancelled, self.status == .recording else { return }
             self.stopUpdates()
             self.status = .failed("위치 수신이 멈췄어요. 기록을 종료한 뒤 다시 시작해 주세요. 여기까지의 기록은 남아 있어요.")
+            self.showLive()
         }
     }
 
@@ -344,7 +355,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             }
         } catch {
             stopUpdates()
-            live.end(recordingId: rec.id, liveState(stopped: "저장 공간이 부족해 기록이 멈췄어요. 앱을 열어 확인해 주세요"))
+            live.end(recordingId: rec.id, liveState(stopped: "저장 공간이 부족해 기록이 멈췄어요. 앱을 열어 확인해 주세요"), endedAt: points.last?.t ?? .now)
             do { try db.end(rec, at: .now, reason: "storage") } catch {
                 // 끝난 표시도 못 남겼으면 다음 실행 때 자동으로 이어가지 않게 표시해 둔다
                 UserDefaults.standard.set(rec.id.uuidString, forKey: Self.storageFailedKey)
@@ -485,6 +496,9 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             case .reducedAccuracy: "정확한 위치가 꺼졌어요. 앱을 열어 다시 켜 주세요"
             case .servicesOff: "위치 서비스가 꺼졌어요. 설정에서 다시 켜 주세요"
             }
+        } else if case .failed = status {
+            // 위치 수신이 끊겼거나 종료를 저장하지 못함: 기록은 멈춰 있다
+            stopped = "기록이 멈췄어요. 앱을 열어 확인해 주세요"
         }
         if let s = liveState(stopped: stopped) { live.show(recordingId: rec.id, resortName: Resort.name(rec.resortId), s, renew: renew) }
     }

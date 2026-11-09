@@ -48,8 +48,14 @@ import Foundation
         Task { await activity.update(content) }
     }
 
-    /// 기록 종료: 그 기록의 카드를 찾아 하루 합계를 잠깐 보여주고 끝낸다. 상태가 없으면(복구 화면에서 끝냄 등) 바로 끝낸다.
-    func end(recordingId: UUID, _ state: State?, now: Date = .now) {
+    /// 이 기록의 카드가 떠 있는지 (복구 화면에서 끝낼 때 합계를 계산할지 정한다)
+    func hasCard(_ recordingId: UUID) -> Bool {
+        Activity<Attributes>.activities.contains { $0.attributes.recordingId == recordingId.uuidString }
+    }
+
+    /// 기록 종료: 그 기록의 카드를 찾아 하루 합계를 잠깐(지금부터 5분) 보여주고 끝낸다. 상태가 없으면 바로 끝낸다.
+    /// `endedAt`은 저장된 종료 시각(06:00 자동 종료는 마지막 위치 시각)이고, 카드의 경과 시간을 이 값으로 고정한다.
+    func end(recordingId: UUID, _ state: State?, endedAt: Date, now: Date = .now) {
         let id = recordingId.uuidString
         if activity?.attributes.recordingId == id {
             activity = nil
@@ -57,7 +63,7 @@ import Foundation
         }
         var final = state
         final?.ended = true
-        final?.endedAt = now
+        final?.endedAt = endedAt
         for a in Activity<Attributes>.activities where a.attributes.recordingId == id {
             Task {
                 if let final {
