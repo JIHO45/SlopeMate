@@ -19,6 +19,8 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     var pendingResume: Recording?
     /// 자동 재개했을 때 화면에 알릴 내용: 끊겼던 시간(초)
     var autoResumedGap: TimeInterval?
+    /// 자동 재개 전 마지막 위치 시각 (끊긴 구간의 시작, S5 배너)
+    var autoResumedFrom: Date?
     var todayRecordings: [Recording] = []
     private var earlierToday = RunDetector.Summary()
     /// 진행 중 기록의 차량 구간 (R49)
@@ -110,6 +112,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     func stop() {
         guard let rec = recording else { return }
         autoResumedGap = nil
+        autoResumedFrom = nil
         stopUpdates()
         do { try db.end(rec, at: .now, reason: "user") } catch {
             // 끝난 표시를 못 남겨도 위치점은 남아 있다. 다음 실행 때 끊긴 기록으로 처리된다.
@@ -169,6 +172,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         if autoOK && (locationRelaunch || now.timeIntervalSince(last) <= Self.autoResumeLimit) {
             resume(rec, reason: locationRelaunch ? "system" : "auto", now: now)
             autoResumedGap = now.timeIntervalSince(last)
+            autoResumedFrom = last
         } else {
             pendingResume = rec
         }

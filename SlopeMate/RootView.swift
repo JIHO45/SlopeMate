@@ -3,13 +3,14 @@ import SwiftUI
 /// B1 틀: 탭 기록·시즌·크루와 기록 중 막대 (07-visual-design 6장 B1, decisions 2026-11-09).
 struct RootView: View {
     @Bindable var recorder: Recorder
+    @State private var showRecording = false
     @State private var tab = Tab.record
 
     enum Tab { case record, season, crew }
 
     var body: some View {
         if #available(iOS 26, *) {
-            tabs.recordingAccessory(recorder.recording != nil) { RecordingBar(recorder: recorder) { tab = .record } }
+            tabs.recordingAccessory(recorder.recording != nil) { RecordingBar(recorder: recorder) { tab = .record; showRecording = true } }
         } else {
             tabs
         }
@@ -17,7 +18,7 @@ struct RootView: View {
 
     private var tabs: some View {
         TabView(selection: $tab) {
-            page(ContentView(recorder: recorder))
+            page(HomeView(recorder: recorder, showRecording: $showRecording))
                 .tabItem { Label("기록", systemImage: "figure.skiing.downhill") }.tag(Tab.record)
             page(SeasonView(db: recorder.db))
                 .tabItem { Label("시즌", systemImage: "calendar") }.tag(Tab.season)
@@ -33,7 +34,7 @@ struct RootView: View {
         } else {
             content.safeAreaInset(edge: .bottom, spacing: 0) {
                 if recorder.recording != nil {
-                    RecordingBar(recorder: recorder) { tab = .record }
+                    RecordingBar(recorder: recorder) { tab = .record; showRecording = true }
                         .background(.regularMaterial)
                         .overlay(alignment: .top) { Divider() }
                 }
