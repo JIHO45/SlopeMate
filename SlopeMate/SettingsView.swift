@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var consent = Settings.consentSince != nil
     @State private var editingHomes = false
     @State private var error: String?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// 아직 정하지 않았으면 행을 숨긴다(빈 링크를 내보내지 않음)
     static let privacyPolicyURL: URL? = nil
@@ -87,10 +88,15 @@ struct SettingsView: View {
     }
 
     private func row(_ title: String, value: String? = nil, icon: String? = nil, chevron: Bool = false) -> some View {
+        // 아주 큰 글씨에서는 이름 아래에 값을 둔다
         HStack {
-            Text(title).foregroundStyle(Color.primaryText)
-            Spacer()
-            if let value { Text(value).foregroundStyle(Color.secondaryText) }
+            let text = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+            text {
+                Text(title).foregroundStyle(Color.primaryText)
+                if !typeSize.isAccessibilitySize { Spacer() }
+                if let value { Text(value).foregroundStyle(Color.secondaryText) }
+            }
+            if typeSize.isAccessibilitySize { Spacer() }
             if let icon { Image(systemName: icon).font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText) }
             if chevron { Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary) }
         }

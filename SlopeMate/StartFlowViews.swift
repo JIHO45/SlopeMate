@@ -542,9 +542,12 @@ struct ResumeSheet: View {
     var end: () -> Void
     var openDay: () -> Void
     @State private var brief: (last: Date, runs: Int)?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(spacing: 12) {
+            // 큰 글씨에서는 설명이 길어져 스크롤된다. 버튼은 아래에 남는다.
+            ScrollView {
             VStack(spacing: 8) {
                 Image(systemName: isDayEnd ? "moon.zzz" : "pause.circle").font(.title).foregroundStyle(Color.accentText)
                     .frame(width: 64, height: 64).background(Color.surface, in: Circle()).accessibilityHidden(true)
@@ -555,10 +558,13 @@ struct ResumeSheet: View {
                 }
                 Text(isDayEnd ? "오전 6시가 지나 지난 기록을 마쳤어요. \(Resort.name(rec.resortId))에서의 하강 \(brief?.runs ?? 0)회는 저장됐어요."
                      : "이어서 기록하면 같은 하루 기록에 붙어요.")
-                    .font(.subheadline).foregroundStyle(Color.secondaryText).multilineTextAlignment(.center)
+                    .font(.subheadline).foregroundStyle(Color.secondaryText)
             }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
             .padding(.top, 32)
-            Spacer(minLength: 12)
+            }
+            .scrollBounceBehavior(.basedOnSize)
             if isDayEnd {
                 Button("하루 기록 보기", action: openDay).buttonStyle(PrimaryButtonStyle())
             } else {
@@ -573,7 +579,7 @@ struct ResumeSheet: View {
         }
         .foregroundStyle(Color.primaryText)
         .padding(.horizontal, 16).padding(.bottom, 8)
-        .presentationDetents([.medium])
+        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium])
         .presentationDragIndicator(.visible)
         .presentationBackground(Color.bg)
         .interactiveDismissDisabled(!isDayEnd)
