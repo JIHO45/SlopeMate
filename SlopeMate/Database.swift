@@ -198,6 +198,15 @@ nonisolated final class AppDatabase: Sendable {
                 t.primaryKey(["recordingId", "runStart"])
             }
         }
+        m.registerMigration("v7") { db in
+            try db.create(table: "recording_cache") { t in
+                t.primaryKey("recordingId", .blob).references("recording", onDelete: .cascade)
+                t.column("version", .integer).notNull()
+                t.column("vehicleQueriedAt", .datetime)
+                t.column("osmTimestamp", .text).notNull()
+                t.column("data", .blob).notNull()
+            }
+        }
         return m
     }
 

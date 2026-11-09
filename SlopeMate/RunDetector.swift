@@ -3,6 +3,9 @@ import Foundation
 /// 하강 판정 (R3, 03-requirements 5장, 05-design 3장). 지도 없이 위치점만으로 동작한다.
 /// 안드로이드도 같은 규칙과 같은 재생 파일로 같은 결과를 내야 한다(R48).
 nonisolated enum RunDetector {
+    /// 판정 기준 버전. 판정·슬로프 매칭·리프트 대기 규칙이나 기준값을 바꾸면 올린다 → 저장된 하루 경로·합계를 다시 계산(R50).
+    static let rulesVersion = 1
+
     /// 현장 데이터로 조정할 기준값 (06-verification 2장).
     struct Params {
         var minClimb = 20.0      // 최저점 대비 이만큼 오르면 상승(리프트)

@@ -148,4 +148,61 @@ struct SamplesTests {
         try Settings.setConsent(false, db: db)
         #expect(try db.snowRatings(rec).map(\.sendState) == ["dropped"])
     }
+
+    /// 끝난 기록의 결과 저장과 리프트 표본: 동의 전 탑승은 dropped, 차량 재판정으로 사라지면 미전송 표본은 지운다
+    @Test func cacheSyncsLiftWaits() throws {
+        let db = try db()
+        let tr = Self.track(queue: 300)
+        let rec = try db.createRecording(resortId: "test", at: tr.pts[0].t)
+        for var p in tr.pts { p.recordingId = rec.id; try db.insert(&p) }
+        try db.end(rec, at: tr.t, reason: "user")
+        let map = try Self.map()
+        let board = try #require(RunDetector.detect(tr.pts, map: map).ascents.first?.boardAt)
+
+        try Settings.setConsent(true, db: db, now: board + 1) // 탑승 뒤에 켬
+        #expect(try db.recordingsNeedingCache { _ in "2026-11-01" }.map(\.id) == [rec.id])
+        let c = try db.refreshCache(rec, map: map)
+        #expect(c.summary.runs.count == 1)
+        #expect(try db.liftWaits(rec).map(\.sendState) == ["dropped"])
+        #expect(try db.recordingsNeedingCache { _ in "2026-11-01" }.isEmpty)
+        #expect(try db.recordingsNeedingCache { _ in "2026-12-01" }.count == 1) // 지도 데이터가 바뀜
+
+        // 차량 재조회로 리프트 구간이 차량이 되면 결과가 낡고, 다시 계산하면 표본이 사라진다
+        try db.setVehicle(rec, [DateInterval(start: tr.pts[0].t, end: board + 600)], queriedAt: tr.t + 3600)
+        #expect(try db.recordingsNeedingCache { _ in "2026-11-01" }.count == 1)
+        _ = try db.cache(rec, map: map)
+        #expect(try db.liftWaits(rec).isEmpty)
+        try Settings.setConsent(false, db: db)
+    }
+
+    // MARK: 경로 (R50)
+
+    @Test func simplifyKeepsStopOnStraightLine() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        var p: [RoutePoint] = []
+        func at(_ t: Double, north: Double) { p.append(RoutePoint(t: t0 + t, lat: 37 + north / 110_540, lon: 128)) }
+        for s in stride(from: 0.0, through: 100, by: 2) { at(s, north: s) }          // 1m/s로 100m
+        for s in stride(from: 102.0, through: 700, by: 2) { at(s, north: 100) }      // 10분 멈춤
+        for s in stride(from: 702.0, through: 800, by: 2) { at(s, north: s - 600) }  // 다시 100m
+        let out = Route.simplify(p, Route.tolerance)
+        #expect(out.count < 10)
+        #expect(out.contains { abs($0.t.timeIntervalSince(t0) - 100) <= 4 })
+        #expect(out.contains { abs($0.t.timeIntervalSince(t0) - 700) <= 4 })
+        // 등속 직선은 양 끝만
+        #expect(Route.simplify(Array(p[0...50]), Route.tolerance).count == 2)
+    }
+
+    @Test func routeSplitsOnRestartAndKinds() {
+        var tr = Track()
+        tr.lap()
+        tr.restart()
+        tr.lap()
+        let s = RunDetector.detect(tr.pts)
+        let route = Route.build(tr.pts, summary: s, vehicle: [])
+        #expect(route.filter { $0.kind == .run }.count == 2)
+        #expect(route.filter { $0.kind == .lift }.count == 2)
+        // seq 경계를 넘는 조각이 없다
+        let restartAt = tr.pts.first { $0.seq == 1 }!.t
+        #expect(route.allSatisfy { seg in seg.points.allSatisfy { $0.t < restartAt } || seg.points.allSatisfy { $0.t >= restartAt } })
+    }
 }

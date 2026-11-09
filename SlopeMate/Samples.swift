@@ -89,4 +89,23 @@ nonisolated extension AppDatabase {
             }
         }
     }
+
+    /// 최종 판정의 리프트 대기로 표본을 맞춘다. 판정에서 사라진 미전송 표본은 지우고, 남은 미전송 표본은 값만 갱신(보낼 상태는 그대로),
+    /// 새 표본은 탑승 시각으로 보낼 상태를 정한다. 보낸 표본은 건드리지 않는다. 캐시 저장과 같은 트랜잭션에서 부른다.
+    static func syncLiftWaits(_ db: Database, _ rec: Recording, _ summary: RunDetector.Summary) throws {
+        let fresh = summary.ascents.compactMap { a -> LiftWait? in
+            guard let lift = a.liftId, let board = a.boardAt, let wait = a.waitSec else { return nil }
+            return LiftWait(recordingId: rec.id, boardAt: board, resortId: rec.resortId, liftId: lift, waitSec: wait,
+                            sendState: Settings.sendState(at: board))
+        }
+        let old = try LiftWait.filter(Column("recordingId") == rec.id).fetchAll(db)
+        for o in old where o.sendState != "sent" && !fresh.contains(where: { $0.boardAt == o.boardAt }) { try o.delete(db) }
+        for var n in fresh {
+            if let o = old.first(where: { $0.boardAt == n.boardAt }) {
+                if o.sendState == "sent" { continue }
+                n.sendState = o.sendState
+            }
+            try n.save(db)
+        }
+    }
 }

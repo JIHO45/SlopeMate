@@ -141,7 +141,7 @@ struct DatabaseTests {
             var p = point(rec, Date())
             try db.insert(&p)
             try db.queue.write { db in
-                for t in ["snow_rating", "lift_wait", "vehicle", "pass_resort", "season_pass", "home_resort"] { try db.execute(sql: "DROP TABLE \(t)") }
+                for t in ["recording_cache", "snow_rating", "lift_wait", "vehicle", "pass_resort", "season_pass", "home_resort"] { try db.execute(sql: "DROP TABLE \(t)") }
                 try db.execute(sql: "ALTER TABLE recording DROP COLUMN vehicleQueriedAt")
                 try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier != 'v1'")
             }

@@ -132,6 +132,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         }
         loadToday()
         refreshVehicle(rec)
+        refreshCaches()
     }
 
     /// 영업일 끝이 지난 기록은 마지막 위치점 시각으로 끝낸다(R49).
@@ -335,7 +336,12 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         do {
             todayRecordings = try db.recordings(since: BusinessDay.start(of: .now))
             earlierToday = try todayRecordings.filter { $0.id != recording?.id }
-                .map { RunDetector.detect(try db.points($0), vehicle: try db.vehicle($0), map: SlopeMap.cached(resortId: $0.resortId)) }
+                .map { rec in
+                    let map = SlopeMap.cached(resortId: rec.resortId)
+                    // 끝나지 않은 기록(S7 대기)은 저장된 결과가 없다
+                    return rec.endedAt == nil ? RunDetector.detect(try db.points(rec), vehicle: try db.vehicle(rec), map: map)
+                        : try db.cache(rec, map: map).summary
+                }
                 .reduce(RunDetector.Summary(), +)
         } catch {
             status = .failed("기록을 읽지 못했어요. \(error.localizedDescription)")
@@ -395,6 +401,23 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     func refreshVehicles() {
         if let rec = recording { refreshVehicle(rec) }
         for rec in (try? db.recordingsNeedingVehicle(now: .now)) ?? [] { refreshVehicle(rec) }
+        refreshCaches()
+    }
+
+    /// 결과가 없거나 낡은 끝난 기록을 백그라운드에서 다시 계산한다 (R50, 리프트 대기 표본 포함).
+    func refreshCaches() {
+        let db = db
+        Task.detached(priority: .utility) {
+            var maps: [String: SlopeMap?] = [:]
+            func map(_ id: String) -> SlopeMap? {
+                if let m = maps[id] { return m }
+                maps[id] = .some(SlopeMap.load(resortId: id))
+                return maps[id]!
+            }
+            for rec in (try? db.recordingsNeedingCache(osmStamp: { AppDatabase.osmStamp(map($0)) })) ?? [] {
+                try? db.refreshCache(rec, map: map(rec.resortId))
+            }
+        }
     }
 
     private func refreshVehicle(_ rec: Recording) {
@@ -406,6 +429,8 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             if self.recording?.id == rec.id {
                 self.vehicle = found
                 self.updateAlerts(force: true)
+            } else {
+                self.refreshCaches()
             }
             self.loadToday()
         }
