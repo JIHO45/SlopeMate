@@ -149,14 +149,16 @@ private struct SheetHeader: View {
             HStack(spacing: 12) {
                 Button(action: action) {
                     Image(systemName: back ? "chevron.left" : "xmark").font(.body.weight(.semibold))
+                        .dynamicTypeSize(...DynamicTypeSize.xxLarge) // 원 안에 머물게
                         .frame(width: 44, height: 44).glassCircle()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(back ? "뒤로" : "닫기")
-                Text(title).font(.headline).frame(maxWidth: .infinity).accessibilityAddTraits(.isHeader)
+                Text(title).font(.headline).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity).accessibilityAddTraits(.isHeader)
                 Color.clear.frame(width: 44, height: 1)
             }
             Text(subtitle).font(.subheadline).foregroundStyle(Color.secondaryText).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(Color.primaryText)
     }
@@ -262,6 +264,7 @@ struct ResortPickSheet: View {
     @State private var other: String?
     @State private var all: Bool
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(homes: [String], choose: @escaping (String) -> Void) {
         self.homes = homes
@@ -275,7 +278,8 @@ struct ResortPickSheet: View {
             if all { fullList } else { small }
         }
         .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 8)
-        .presentationDetents(all ? [.large] : [.height(smallHeight)])
+        // 아주 큰 글씨에서는 작은 시트에 다 들어가지 않으니 크게 연다
+        .presentationDetents(all || typeSize.isAccessibilitySize ? [.large] : [.height(smallHeight)])
         .presentationDragIndicator(.visible)
         .presentationBackground(Color.bg) // 유리 시트 뒤로 기록 시작 카드가 비쳐 글자가 묻힌다
     }
@@ -284,44 +288,50 @@ struct ResortPickSheet: View {
 
     private var small: some View {
         VStack(spacing: 12) {
-            SheetHeader(back: false, title: "어디서 타나요?", subtitle: "이번 기록을 남길 리조트를 선택해 주세요.") { dismiss() }
+            // 머리말·리조트·다른 리조트 찾기를 한 스크롤에 둔다(큰 글씨에서 서로 겹치지 않게). 시작 버튼은 아래에 남는다.
             ScrollView {
-                RowCard {
-                    ForEach(homes, id: \.self) { id in
-                        let r = Resort.all.first { $0.id == id }
-                        ResortRow(name: Resort.name(id), detail: id == Recorder.lastResortId ? "마지막으로 기록한 리조트" : r?.place ?? "",
-                                  selected: selected == id, mark: { CheckMark(on: selected == id) }) { selected = id }
+                VStack(spacing: 12) {
+                    SheetHeader(back: false, title: "어디서 타나요?", subtitle: "이번 기록을 남길 리조트를 선택해 주세요.") { dismiss() }
+                    RowCard {
+                        ForEach(homes, id: \.self) { id in
+                            let r = Resort.all.first { $0.id == id }
+                            ResortRow(name: Resort.name(id), detail: id == Recorder.lastResortId ? "마지막으로 기록한 리조트" : r?.place ?? "",
+                                      selected: selected == id, mark: { CheckMark(on: selected == id) }) { selected = id }
+                        }
                     }
+                    Color.rowDivider.frame(height: 1).padding(.top, 8)
+                    Button { all = true } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text("다른 리조트 찾기").font(.body.weight(.semibold)).foregroundStyle(Color.accentText)
+                                Text("이번 기록에만 적용돼요").font(.subheadline).foregroundStyle(Color.secondaryText)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.accentText)
+                        }
+                        .padding(.leading, 16).padding(.trailing, 8)
+                        .frame(minHeight: 56).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            Color.rowDivider.frame(height: 1).padding(.top, 8)
-            Button { all = true } label: {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("다른 리조트 찾기").font(.body.weight(.semibold)).foregroundStyle(Color.accentText)
-                        Text("이번 기록에만 적용돼요").font(.subheadline).foregroundStyle(Color.secondaryText)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.accentText)
-                }
-                .padding(.leading, 16).padding(.trailing, 8)
-                .frame(minHeight: 56).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
             BottomButton(title: selected.map { "\(Resort.name($0))에서 기록 시작" }) { selected.map(choose) }
         }
     }
 
     private var fullList: some View {
         VStack(spacing: 12) {
-            SheetHeader(back: !homes.isEmpty, title: "어디서 타나요?",
-                        subtitle: homes.isEmpty ? "자주 가는 리조트가 없어 전체 목록을 보여드려요" : "이번 기록에만 적용돼요") {
-                if homes.isEmpty { dismiss() } else { all = false; other = nil }
-            }
+            // 머리말도 목록과 함께 스크롤된다(큰 글씨에서 머리말이 목록 자리를 차지하지 않게)
             ScrollView {
-                RegionList(isSelected: { other == $0 }, tap: { other = $0 }) { CheckMark(on: $0) }
-                    .padding(.vertical, 4)
+                VStack(spacing: 12) {
+                    SheetHeader(back: !homes.isEmpty, title: "어디서 타나요?",
+                                subtitle: homes.isEmpty ? "자주 가는 리조트가 없어 전체 목록을 보여드려요" : "이번 기록에만 적용돼요") {
+                        if homes.isEmpty { dismiss() } else { all = false; other = nil }
+                    }
+                    RegionList(isSelected: { other == $0 }, tap: { other = $0 }) { CheckMark(on: $0) }
+                        .padding(.vertical, 4)
+                }
             }
             BottomButton(title: other.map { "\(Resort.name($0))에서 기록 시작" }) { other.map(choose) }
                 .padding(.top, 12)

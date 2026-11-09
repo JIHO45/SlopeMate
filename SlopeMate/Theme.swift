@@ -56,6 +56,10 @@ struct PrimaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.title3.weight(.bold))
             .foregroundStyle(Color.onAccent)
+            .multilineTextAlignment(.center)
+            // 큰 글씨에서는 두 줄까지 쓰고 그래도 넘치면 조금 줄인다(버튼 밖으로 넘치지 않게)
+            .lineLimit(2).minimumScaleFactor(0.6)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: 60)
             .padding(.horizontal, 20)
             .background(Color.accentFill.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 24))
