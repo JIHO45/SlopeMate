@@ -8,7 +8,7 @@ struct SlopeMateApp: App {
     var body: some Scene {
         WindowGroup {
             if let recorder = delegate.recorder {
-                ContentView(recorder: recorder)
+                RootView(recorder: recorder)
             } else {
                 ContentUnavailableView("기록 저장소를 열지 못했어요", systemImage: "externaldrive.badge.exclamationmark",
                                        description: Text("저장된 기록은 지우지 않았어요. 앱을 업데이트하거나 다시 실행해 주세요.\n\(delegate.dbError ?? "")"))
