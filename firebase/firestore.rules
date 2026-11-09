@@ -18,5 +18,22 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['display_name'])
         && validName(request.resource.data.display_name);
     }
+
+    // 크루 (R14, R15): 같은 크루 멤버만 읽는다. 쓰기는 서버 함수만. 나가거나 내보내지면 바로 못 읽는다.
+    function isMember(crewId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/crews/$(crewId)/members/$(request.auth.uid));
+    }
+    match /crews/{crewId} {
+      allow read: if isMember(crewId);
+      match /members/{memberId} {
+        allow read: if isMember(crewId);
+      }
+    }
+    // 내 크루 목록: collectionGroup('members') where uid == 내 uid
+    match /{path=**}/members/{memberId} {
+      allow read: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+    // invites는 클라이언트가 읽지 않는다(previewInvite 함수로만)
   }
 }
