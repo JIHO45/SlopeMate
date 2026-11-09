@@ -1,2 +1,5 @@
 .DS_Store
 xcuserdata/
+
+# Firebase 설정(공개 저장소에 올리지 않음)
+SlopeMate/GoogleService-Info.plist

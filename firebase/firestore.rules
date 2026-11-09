@@ -1,0 +1,22 @@
+rules_version = '2';
+// 보안 규칙 (05-design 6장). 여기에 없는 경로는 모두 막힌다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function validName(n) { return n is string && n.size() >= 1 && n.size() <= 20; }
+
+    // USER: 본인만 읽고 쓴다. 만 14세 확인 없이는 만들 수 없다(R20). 삭제 중이면 쓰기 거부(R13).
+    match /users/{uid} {
+      allow read: if request.auth.uid == uid;
+      allow create: if request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['display_name', 'age14_confirmed', 'deleting', 'created_at'])
+        && validName(request.resource.data.display_name)
+        && request.resource.data.age14_confirmed == true
+        && request.resource.data.deleting == false
+        && request.resource.data.created_at == request.time;
+      allow update: if request.auth.uid == uid
+        && resource.data.deleting == false
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['display_name'])
+        && validName(request.resource.data.display_name);
+    }
+  }
+}

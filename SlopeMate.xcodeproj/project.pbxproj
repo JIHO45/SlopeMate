@@ -11,6 +11,8 @@
 		D8AFCA1E30A1F3C00093CFE5 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D8AFC9E130A1F2D40093CFE5 /* WidgetKit.framework */; };
 		D8AFCA1F30A1F3C00093CFE5 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D8AFC9E330A1F2D40093CFE5 /* SwiftUI.framework */; };
 		D8AFCA2C30A1F3C10093CFE5 /* SlopeMateWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D8AFCA1D30A1F3C00093CFE5 /* SlopeMateWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		FB5A11002F00000000000004 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = FB5A11002F00000000000002 /* FirebaseAuth */; };
+		FB5A11002F00000000000005 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = FB5A11002F00000000000003 /* FirebaseFirestore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -130,6 +132,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				D84DF9012EDDC36A00205AA9 /* GRDB in Frameworks */,
+				FB5A11002F00000000000004 /* FirebaseAuth in Frameworks */,
+				FB5A11002F00000000000005 /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -216,6 +220,8 @@
 			name = SlopeMate;
 			packageProductDependencies = (
 				D84DF9032EDDC36A00205AA9 /* GRDB */,
+				FB5A11002F00000000000002 /* FirebaseAuth */,
+				FB5A11002F00000000000003 /* FirebaseFirestore */,
 			);
 			productName = SlopeMate;
 			productReference = D84DF8312EDDC36A00205AA9 /* SlopeMate.app */;
@@ -326,6 +332,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				D84DF9022EDDC36A00205AA9 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				FB5A11002F00000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D84DF8322EDDC36A00205AA9 /* Products */;
@@ -1007,6 +1014,14 @@
 				minimumVersion = 7.12.0;
 			};
 		};
+		FB5A11002F00000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 13.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1014,6 +1029,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D84DF9022EDDC36A00205AA9 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
 			productName = GRDB;
+		};
+		FB5A11002F00000000000002 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FB5A11002F00000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		FB5A11002F00000000000003 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FB5A11002F00000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
