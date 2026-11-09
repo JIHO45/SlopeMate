@@ -10,6 +10,11 @@ extension Color {
     static let secondaryText = Color(light: 0x4A636C, dark: 0x86A0A8) // 보조 글씨
     static let primaryText = Color(light: 0x111418, dark: 0xF4F8FA)
     static let stopRed = Color(light: 0xD93A3A, dark: 0xFF6B6B)
+    /// 카드 면과 테두리 (확정 시안 값: 밝게 흰 카드, 어둡게 #18252B)
+    static let card = Color(light: 0xFFFFFF, dark: 0x18252B)
+    static let cardBorder = Color(light: 0xC9D9DE, dark: 0x23404B)
+    /// 강조 면 위 글씨
+    static let onAccent = Color(light: 0x111418, dark: 0x0B161B)
     /// 세 탭 첫 화면 위쪽 페이드 시작색
     static let fadeTop = Color(light: 0xCDEAF0, dark: 0x153A43)
     /// 기록 중 화면 위쪽 페이드 시작색
@@ -30,5 +35,42 @@ struct FadeBackground: View {
         LinearGradient(stops: [.init(color: recording ? .fadeTopRecording : .fadeTop, location: 0), .init(color: .bg, location: 0.45)],
                        startPoint: .top, endPoint: .bottom)
             .ignoresSafeArea()
+    }
+}
+
+// MARK: 공통 부품 (07-visual-design 4장)
+
+extension View {
+    /// 요약 카드: 흰(어둡게 짙은) 면, 옅은 테두리, 둥근 모서리 24
+    func card(padding: CGFloat = 18) -> some View {
+        self.padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.card, in: RoundedRectangle(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.cardBorder))
+    }
+}
+
+/// 큰 버튼: 화면 폭, 60pt 이상, 강조 면. 기록 시작·종료 같은 화면의 주요 동작 하나에만.
+struct PrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.title3.weight(.bold))
+            .foregroundStyle(Color.onAccent)
+            .frame(maxWidth: .infinity, minHeight: 60)
+            .padding(.horizontal, 20)
+            .background(Color.accentFill.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 24))
+    }
+}
+
+/// 카드 머리의 둥근 아이콘 (48pt, 보조 면)
+struct IconCircle: View {
+    var systemName: String
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.title3)
+            .foregroundStyle(Color.accentText)
+            .frame(width: 48, height: 48)
+            .background(Color.surface, in: Circle())
+            .accessibilityHidden(true)
     }
 }

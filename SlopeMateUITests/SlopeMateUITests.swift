@@ -23,12 +23,17 @@ final class SlopeMateUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
+    func testSeasonPassManagementFromRecordTab() throws {
         // UI tests must launch the application that they test.
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        let tabs = app.tabBars
+        tabs.buttons["시즌"].tap()
+        app.buttons["시즌권 관리"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["시즌권"].waitForExistence(timeout: 5))
+        tabs.buttons["기록"].tap()
+        XCTAssertTrue(tabs.buttons["기록"].isSelected)
     }
 
     @MainActor

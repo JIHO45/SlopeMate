@@ -1,0 +1,245 @@
+import SwiftUI
+
+/// S6 하루 기록 (B4 목록형 v3, 하강 0회 v1). B5가 지도·재생·공유를 더하고, 지도를 못 그릴 때 이 목록형을 쓴다.
+/// 홈의 최근 기록 카드(B2)와 기록 목록(S8)이 이 화면을 연다: `DayDetailView(db:day:)`.
+struct DayDetailView: View {
+    let db: AppDatabase
+    let day: Stats.Day
+    @State private var gaps: [Gap] = []
+    @State private var ratings: [Int: SnowRating] = [:]
+    @State private var span: (Date, Date)?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if day.runs.isEmpty { noRuns } else { summary; groups }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+        }
+        .background(Color.bg)
+        .navigationTitle("\(RecordFormat.monthDay(day.date)) · \(Resort.name(day.resortId))")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
+        .task { load() }
+    }
+
+    private func load() {
+        guard let recs = try? db.recordings(of: day) else { return }
+        gaps = ((try? db.gaps(recs)) ?? []).filter { $0.toT! >= $0.fromT.addingTimeInterval(60) } // ponytail: 1분 미만 끊김은 HH:mm로 보이지 않아 뺌
+        let all = recs.flatMap { (try? db.snowRatings($0)) ?? [] }
+        ratings = SnowPrompt.attach(all, to: day.runs)
+        if let first = recs.first?.startedAt, let last = recs.compactMap(\.endedAt).max() { span = (first, last) }
+    }
+
+    // MARK: 합계
+
+    private var summary: some View {
+        let t = Stats.totals([day])
+        return VStack(alignment: .leading, spacing: 4) {
+            (Text("\(t.runs)").font(.system(size: 34, weight: .bold)) + Text("회").font(.title3.weight(.bold)))
+                .foregroundStyle(Color.accentText).monospacedDigit()
+            Text("\(RecordFormat.km(t.distance)) · 고도차 \(Int(t.drop.rounded()).formatted())m · 최고 \(RecordFormat.kmh(t.maxSpeed))")
+                .font(.subheadline).foregroundStyle(Color.secondaryText)
+            if day.usedGPSAltitude {
+                Label("고도 정확도 낮음", systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .labelStyle(TagLabelStyle())
+                    .padding(.vertical, 3).padding(.leading, 8).padding(.trailing, 10)
+                    .background(Color.card, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.cardBorder))
+                    .padding(.top, 6)
+                    .accessibilityHint("동작 권한이 없거나 기압계를 쓸 수 없어 GPS 고도로 판정했어요")
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: 20))
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: 세션별 하강
+
+    private enum Row: Identifiable {
+        case run(Int, RunDetector.Run)
+        case gap(Gap)
+        var id: String {
+            switch self {
+            case .run(let i, _): "r\(i)"
+            case .gap(let g): "g\(g.fromT.timeIntervalSince1970)"
+            }
+        }
+        var t: Date {
+            switch self {
+            case .run(_, let r): r.start
+            case .gap(let g): g.fromT
+            }
+        }
+    }
+
+    /// 세션 순서대로 묶고, 기록 없음 행은 바로 앞 하강의 묶음에 시각 순으로 끼운다. 세션을 나누지 않으면 머리줄 없이 한 묶음.
+    private var sections: [(kind: SessionKind?, runs: [RunDetector.Run], rows: [Row])] {
+        let indexed = Array(day.runs.enumerated())
+        let kinds = indexed.map { RecordFormat.session($0.element, resortId: day.resortId) }
+        var out: [(kind: SessionKind?, runs: [RunDetector.Run], rows: [Row])] = []
+        let order: [SessionKind?] = kinds.contains { $0 != nil } ? RecordFormat.sessionOrder.map { $0 } : [nil]
+        for k in order {
+            let mine = indexed.filter { kinds[$0.offset] == k || (k == .unclassified && kinds[$0.offset] == nil) }
+            guard !mine.isEmpty else { continue }
+            out.append((k, mine.map(\.element), mine.map { .run($0.offset, $0.element) }))
+        }
+        for g in gaps {
+            // 앞 하강이 있는 묶음, 없으면 첫 묶음
+            let i = out.lastIndex { s in s.runs.contains { $0.start <= g.fromT } } ?? 0
+            guard out.indices.contains(i) else { continue }
+            out[i].rows.append(.gap(g))
+            out[i].rows.sort { $0.t < $1.t }
+        }
+        return out
+    }
+
+    private var groups: some View {
+        ForEach(Array(sections.enumerated()), id: \.offset) { _, s in
+            if let k = s.kind, let first = s.runs.first, let last = s.runs.map(\.end).max() {
+                HStack {
+                    Text("\(RecordFormat.sessionName(k)) \(RecordFormat.time(first.start))~\(RecordFormat.time(last))").fontWeight(.semibold)
+                    Spacer()
+                    Text("\(s.runs.count)회").foregroundStyle(Color.secondaryText)
+                }
+                .font(.subheadline).monospacedDigit()
+                .padding(.horizontal, 4).padding(.top, 4)
+                .accessibilityAddTraits(.isHeader)
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(s.rows.enumerated()), id: \.element.id) { i, row in
+                    if i > 0 { Divider().overlay(Color.rowSeparator) }
+                    switch row {
+                    case .run(let n, let r): runRow(n, r)
+                    case .gap(let g): gapRow(g)
+                    }
+                }
+            }
+            .background(Color.card, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.cardBorder))
+        }
+    }
+
+    private func runRow(_ i: Int, _ r: RunDetector.Run) -> some View {
+        let slope = SlopeNames.isShown(day.resortId) ? r.slopeId.flatMap { id in SlopeMap.cached(resortId: day.resortId)?.slopes.first { $0.id == id } } : nil
+        return HStack(spacing: 12) {
+            Text(RecordFormat.time(r.start)).foregroundStyle(Color.secondaryText)
+            HStack(spacing: 8) {
+                if let c = slope?.difficulty.flatMap({ Self.difficultyColor($0) }) {
+                    Circle().fill(c).frame(width: 10, height: 10).accessibilityHidden(true)
+                }
+                Text(slope?.name ?? "하강 \(i + 1)").lineLimit(1)
+                if let rating = ratings[i] {
+                    Text(Self.snowName(rating.value))
+                        .font(.caption)
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(Color.surface, in: Capsule())
+                        .fixedSize()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(RecordFormat.km(r.distance))
+            Text(RecordFormat.kmh(r.maxSpeed)).foregroundStyle(Color.secondaryText).frame(minWidth: 64, alignment: .trailing)
+        }
+        .font(.subheadline).monospacedDigit()
+        .foregroundStyle(Color.primaryText)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 52)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func gapRow(_ g: Gap) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "circle.dashed").accessibilityHidden(true)
+            Text("기록 없음 \(RecordFormat.time(g.fromT))~\(RecordFormat.time(g.toT!))")
+            Spacer(minLength: 0)
+        }
+        .font(.subheadline).monospacedDigit()
+        .foregroundStyle(Color.secondaryText)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 52)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: 하강 0회 (B0-추가 v1)
+
+    private var noRuns: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("하강이 기록되지 않았어요").font(.title2.weight(.bold))
+                if let span {
+                    Text("\(RecordFormat.time(span.0))~\(RecordFormat.time(span.1)) 기록").font(.subheadline).monospacedDigit().foregroundStyle(Color.secondaryText)
+                }
+            }
+            .padding(.leading, 4)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("이럴 때 생겨요").font(.subheadline.weight(.semibold)).padding(.leading, 4).accessibilityAddTraits(.isHeader)
+                VStack(spacing: 0) {
+                    ForEach(Array([("building.2", "실내에 있었어요"),
+                                   ("antenna.radiowaves.left.and.right.slash", "GPS 신호가 약했어요"),
+                                   ("cablecar", "리프트만 탔어요")].enumerated()), id: \.offset) { i, c in
+                        if i > 0 { Divider().overlay(Color.rowSeparator) }
+                        HStack(spacing: 12) {
+                            Image(systemName: c.0).foregroundStyle(Color.secondaryText).frame(width: 24).accessibilityHidden(true)
+                            Text(c.1)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.subheadline)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 48)
+                    }
+                }
+                .background(Color.card, in: RoundedRectangle(cornerRadius: 20))
+                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.cardBorder))
+            }
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "info.circle").foregroundStyle(Color.accentText).accessibilityHidden(true)
+                Text("이 기록은 방문일로 세지 않아요.")
+                Spacer(minLength: 0)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .background(Color.surface, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .foregroundStyle(Color.primaryText)
+    }
+
+    // MARK: 값
+
+    /// 07-visual-design 2장 슬로프 난이도. OSM piste:difficulty 값
+    static func difficultyColor(_ d: String) -> Color? {
+        switch d {
+        case "novice", "easy": Color(light: 0x2E9E4F, dark: 0x2E9E4F)
+        case "intermediate": Color(light: 0x3A4FB8, dark: 0x3A4FB8)
+        case "advanced", "expert", "freeride", "extreme": Color(light: 0xD93A3A, dark: 0xD93A3A)
+        default: nil
+        }
+    }
+
+    static func snowName(_ v: SnowRating.Value) -> String {
+        switch v {
+        case .ice: "아이스"
+        case .ok: "적당함"
+        case .slush: "슬러시"
+        }
+    }
+}
+
+private struct TagLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.icon.foregroundStyle(Color(light: 0xA87400, dark: 0xF2B92E))
+            configuration.title.foregroundStyle(Color.primaryText)
+        }
+    }
+}
+
+private extension Color {
+    /// 카드 안 행 구분선 (확정 시안 #E3ECEF / #23404B)
+    static let rowSeparator = Color(light: 0xE3ECEF, dark: 0x23404B)
+}

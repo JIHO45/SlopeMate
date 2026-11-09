@@ -19,7 +19,7 @@ struct RootView: View {
         TabView(selection: $tab) {
             page(ContentView(recorder: recorder))
                 .tabItem { Label("기록", systemImage: "figure.skiing.downhill") }.tag(Tab.record)
-            page(TabPlaceholder(title: "시즌"))
+            page(SeasonView(db: recorder.db))
                 .tabItem { Label("시즌", systemImage: "calendar") }.tag(Tab.season)
             page(TabPlaceholder(title: "크루"))
                 .tabItem { Label("크루", systemImage: "person.3") }.tag(Tab.crew)
