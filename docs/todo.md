@@ -56,6 +56,7 @@
 - [x] 리프트 대기 측정: 상승 구간 모델, OSM 리프트 매칭, 탑승장 반경 체류 시간 (R10) → `RunDetector.Ascent`, `LiftWait` (2026-11-09)
 - [x] 설질 평가 저장: 하강별 답, 30분 뒤 닫힘, 보낼 상태(pending/sent/dropped) (R11, R12 동의 시각) → `SnowRating`, `SnowPrompt`, `Settings` (2026-11-09)
 - [x] (사용자) Apple Developer에서 SlopeMate App ID에 WeatherKit 기능 켜기, Xcode 엔타이틀먼트 추가 — 시뮬레이터에서 리조트 3곳 실제 조회 확인 (R33) (2026-11-09)
+- [x] 앱 기본 언어를 한국어로: 시스템 문구(날씨 상태 등)가 한국어로 나오게 (R33) (2026-11-09)
 - [x] WeatherKit 날씨 조회·캐시: 홈 리조트별 오늘·시간대별·7일, 실패·데이터 없음 처리 (R33) → `Weather`, `WeatherCache` — 실제 조회는 WeatherKit 켠 뒤 기기 확인 (2026-11-09)
 - [x] 예상 설질 첫 규칙: 기온 변화·습도·바람, 계산 근거 문구 (R39) → `SnowForecast` (2026-11-09)
 - [x] 슬로프 이름 표시 켜고 끄기: 리조트별 설정 값 읽기(지금은 모두 꺼짐), 서버 파일은 서버 기능에서 (R9) → `SlopeNames` (2026-11-09)

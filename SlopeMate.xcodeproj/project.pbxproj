@@ -206,10 +206,10 @@
 				};
 			};
 			buildConfigurationList = D84DF82C2EDDC36A00205AA9 /* Build configuration list for PBXProject "SlopeMate" */;
-			developmentRegion = en;
+			developmentRegion = ko;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				en,
+				ko,
 				Base,
 			);
 			mainGroup = D84DF8282EDDC36A00205AA9;
