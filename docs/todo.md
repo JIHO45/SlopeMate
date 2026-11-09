@@ -54,7 +54,7 @@
 - [x] 홈 리조트 여러 개: 저장과 기록 시작 기본값 로직 (R1) (2026-11-08)
 - [ ] 하루 경로 단순화·저장: 기록 종료 때 계산해 판정 기준 버전과 함께 저장, 기준이 바뀌면 다시 계산 (R50, K)
 - [x] 리프트 대기 측정: 상승 구간 모델, OSM 리프트 매칭, 탑승장 반경 체류 시간 (R10) → `RunDetector.Ascent`, `LiftWait` (2026-11-09)
-- [ ] 설질 평가 저장: 하강별 답, 30분 뒤 닫힘, 보낼 상태(pending/sent/dropped) (R11)
+- [x] 설질 평가 저장: 하강별 답, 30분 뒤 닫힘, 보낼 상태(pending/sent/dropped) (R11, R12 동의 시각) → `SnowRating`, `SnowPrompt`, `Settings` (2026-11-09)
 - [ ] (사용자) Apple Developer에서 SlopeMate App ID에 WeatherKit 기능 켜기 — WeatherKit 작업 전에 (R33)
 - [ ] WeatherKit 날씨 조회·캐시: 홈 리조트별 오늘·시간대별·7일, 실패·데이터 없음 처리 (R33)
 - [ ] 예상 설질 첫 규칙: 기온 변화·습도·바람, 계산 근거 문구 (R39)

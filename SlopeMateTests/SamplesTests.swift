@@ -81,4 +81,71 @@ struct SamplesTests {
         #expect(s.ascents.count == 3)
         #expect(s.ascents.allSatisfy { $0.liftId == nil && abs($0.rise - 300) < 5 })
     }
+
+    // MARK: 설질 (R11)
+
+    @Test func promptTargetsLastIdentifiedRun() throws {
+        let tr = Self.track(queue: 60)
+        let s = RunDetector.detect(tr.pts)
+        let run = try #require(s.runs.last)
+        let map = try Self.map()
+        #expect(SnowPrompt.target(s, points: tr.pts, map: map, now: run.end, enabled: true)?.slopeId == "S")
+        #expect(SnowPrompt.target(s, points: tr.pts, map: map, now: run.end + 31 * 60, enabled: true) == nil)
+        #expect(SnowPrompt.target(s, points: tr.pts, map: map, now: run.end, enabled: false) == nil)
+        #expect(SnowPrompt.target(s, points: tr.pts, map: nil, now: run.end, enabled: true) == nil)
+    }
+
+    @Test func attachByLargestUniqueOverlap() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        func run(_ a: Double, _ b: Double) -> RunDetector.Run {
+            .init(start: t0 + a, end: t0 + b, distance: 0, drop: 0, maxSpeed: 0, avgSpeed: 0, movingTime: 0)
+        }
+        func rating(_ a: Double, _ b: Double) -> SnowRating {
+            .init(recordingId: UUID(), runStart: t0 + a, runEnd: t0 + b, resortId: "r", slopeId: "s", value: .ice, ratedAt: t0 + b, sendState: "dropped")
+        }
+        #expect(SnowPrompt.attach([rating(0, 100)], to: [run(0, 30), run(40, 100)]).keys.sorted() == [1])
+        // 차량 재판정으로 같은 길이 둘로 나뉘면 숨긴다
+        #expect(SnowPrompt.attach([rating(0, 100)], to: [run(0, 50), run(50, 100)]).isEmpty)
+        #expect(SnowPrompt.attach([rating(0, 100)], to: [run(200, 300)]).isEmpty)
+    }
+
+    // MARK: 저장·동의 (R11, R12)
+
+    let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+
+    func db() throws -> AppDatabase {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return try AppDatabase(path: dir.appending(path: "t.sqlite").path)
+    }
+
+    @Test func sendStateFollowsConsentTime() {
+        let t = Date(timeIntervalSince1970: 1000)
+        #expect(Settings.sendState(at: t, consentSince: nil) == "dropped")
+        #expect(Settings.sendState(at: t, consentSince: t - 1) == "pending")
+        #expect(Settings.sendState(at: t, consentSince: t + 1) == "dropped")
+    }
+
+    @Test func rateWindowReplaceAndConsent() throws {
+        let db = try db()
+        try Settings.setConsent(false, db: db)
+        let rec = try db.createRecording(resortId: "test", at: Date(timeIntervalSince1970: 0))
+        let run = RunDetector.Run(start: Date(timeIntervalSince1970: 100), end: Date(timeIntervalSince1970: 200), distance: 0, drop: 0,
+                                  maxSpeed: 0, avgSpeed: 0, movingTime: 0, slopeId: "S")
+        #expect(try db.rate(rec, run: run, value: .ice, now: run.end + 10))
+        #expect(try db.snowRatings(rec).map(\.sendState) == ["dropped"])
+        // 동의를 켠 뒤 다시 답하면 새 표본
+        try Settings.setConsent(true, db: db, now: run.end + 20)
+        #expect(try db.rate(rec, run: run, value: .slush, now: run.end + 30))
+        #expect(try db.snowRatings(rec).map(\.value) == [.slush])
+        #expect(try db.snowRatings(rec).map(\.sendState) == ["pending"])
+        // 30분 지나면 받지 않는다
+        #expect(try !db.rate(rec, run: run, value: .ok, now: run.end + 31 * 60))
+        // 보낸 답은 바꾸지 않는다
+        try db.queue.write { try $0.execute(sql: "UPDATE snow_rating SET sendState = 'sent'") }
+        #expect(try !db.rate(rec, run: run, value: .ok, now: run.end + 40))
+        // 끄면 미전송은 버림
+        try db.queue.write { try $0.execute(sql: "UPDATE snow_rating SET sendState = 'pending'") }
+        try Settings.setConsent(false, db: db)
+        #expect(try db.snowRatings(rec).map(\.sendState) == ["dropped"])
+    }
 }

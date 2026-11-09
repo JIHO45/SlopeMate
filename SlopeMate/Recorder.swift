@@ -41,6 +41,18 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     /// 오늘(영업일) 합계: 끝난 기록 + 진행 중 기록
     var today: RunDetector.Summary { earlierToday + RunDetector.detect(points, vehicle: currentVehicle()) }
 
+    /// 설질 질문 칸에 물을 하강 (R11). 진행 중 기록만 본다.
+    var snowTarget: RunDetector.Run? {
+        guard let rec = recording else { return nil }
+        return SnowPrompt.target(RunDetector.detect(points, vehicle: currentVehicle()), points: points,
+                                 map: SlopeMap.cached(resortId: rec.resortId), now: .now)
+    }
+
+    func rateSnow(_ value: SnowRating.Value) {
+        guard let rec = recording, let run = snowTarget else { return }
+        _ = try? db.rate(rec, run: run, value: value, now: .now)
+    }
+
     /// 저장된 차량 구간 + 지금 이어지는 차량 이동
     private func currentVehicle(now: Date = .now) -> [DateInterval] {
         vehicle + (vehicleSince.map { [DateInterval(start: $0, end: max($0, now))] } ?? [])

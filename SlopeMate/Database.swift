@@ -185,6 +185,19 @@ nonisolated final class AppDatabase: Sendable {
                 t.primaryKey(["recordingId", "boardAt"])
             }
         }
+        m.registerMigration("v6") { db in
+            try db.create(table: "snow_rating") { t in
+                t.column("recordingId", .blob).notNull().references("recording", onDelete: .cascade)
+                t.column("runStart", .datetime).notNull()
+                t.column("runEnd", .datetime).notNull()
+                t.column("resortId", .text).notNull()
+                t.column("slopeId", .text).notNull()
+                t.column("value", .text).notNull()
+                t.column("ratedAt", .datetime).notNull()
+                t.column("sendState", .text).notNull().indexed()
+                t.primaryKey(["recordingId", "runStart"])
+            }
+        }
         return m
     }
 
