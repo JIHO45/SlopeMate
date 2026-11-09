@@ -19,6 +19,12 @@ struct RootView: View {
             }
         }
         .fullScreenCover(isPresented: $setup) { HomeSetupView(db: recorder.db) { setup = false } }
+        // Live Activity를 누르면 기록 중 화면(S5) (R23)
+        .onOpenURL { url in
+            guard url == RecordingActivityAttributes.url, recorder.recording != nil else { return }
+            tab = .record
+            showRecording = true
+        }
     }
 
     private var tabs: some View {

@@ -47,6 +47,9 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     /// 이번 시작 시도에서 동작 및 피트니스를 이미 물었다(응답이 이상해도 다시 묻지 않는다)
     @ObservationIgnored private var motionAsked = false
     @ObservationIgnored private var lastAlertCheck = Date.distantPast
+    /// Live Activity (R23)
+    @ObservationIgnored private let live = LiveRecording()
+    @ObservationIgnored private var lastLiveCheck = Date.distantPast
 
     /// 오늘(영업일) 합계: 끝난 기록 + 진행 중 기록
     var today: RunDetector.Summary { earlierToday + RunDetector.detect(points, vehicle: currentVehicle()) }
@@ -166,6 +169,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
 
     /// 기록이 끝난 뒤 정리: 알림을 지우고, 차량 구간을 조회한다(활동 기록이 늦게 들어오면 다음 실행 때 다시 조회).
     private func finished(_ rec: Recording) {
+        live.end(recordingId: rec.id, recording?.id == rec.id ? liveState() : nil)
         ForgottenStop.scheduleIdle(at: nil)
         ForgottenStop.setFarSent(rec, nil)
         ForgottenStop.setIdleDeadline(rec, nil)
@@ -246,6 +250,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             if let b = authProblem() ?? (manager.authorizationStatus == .notDetermined ? .denied : nil) {
                 try db.openGap(rec, reason: "permission", at: now)
                 status = .paused(b)
+                showLive()
                 return
             }
             seq = try db.restart(rec, reason: reason, at: now)
@@ -292,6 +297,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             }
         }
         status = .recording
+        showLive()
         updates = Task { [weak self] in
             do {
                 for try await update in CLLocationUpdate.liveUpdates(.fitness) {
@@ -332,8 +338,13 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             try db.insert(&p)
             points.append(p)
             updateAlerts()
+            if loc.timestamp.timeIntervalSince(lastLiveCheck) >= 10, let s = liveState() {
+                lastLiveCheck = loc.timestamp
+                live.update(s)
+            }
         } catch {
             stopUpdates()
+            live.end(recordingId: rec.id, liveState(stopped: "저장 공간이 부족해 기록이 멈췄어요. 앱을 열어 확인해 주세요"))
             do { try db.end(rec, at: .now, reason: "storage") } catch {
                 // 끝난 표시도 못 남겼으면 다음 실행 때 자동으로 이어가지 않게 표시해 둔다
                 UserDefaults.standard.set(rec.id.uuidString, forKey: Self.storageFailedKey)
@@ -372,6 +383,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
                 stopUpdates()
                 try db.openGap(rec, reason: "permission", at: .now)
                 status = .paused(b)
+                showLive()
             case (.paused, nil):
                 seq = try db.restart(rec, reason: "permission", at: .now)
                 beginUpdates()
@@ -451,7 +463,30 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             if pendingStart != nil { blocked = authProblem() }
             startPending()
         }
+        // 8시간이 지났거나 꺼져 있던 카드를 다시 띄운다(앱이 앞에 있을 때만 된다)
+        if recording != nil { showLive(renew: true) }
         refreshVehicles()
+    }
+
+    // MARK: Live Activity (R23)
+
+    private func liveState(stopped: String? = nil) -> LiveRecording.State? {
+        guard let rec = recording else { return nil }
+        let t = today
+        return .init(startedAt: rec.startedAt, runs: t.runs.count, distance: t.distance, stopped: stopped)
+    }
+
+    private func showLive(renew: Bool = false) {
+        guard let rec = recording else { return }
+        var stopped: String?
+        if case .paused(let b) = status {
+            stopped = switch b {
+            case .denied: "위치 권한이 꺼졌어요. 앱을 열어 다시 켜 주세요"
+            case .reducedAccuracy: "정확한 위치가 꺼졌어요. 앱을 열어 다시 켜 주세요"
+            case .servicesOff: "위치 서비스가 꺼졌어요. 설정에서 다시 켜 주세요"
+            }
+        }
+        if let s = liveState(stopped: stopped) { live.show(recordingId: rec.id, resortName: Resort.name(rec.resortId), s, renew: renew) }
     }
 
     /// 진행 중 기록과, 다시 조회할 끝난 기록의 차량 구간을 조회한다.

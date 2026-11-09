@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		D84DF9012EDDC36A00205AA9 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = D84DF9032EDDC36A00205AA9 /* GRDB */; };
+		D8AFCA1E30A1F3C00093CFE5 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D8AFC9E130A1F2D40093CFE5 /* WidgetKit.framework */; };
+		D8AFCA1F30A1F3C00093CFE5 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D8AFC9E330A1F2D40093CFE5 /* SwiftUI.framework */; };
+		D8AFCA2C30A1F3C10093CFE5 /* SlopeMateWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D8AFCA1D30A1F3C00093CFE5 /* SlopeMateWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,12 +28,36 @@
 			remoteGlobalIDString = D84DF8302EDDC36A00205AA9;
 			remoteInfo = SlopeMate;
 		};
+		D8AFCA2A30A1F3C10093CFE5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D84DF8292EDDC36A00205AA9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D8AFCA1C30A1F3C00093CFE5;
+			remoteInfo = SlopeMateWidgetExtension;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D8AFC9F630A1F2D50093CFE5 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				D8AFCA2C30A1F3C10093CFE5 /* SlopeMateWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		D84DF8312EDDC36A00205AA9 /* SlopeMate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SlopeMate.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D84DF83E2EDDC36C00205AA9 /* SlopeMateTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SlopeMateTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D84DF8482EDDC36C00205AA9 /* SlopeMateUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SlopeMateUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D8AFC9E130A1F2D40093CFE5 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		D8AFC9E330A1F2D40093CFE5 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		D8AFCA1D30A1F3C00093CFE5 /* SlopeMateWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SlopeMateWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -41,6 +68,20 @@
 			);
 			target = D84DF8302EDDC36A00205AA9 /* SlopeMate */;
 		};
+		D8AFCA3130A1F3C10093CFE5 /* Exceptions for "SlopeMateWidget" folder in "SlopeMateWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D8AFCA1C30A1F3C00093CFE5 /* SlopeMateWidgetExtension */;
+		};
+		D8AFCAF130A1F9000093CFE5 /* Exceptions for "SlopeMate" folder in "SlopeMateWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				RecordingActivityAttributes.swift,
+			);
+			target = D8AFCA1C30A1F3C00093CFE5 /* SlopeMateWidgetExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -48,6 +89,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				D84DF8702EDDCA0100205AA9 /* Exceptions for "SlopeMate" folder in "SlopeMate" target */,
+				D8AFCAF130A1F9000093CFE5 /* Exceptions for "SlopeMate" folder in "SlopeMateWidgetExtension" target */,
 			);
 			path = SlopeMate;
 			sourceTree = "<group>";
@@ -60,6 +102,24 @@
 		D84DF84B2EDDC36C00205AA9 /* SlopeMateUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = SlopeMateUITests;
+			sourceTree = "<group>";
+		};
+		D8AFC9E530A1F2D40093CFE5 /* SlopeMateWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SlopeMateWidget;
+			sourceTree = "<group>";
+		};
+		D8AFCA0330A1F2F90093CFE5 /* SlopeMateWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SlopeMateWidget;
+			sourceTree = "<group>";
+		};
+		D8AFCA2030A1F3C00093CFE5 /* SlopeMateWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D8AFCA3130A1F3C10093CFE5 /* Exceptions for "SlopeMateWidget" folder in "SlopeMateWidgetExtension" target */,
+			);
+			path = SlopeMateWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -87,6 +147,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D8AFCA1A30A1F3C00093CFE5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D8AFCA1F30A1F3C00093CFE5 /* SwiftUI.framework in Frameworks */,
+				D8AFCA1E30A1F3C00093CFE5 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -96,6 +165,10 @@
 				D84DF8332EDDC36A00205AA9 /* SlopeMate */,
 				D84DF8412EDDC36C00205AA9 /* SlopeMateTests */,
 				D84DF84B2EDDC36C00205AA9 /* SlopeMateUITests */,
+				D8AFC9E530A1F2D40093CFE5 /* SlopeMateWidget */,
+				D8AFCA0330A1F2F90093CFE5 /* SlopeMateWidget */,
+				D8AFCA2030A1F3C00093CFE5 /* SlopeMateWidget */,
+				D8AFC9E030A1F2D40093CFE5 /* Frameworks */,
 				D84DF8322EDDC36A00205AA9 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -106,8 +179,18 @@
 				D84DF8312EDDC36A00205AA9 /* SlopeMate.app */,
 				D84DF83E2EDDC36C00205AA9 /* SlopeMateTests.xctest */,
 				D84DF8482EDDC36C00205AA9 /* SlopeMateUITests.xctest */,
+				D8AFCA1D30A1F3C00093CFE5 /* SlopeMateWidgetExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		D8AFC9E030A1F2D40093CFE5 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				D8AFC9E130A1F2D40093CFE5 /* WidgetKit.framework */,
+				D8AFC9E330A1F2D40093CFE5 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -120,10 +203,12 @@
 				D84DF82D2EDDC36A00205AA9 /* Sources */,
 				D84DF82E2EDDC36A00205AA9 /* Frameworks */,
 				D84DF82F2EDDC36A00205AA9 /* Resources */,
+				D8AFC9F630A1F2D50093CFE5 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D8AFCA2B30A1F3C10093CFE5 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				D84DF8332EDDC36A00205AA9 /* SlopeMate */,
@@ -182,6 +267,28 @@
 			productReference = D84DF8482EDDC36C00205AA9 /* SlopeMateUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		D8AFCA1C30A1F3C00093CFE5 /* SlopeMateWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D8AFCA2D30A1F3C10093CFE5 /* Build configuration list for PBXNativeTarget "SlopeMateWidgetExtension" */;
+			buildPhases = (
+				D8AFCA1930A1F3C00093CFE5 /* Sources */,
+				D8AFCA1A30A1F3C00093CFE5 /* Frameworks */,
+				D8AFCA1B30A1F3C00093CFE5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D8AFCA2030A1F3C00093CFE5 /* SlopeMateWidget */,
+			);
+			name = SlopeMateWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = SlopeMateWidgetExtension;
+			productReference = D8AFCA1D30A1F3C00093CFE5 /* SlopeMateWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -189,7 +296,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2610;
+				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
 					D84DF8302EDDC36A00205AA9 = {
@@ -202,6 +309,9 @@
 					D84DF8472EDDC36C00205AA9 = {
 						CreatedOnToolsVersion = 26.1;
 						TestTargetID = D84DF8302EDDC36A00205AA9;
+					};
+					D8AFCA1C30A1F3C00093CFE5 = {
+						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
@@ -225,6 +335,7 @@
 				D84DF8302EDDC36A00205AA9 /* SlopeMate */,
 				D84DF83D2EDDC36C00205AA9 /* SlopeMateTests */,
 				D84DF8472EDDC36C00205AA9 /* SlopeMateUITests */,
+				D8AFCA1C30A1F3C00093CFE5 /* SlopeMateWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -245,6 +356,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		D84DF8462EDDC36C00205AA9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D8AFCA1B30A1F3C00093CFE5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -275,6 +393,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D8AFCA1930A1F3C00093CFE5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -287,6 +412,11 @@
 			isa = PBXTargetDependency;
 			target = D84DF8302EDDC36A00205AA9 /* SlopeMate */;
 			targetProxy = D84DF8492EDDC36C00205AA9 /* PBXContainerItemProxy */;
+		};
+		D8AFCA2B30A1F3C10093CFE5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D8AFCA1C30A1F3C00093CFE5 /* SlopeMateWidgetExtension */;
+			targetProxy = D8AFCA2A30A1F3C10093CFE5 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -481,6 +611,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SlopeMate/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "스키장에서 하강 횟수와 거리를 기록하려면 위치가 필요해요. 위치 기록은 이 iPhone에만 저장되고 SlopeMate 서버로 보내지 않아요.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "기압계로 고도를 재면 리프트와 하강을 더 정확히 구분할 수 있어요. 고도 기록도 이 iPhone에만 저장돼요.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -519,6 +653,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SlopeMate/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "스키장에서 하강 횟수와 거리를 기록하려면 위치가 필요해요. 위치 기록은 이 iPhone에만 저장되고 SlopeMate 서버로 보내지 않아요.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "기압계로 고도를 재면 리프트와 하강을 더 정확히 구분할 수 있어요. 고도 기록도 이 iPhone에만 저장돼요.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -556,6 +694,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SlopeMate/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "스키장에서 하강 횟수와 거리를 기록하려면 위치가 필요해요. 위치 기록은 이 iPhone에만 저장되고 SlopeMate 서버로 보내지 않아요.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "기압계로 고도를 재면 리프트와 하강을 더 정확히 구분할 수 있어요. 고도 기록도 이 iPhone에만 저장돼요.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -708,6 +850,99 @@
 			};
 			name = TestFlight;
 		};
+		D8AFCA2E30A1F3C10093CFE5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CH7CDR7288;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SlopeMateWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SlopeMateWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Joe.SlopeMate.SlopeMateWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D8AFCA2F30A1F3C10093CFE5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CH7CDR7288;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SlopeMateWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SlopeMateWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Joe.SlopeMate.SlopeMateWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D8AFCA3030A1F3C10093CFE5 /* TestFlight */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CH7CDR7288;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SlopeMateWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SlopeMateWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Joe.SlopeMate.SlopeMateWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = TestFlight;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -747,6 +982,16 @@
 				D84DF8592EDDC36C00205AA9 /* Debug */,
 				D84DF85A2EDDC36C00205AA9 /* Release */,
 				D84DF85A2EDDC36C00205AB1 /* TestFlight */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D8AFCA2D30A1F3C10093CFE5 /* Build configuration list for PBXNativeTarget "SlopeMateWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D8AFCA2E30A1F3C10093CFE5 /* Debug */,
+				D8AFCA2F30A1F3C10093CFE5 /* Release */,
+				D8AFCA3030A1F3C10093CFE5 /* TestFlight */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
