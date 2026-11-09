@@ -117,9 +117,13 @@
     - [x] users 보안 규칙 배포(`firebase deploy --only firestore:rules`) (2026-11-10) — 실기기 가입 확인은 "실기기 확인" 묶음
     - [ ] S11 "링크로 참여"는 초대 링크 단계에서
 - [ ] `GoogleService-Info.plist` 공개 저장소에 올리지 않기(.gitignore), API 키를 iOS 번들 ID로 제한 (공개 저장소)
-- [ ] 크루 함수: 생성·가입·탈퇴·추방·크루장 넘기기·초대 링크 교체, 50명·5개 상한 (R14)
+- [ ] 크루 함수: 생성·가입·탈퇴·추방·크루장 넘기기·초대 링크 교체, 50명·5개 상한 (R14, H)
+    - [x] 함수 7개(createCrew·previewInvite·joinCrew·leaveCrew·kickMember·renameCrew·rotateInvite), 크루 읽기 규칙·멤버 그룹 인덱스, 에뮬레이터 테스트 16개 (2026-11-10)
+    - [ ] 배포: `firebase deploy --only functions,firestore:rules,firestore:indexes` (사용자), 콘솔에서 인덱스 생성 완료 확인
+    - [ ] 배포 후 실제 Firestore에서 50명 동시 가입 확인: 크루장 1명 + 신규 50명 동시 요청, aborted만 정해진 횟수 재시도 → 49명 가입·1명 정원 초과, 끝까지 aborted인 요청 수 기록, `member_count` = 멤버 문서 수 = 50 (06-verification 3장; 에뮬레이터는 47명+6명 경계로만 시험함)
+    - [ ] 앱: 크루 목록(S13, "크루장인 크루 n/5", 상한 문구 "이미 5개 이상의 크루에서 크루장을 맡고 있어요")·상세(S14)·설정(S15)·초대 참여(S16) 화면과 함수 호출, aborted만 재시도
 - [ ] 시즌 합계 동기화, `computed_at` 비교, 새 설치 확인 (R15, R17)
-- [ ] 보안 규칙 + 에뮬레이터 테스트
+- [ ] 보안 규칙 + 에뮬레이터 테스트 (users·크루 읽기 규칙과 크루 함수 테스트는 `cd functions && npm test`로 있음. 합계 동기화·신고·삭제 단계에서 이어서)
 - [ ] 신고·금지어 (R16)
 - [ ] 계정 삭제 6단계 (R13)
 - [ ] 초대 링크 Universal Links + 웹페이지
