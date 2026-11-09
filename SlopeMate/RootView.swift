@@ -3,6 +3,7 @@ import SwiftUI
 /// B1 틀: 탭 기록·시즌·크루와 기록 중 막대 (07-visual-design 6장 B1, decisions 2026-11-09).
 struct RootView: View {
     @Bindable var recorder: Recorder
+    var account: Account
     @State private var showRecording = false
     @State private var tab = Tab.record
     /// S1: 첫 실행에 한 번
@@ -33,7 +34,7 @@ struct RootView: View {
                 .tabItem { Label("기록", systemImage: "figure.skiing.downhill") }.tag(Tab.record)
             page(SeasonView(db: recorder.db))
                 .tabItem { Label("시즌", systemImage: "calendar") }.tag(Tab.season)
-            page(TabPlaceholder(title: "크루"))
+            page(CrewStartView(account: account))
                 .tabItem { Label("크루", systemImage: "person.3") }.tag(Tab.crew)
         }
     }
@@ -105,18 +106,6 @@ struct RecordingBar: View {
             .accessibilityValue(Text(rec.startedAt, style: .timer))
             .accessibilityHint("기록 중 화면 열기")
             .accessibilityAddTraits(.isButton)
-        }
-    }
-}
-
-/// 시즌·크루 탭 자리. B4·크루 단계에서 실제 화면으로 바꾼다.
-struct TabPlaceholder: View {
-    var title: String
-    var body: some View {
-        NavigationStack {
-            ScrollView { Color.clear.frame(height: 1) }
-                .background(FadeBackground())
-                .navigationTitle(title)
         }
     }
 }
