@@ -5,20 +5,25 @@ struct RootView: View {
     @Bindable var recorder: Recorder
     @State private var showRecording = false
     @State private var tab = Tab.record
+    /// S1: 첫 실행에 한 번
+    @State private var setup = !Settings.homeSetupDone
 
     enum Tab { case record, season, crew }
 
     var body: some View {
-        if #available(iOS 26, *) {
-            tabs.recordingAccessory(recorder.recording != nil) { RecordingBar(recorder: recorder) { tab = .record; showRecording = true } }
-        } else {
-            tabs
+        Group {
+            if #available(iOS 26, *) {
+                tabs.recordingAccessory(recorder.recording != nil) { RecordingBar(recorder: recorder) { tab = .record; showRecording = true } }
+            } else {
+                tabs
+            }
         }
+        .fullScreenCover(isPresented: $setup) { HomeSetupView(db: recorder.db) { setup = false } }
     }
 
     private var tabs: some View {
         TabView(selection: $tab) {
-            page(HomeView(recorder: recorder, showRecording: $showRecording))
+            page(HomeView(recorder: recorder, showRecording: $showRecording, setupShown: setup))
                 .tabItem { Label("기록", systemImage: "figure.skiing.downhill") }.tag(Tab.record)
             page(SeasonView(db: recorder.db))
                 .tabItem { Label("시즌", systemImage: "calendar") }.tag(Tab.season)

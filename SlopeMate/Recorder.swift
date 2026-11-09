@@ -2,6 +2,7 @@ import UIKit
 import CoreLocation
 import CoreMotion
 import Foundation
+import GRDB
 import Observation
 
 /// 기록 엔진 (R2, R4, R18, 05-design 3장·7장).
@@ -15,6 +16,10 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     var points: [Point] = []
     /// 기록 시작 전 막힌 이유
     var blocked: Blocked?
+    /// S3에서 골랐지만 위치 권한을 기다리는 리조트 (S4). 권한이 생기면 이 리조트로 시작한다.
+    var pendingStart: String?
+    /// 영업일 끝에 닫은 기록 (S7 영업일 끝 v2). 다음 실행에도 알리고, 확인하면 지운다.
+    var dayEndNotice: Recording?
     /// S7: 사용자가 직접 연 앱에서 끝나지 않은 기록을 이어갈지 묻는다
     var pendingResume: Recording?
     /// 자동 재개했을 때 화면에 알릴 내용: 끊겼던 시간(초)
@@ -37,7 +42,10 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     @ObservationIgnored private var lastBaro: (alt: Double, t: Date)?
     @ObservationIgnored private var seq = 0
     @ObservationIgnored private var seqStartedAt = Date.distantPast
-    @ObservationIgnored private var pendingStartResort: String?
+    /// 위치 다음 동작 및 피트니스 권한을 묻는 중
+    @ObservationIgnored private var askingMotion = false
+    /// 이번 시작 시도에서 동작 및 피트니스를 이미 물었다(응답이 이상해도 다시 묻지 않는다)
+    @ObservationIgnored private var motionAsked = false
     @ObservationIgnored private var lastAlertCheck = Date.distantPast
 
     /// 오늘(영업일) 합계: 끝난 기록 + 진행 중 기록
@@ -64,6 +72,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     static let autoResumeLimit: TimeInterval = 10 * 60
 
     static let storageFailedKey = "storageFailedRecording"
+    static let dayEndKey = "dayEndNotice"
 
     static var lastResortId: String? { UserDefaults.standard.string(forKey: "lastResortId") }
 
@@ -77,6 +86,9 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         super.init()
         manager.delegate = self
         loadToday()
+        if let id = UserDefaults.standard.string(forKey: Self.dayEndKey).flatMap(UUID.init) {
+            dayEndNotice = try? db.queue.read { try Recording.fetchOne($0, key: id) }
+        }
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.becameActive() }
         }
@@ -84,15 +96,45 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
 
     // MARK: 시작·종료
 
-    func start(resortId: String) {
+    /// S3(와 첫 기록 동의) 다음. 권한이 있으면 바로 시작하고, 없으면 S4에서 권한을 기다린다.
+    func requestStart(resortId: String) {
         guard recording == nil else { return }
-        if manager.authorizationStatus == .notDetermined {
-            pendingStartResort = resortId
-            manager.requestWhenInUseAuthorization()
+        pendingStart = resortId
+        motionAsked = false
+        blocked = authProblem()
+        startPending()
+    }
+
+    /// S4 "나중에": 기다리던 시작을 버린다
+    func cancelPendingStart() { pendingStart = nil }
+
+    /// S4 "권한 설정하기"
+    func requestPermission() { manager.requestWhenInUseAuthorization() }
+
+    /// 기다리던 시작: 위치 권한이 있으면 동작 및 피트니스 권한을 (처음이면) 물은 뒤 시작한다. 여러 번 불려도 한 번만 시작한다.
+    private func startPending() {
+        guard let r = pendingStart, recording == nil, !askingMotion,
+              manager.authorizationStatus != .notDetermined, authProblem() == nil else { return }
+        if !motionAsked, CMMotionActivityManager.isActivityAvailable(), CMMotionActivityManager.authorizationStatus() == .notDetermined {
+            askingMotion = true
+            motionAsked = true
+            // 거부해도 기록은 시작한다(GPS 고도로 대신 잼)
+            activity.queryActivityStarting(from: .now, to: .now, to: .main) { [weak self] _, _ in
+                MainActor.assumeIsolated {
+                    self?.askingMotion = false
+                    self?.startPending()
+                }
+            }
             return
         }
+        pendingStart = nil
+        start(resortId: r)
+    }
+
+    func start(resortId: String) {
+        guard recording == nil else { return }
         blocked = authProblem()
-        guard blocked == nil else { return }
+        guard blocked == nil, manager.authorizationStatus != .notDetermined else { return }
         do {
             let rec = try db.createRecording(resortId: resortId, at: .now)
             UserDefaults.standard.set(resortId, forKey: "lastResortId")
@@ -145,7 +187,15 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             status = .failed("기록을 정리하지 못했어요. \(error.localizedDescription)")
             return
         }
+        UserDefaults.standard.set(rec.id.uuidString, forKey: Self.dayEndKey)
+        dayEndNotice = (try? db.queue.read { try Recording.fetchOne($0, key: rec.id) }) ?? rec
         finished(rec)
+    }
+
+    /// 영업일 끝 안내를 확인했다
+    func acknowledgeDayEnd() {
+        UserDefaults.standard.removeObject(forKey: Self.dayEndKey)
+        dayEndNotice = nil
     }
 
     // MARK: 미완료 기록 (05-design 7장)
@@ -178,10 +228,12 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    func answerResume(_ yes: Bool) {
+    /// S7 답. 묻는 동안 06:00이 지났으면 답과 관계없이 영업일 끝으로 닫는다(영업일 끝 안내가 뜬다).
+    func answerResume(_ yes: Bool, now: Date = .now) {
         guard let rec = pendingResume else { return }
         pendingResume = nil
-        if yes { resume(rec, reason: "user", now: .now) } else { endInterrupted(rec, now: .now) }
+        guard BusinessDay.same(rec.startedAt, now) else { return closeAtDayEnd(rec) }
+        if yes { resume(rec, reason: "user", now: now) } else { endInterrupted(rec, now: now) }
     }
 
     private func resume(_ rec: Recording, reason: String, now: Date) {
@@ -308,13 +360,9 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     }
 
     private func authChanged() {
-        if let r = pendingStartResort, manager.authorizationStatus != .notDetermined {
-            pendingStartResort = nil
-            start(resortId: r)
-            return
-        }
         if recording == nil {
-            if blocked != nil { blocked = authProblem() }
+            if blocked != nil || pendingStart != nil { blocked = authProblem() }
+            startPending()
             return
         }
         guard let rec = recording else { return }
@@ -398,6 +446,11 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     /// 앱이 앞으로 올 때: 밤을 넘겨 살아 있던 앱도 영업일 끝을 지난 기록을 닫는다(위치가 오지 않아도). 그리고 차량 구간을 조회한다.
     func becameActive(now: Date = .now) {
         if let rec = recording, now >= BusinessDay.end(of: rec.startedAt) { closeAtDayEnd(rec) }
+        // 설정에서 권한을 켜고 돌아왔으면 S3에서 고른 리조트로 시작
+        if recording == nil {
+            if pendingStart != nil { blocked = authProblem() }
+            startPending()
+        }
         refreshVehicles()
     }
 

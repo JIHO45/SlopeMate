@@ -205,4 +205,16 @@ struct SamplesTests {
         let restartAt = tr.pts.first { $0.seq == 1 }!.t
         #expect(route.allSatisfy { seg in seg.points.allSatisfy { $0.t < restartAt } || seg.points.allSatisfy { $0.t >= restartAt } })
     }
+
+    /// 첫 기록 동의(R12): 거절해도 물었다는 표시는 남는다. consentSince nil만으로는 거절과 안 물음을 가르지 못한다.
+    @Test func consentAnswerRemembersAsked() throws {
+        let db = try AppDatabase(path: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".sqlite").path)
+        let before = Settings.consentAsked
+        defer { Settings.consentAsked = before; try? Settings.setConsent(false, db: db) }
+        Settings.consentAsked = false
+        try Settings.answerConsent(false, db: db)
+        #expect(Settings.consentAsked && Settings.consentSince == nil)
+        try Settings.answerConsent(true, db: db)
+        #expect(Settings.consentAsked && Settings.consentSince != nil)
+    }
 }

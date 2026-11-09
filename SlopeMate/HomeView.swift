@@ -14,9 +14,16 @@ struct HomeView: View {
     @State private var weatherRetry = 0
     @State private var page: Int? = 0
     @Binding var showRecording: Bool
+    /// S1이 떠 있는지. 닫히면 홈 리조트·날씨·시작 기본값을 다시 읽는다.
+    var setupShown = false
     /// 앱을 켰을 때 이어지는 기록이면 한 번만 S5를 연다. 탭을 오갈 때는 다시 열지 않는다.
     @State private var launched = false
-    @State private var pickResort = false
+    /// S3·동의 시트
+    @State private var step: StartStep?
+    /// S3에서 고른 리조트. 시트가 닫힌 뒤 동의(첫 기록) → 권한(S4) → 시작으로 넘긴다.
+    @State private var chosen: String?
+    /// S7 끝내기·영업일 끝 안내 뒤 여는 하루 기록(S6)
+    @State private var openDay: Stats.Day?
     @Environment(\.openURL) private var openURL
     @ScaledMetric(relativeTo: .largeTitle) private var bigSize = 64
     @ScaledMetric(relativeTo: .title) private var unitSize = 28
@@ -47,6 +54,9 @@ struct HomeView: View {
             .background(FadeBackground())
             .safeAreaInset(edge: .bottom, spacing: 0) { bottom }
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: Binding(get: { openDay != nil }, set: { if !$0 { openDay = nil } })) {
+                if let openDay { DayDetailView(db: recorder.db, day: openDay) }
+            }
         }
         .task(id: reloadKey) { await reload() }
         .task(id: "\(weatherResort?.id ?? "")-\(weatherRetry)") { await loadWeather() }
@@ -58,23 +68,64 @@ struct HomeView: View {
         .onChange(of: recorder.recording?.id) { old, new in
             if old == nil, new != nil { showRecording = true }
         }
-        .fullScreenCover(isPresented: $showRecording) {
-            RecordingView(recorder: recorder) { showRecording = false }
+        // S4는 S5와 같은 전체 화면에 띄워, 권한이 생겨 시작하면 그 자리에서 S5로 바뀐다
+        .onChange(of: recorder.pendingStart) { _, new in
+            if new != nil { showRecording = true } else if recorder.recording == nil { showRecording = false }
         }
-        .confirmationDialog("어디서 타나요?", isPresented: $pickResort, titleVisibility: .visible) {
-            // ponytail: B3 리조트 고르기 시트(S3)가 생기기 전까지의 최소 선택
-            ForEach(Resort.all) { r in Button(r.name) { recorder.start(resortId: r.id) } }
+        .fullScreenCover(isPresented: $showRecording, onDismiss: recorder.cancelPendingStart) {
+            if recorder.pendingStart != nil && recorder.recording == nil {
+                PermissionView(recorder: recorder) { showRecording = false }
+            } else {
+                RecordingView(recorder: recorder) { showRecording = false }
+            }
         }
-        .alert("이어서 기록할까요?", isPresented: Binding(get: { recorder.pendingResume != nil }, set: { _ in })) {
-            Button("이어서 기록") { recorder.answerResume(true) }
-            Button("끝내기", role: .cancel) { recorder.answerResume(false) }
-        } message: {
-            Text("기록이 중간에 끊겼어요. 끊긴 동안은 '기록 없음'으로 남고 거리를 채워 넣지 않아요.")
+        .sheet(item: $step, onDismiss: next) { s in
+            switch s {
+            case .pick: ResortPickSheet(homes: homes) { chosen = $0; step = nil }
+            case .consent:
+                ConsentSheet { yes in
+                    try? Settings.answerConsent(yes, db: recorder.db) // 동의 저장 실패해도 기록은 시작한다
+                    step = nil
+                }
+            }
+        }
+        .sheet(item: resumePrompt) { p in
+            ResumeSheet(db: recorder.db, prompt: p) {
+                recorder.answerResume(true)
+            } end: {
+                guard case .resume(let rec) = p else { return }
+                recorder.answerResume(false)
+                // 묻는 동안 06:00이 지났으면 영업일 끝 안내가 대신 뜬다
+                if recorder.dayEndNotice?.id != rec.id { openDay = recorder.db.day(of: rec) }
+            } openDay: {
+                guard case .dayEnd(let rec) = p else { return }
+                recorder.acknowledgeDayEnd()
+                openDay = recorder.db.day(of: rec)
+            }
         }
     }
 
+    private enum StartStep: String, Identifiable { case pick, consent; var id: String { rawValue } }
+
+    /// 시트가 닫힌 뒤: 첫 기록이면 동의, 아니면 시작(권한이 없으면 S4)
+    private func next() {
+        guard let id = chosen else { return }
+        if Settings.consentAsked {
+            chosen = nil
+            recorder.requestStart(resortId: id)
+        } else {
+            step = .consent
+        }
+    }
+
+    /// S7 묻기가 먼저, 없으면 영업일 끝 안내. 영업일 끝 안내를 끌어 내리면 확인한 것으로 본다.
+    private var resumePrompt: Binding<ResumePrompt?> {
+        Binding(get: { recorder.pendingResume.map(ResumePrompt.resume) ?? recorder.dayEndNotice.map(ResumePrompt.dayEnd) },
+                set: { if $0 == nil, recorder.pendingResume == nil { recorder.acknowledgeDayEnd() } })
+    }
+
     private var reloadKey: String {
-        "\(recorder.recording?.id.uuidString ?? "-")-\(recorder.todayRecordings.count)-\(recorder.today.runs.count)"
+        "\(recorder.recording?.id.uuidString ?? "-")-\(recorder.todayRecordings.count)-\(recorder.today.runs.count)-\(setupShown)"
     }
 
     // MARK: 위: 홈 리조트, 설정, 이번 시즌
@@ -274,7 +325,7 @@ struct HomeView: View {
             return "\(Resort.name(id)) · \(id == Recorder.lastResortId ? "마지막으로 기록한 리조트" : "첫 번째 홈 리조트")"
         }()
         return Button {
-            if let id = startResort { recorder.start(resortId: id) } else { pickResort = true }
+            step = .pick
         } label: {
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 2) {

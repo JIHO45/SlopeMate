@@ -10,6 +10,30 @@ nonisolated enum Settings {
         set { d.set(newValue, forKey: "snowPromptOn") }
     }
 
+    /// 첫 실행 홈 리조트 선택(S1)을 마쳤는지. 저장에 성공한 뒤에만 켠다.
+    static var homeSetupDone: Bool {
+        get { d.bool(forKey: "homeSetupDone") }
+        set { d.set(newValue, forKey: "homeSetupDone") }
+    }
+
+    /// S1 저장: 홈 리조트를 고른 순서로 저장하고, 성공하면 첫 실행 완료로 남긴다
+    static func saveHomeSetup(_ ids: [String], db: AppDatabase) throws {
+        try db.setHomeResorts(ids)
+        homeSetupDone = true
+    }
+
+    /// 첫 기록 시작 때 익명 표본 동의를 물었는지 (R12). consentSince가 nil이면 거절했는지 아직 안 물었는지 알 수 없어 따로 둔다.
+    static var consentAsked: Bool {
+        get { d.bool(forKey: "consentAsked") }
+        set { d.set(newValue, forKey: "consentAsked") }
+    }
+
+    /// 동의 시트 답: 물었다고 남기고 동의를 켜거나 끈다. 거절해도 기록은 시작한다.
+    static func answerConsent(_ on: Bool, db: AppDatabase, now: Date = .now) throws {
+        consentAsked = true
+        try setConsent(on, db: db, now: now)
+    }
+
     /// 익명 표본 전송 동의를 켠 시각 (R12). 꺼져 있거나 아직 묻지 않았으면 nil.
     /// 이 시각 이후에 생긴 표본만 보낸다. 껐다 켜면 새 시각이 되어 그 전 표본은 살아나지 않는다.
     static var consentSince: Date? { d.object(forKey: "consentSince") as? Date }
