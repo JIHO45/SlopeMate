@@ -36,6 +36,11 @@ service cloud.firestore {
     match /{path=**}/members/{memberId} {
       allow read: if request.auth != null && resource.data.uid == request.auth.uid;
     }
+    // 시즌 합계(R15): 본인만 읽는다(새로 설치했을 때 서버 합계 확인). 쓰기는 syncSummary 함수만.
+    // 문서 ID("{uid}_{시즌}")로 소유자를 본다: 아직 없는 본인 문서도 조회할 수 있어야 첫 동기화가 된다.
+    match /season_summaries/{id} {
+      allow read: if request.auth != null && id.split('_')[0] == request.auth.uid;
+    }
     // invites는 클라이언트가 읽지 않는다(previewInvite 함수로만)
   }
 }

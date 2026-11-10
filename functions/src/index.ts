@@ -5,6 +5,7 @@ import { DocumentSnapshot, FieldValue, getFirestore, Transaction } from "firebas
 import { setGlobalOptions } from "firebase-functions/v2";
 import { CallableRequest, HttpsError, onCall } from "firebase-functions/v2/https";
 import { randomBytes } from "node:crypto";
+import { currentSeason } from "./season.js";
 
 initializeApp();
 const db = getFirestore();
@@ -54,12 +55,18 @@ async function requireUser(tx: Transaction, uid: string): Promise<DocumentSnapsh
   return u;
 }
 
-function memberDoc(uid: string, user: DocumentSnapshot) {
-  return {
-    uid, display_name: user.get("display_name"),
-    visit_days: 0, runs: 0, distance_km: 0, resort_days: {}, summary_at: null,
-    joined_at: FieldValue.serverTimestamp(),
-  };
+const summaries = db.collection("season_summaries");
+
+/** 크루 순위에 보이는 값: 이번 시즌 합계만(R17). 가입 전 기록도 보인다(S16 안내). */
+function summaryFields(sum: DocumentSnapshot | undefined) {
+  return sum?.exists
+    ? { season: sum.get("season"), visit_days: sum.get("visit_days"), runs: sum.get("runs"), distance_km: sum.get("distance_km"),
+        resort_days: sum.get("resort_days"), summary_at: sum.get("updated_at") }
+    : { season: currentSeason(), visit_days: 0, runs: 0, distance_km: 0, resort_days: {}, summary_at: null };
+}
+
+function memberDoc(uid: string, user: DocumentSnapshot, sum?: DocumentSnapshot) {
+  return { uid, display_name: user.get("display_name"), ...summaryFields(sum), joined_at: FieldValue.serverTimestamp() };
 }
 
 /** 재시도가 다 실패한 경합은 aborted로 돌려준다(그대로 던지면 클라이언트에는 internal). */
@@ -89,12 +96,13 @@ export const createCrew = onCall(async (req) => {
   const name = nameArg(req.data?.name);
   return run(async (tx) => {
     const user = await requireUser(tx, uid);
+    const sum = await tx.get(summaries.doc(`${uid}_${currentSeason()}`));
     const owned = await tx.get(crews.where("owner_uid", "==", uid).count());
     if (owned.data().count >= MAX_OWNED) throw new HttpsError("resource-exhausted", "owned-limit");
     const crew = crews.doc();
     const token = newToken();
     tx.set(crew, { name, owner_uid: uid, member_count: 1, invite_token: token, created_at: FieldValue.serverTimestamp() });
-    tx.set(crew.collection("members").doc(uid), memberDoc(uid, user));
+    tx.set(crew.collection("members").doc(uid), memberDoc(uid, user, sum));
     tx.set(invites.doc(token), { crew_id: crew.id });
     // 같은 사람의 동시 생성이 서로 부딪혀 하나가 다시 세도록 계정 문서도 쓴다
     tx.update(user.ref, { crews_changed_at: FieldValue.serverTimestamp() });
@@ -122,6 +130,7 @@ export const joinCrew = onCall(async (req) => {
   const token = tokenArg(req.data?.token);
   return run(async (tx) => {
     const user = await requireUser(tx, uid);
+    const sum = await tx.get(summaries.doc(`${uid}_${currentSeason()}`));
     const inv = await tx.get(invites.doc(token));
     if (!inv.exists) throw new HttpsError("not-found", "invite");
     const crewRef = crews.doc(inv.get("crew_id"));
@@ -133,7 +142,7 @@ export const joinCrew = onCall(async (req) => {
     // 크루장이 내보낸 사람은 크루장이 차단을 풀기 전까지 새 링크로도 다시 들어오지 못한다(R16)
     if (ban.exists) throw new HttpsError("permission-denied", "kicked");
     if (crew.get("member_count") >= MAX_MEMBERS) throw new HttpsError("resource-exhausted", "full");
-    tx.set(me.ref, memberDoc(uid, user));
+    tx.set(me.ref, memberDoc(uid, user, sum));
     tx.update(crewRef, { member_count: FieldValue.increment(1) });
     return { crewId: crewRef.id };
   });
@@ -232,5 +241,49 @@ export const unbanMember = onCall(async (req) => {
     const crew = await ownerCrew(tx, uid, crewId);
     tx.delete(crew.ref.collection("bans").doc(target));
     return { unbanned: true };
+  });
+});
+
+// MARK: 시즌 합계 (R15, R17)
+
+function intArg(v: unknown, max: number, field: string): number {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > max) throw new HttpsError("invalid-argument", field);
+  return v;
+}
+
+/** 이번 시즌 합계 하나를 받는다. 기기에서 계산한 시각(computed_at)이 저장된 값보다 늦을 때만 바꾸고(R15),
+ *  내가 속한 모든 크루의 멤버 문서에 같은 값을 복사한다. 받는 필드는 합계와 리조트별 방문일뿐이다(R17). */
+export const syncSummary = onCall(async (req) => {
+  const uid = uidOf(req);
+  const d = req.data ?? {};
+  const allowed = ["season", "visit_days", "runs", "distance_km", "resort_days", "computed_at"];
+  if (typeof d !== "object" || Object.keys(d).some((k) => !allowed.includes(k))) throw new HttpsError("invalid-argument", "fields");
+  const season = currentSeason();
+  if (d.season !== season) throw new HttpsError("failed-precondition", "season");
+  const visitDays = intArg(d.visit_days, 200, "visit_days");
+  const runs = intArg(d.runs, 100_000, "runs");
+  if (typeof d.distance_km !== "number" || !(d.distance_km >= 0) || d.distance_km > 100_000) throw new HttpsError("invalid-argument", "distance_km");
+  const distanceKm = Math.round(d.distance_km * 10) / 10;
+  const rd = d.resort_days;
+  if (typeof rd !== "object" || rd === null || Array.isArray(rd) || Object.keys(rd).length > 40) throw new HttpsError("invalid-argument", "resort_days");
+  const resortDays: Record<string, number> = {};
+  for (const [k, v] of Object.entries(rd)) {
+    if (!/^[a-z0-9_-]{1,40}$/.test(k)) throw new HttpsError("invalid-argument", "resort_days");
+    resortDays[k] = intArg(v, 200, "resort_days");
+  }
+  const computedAt = intArg(d.computed_at, Number.MAX_SAFE_INTEGER, "computed_at");
+  if (computedAt > Date.now() + 5 * 60_000) throw new HttpsError("invalid-argument", "computed_at");
+
+  return run(async (tx) => {
+    await requireUser(tx, uid);
+    const ref = summaries.doc(`${uid}_${season}`);
+    const old = await tx.get(ref);
+    const mine = await tx.get(db.collectionGroup("members").where("uid", "==", uid));
+    // 늦게 도착한 오래된 합계는 버린다(같은 값을 여러 번 보내도 바뀌지 않음)
+    if (old.exists && (old.get("computed_at") as number) >= computedAt) return { applied: false, crews: mine.size };
+    const values = { visit_days: visitDays, runs, distance_km: distanceKm, resort_days: resortDays };
+    tx.set(ref, { uid, season, ...values, computed_at: computedAt, updated_at: FieldValue.serverTimestamp() });
+    for (const m of mine.docs) tx.update(m.ref, { season, ...values, summary_at: FieldValue.serverTimestamp() });
+    return { applied: true, crews: mine.size };
   });
 });

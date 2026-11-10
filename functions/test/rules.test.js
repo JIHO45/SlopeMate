@@ -23,6 +23,7 @@ beforeEach(async () => {
     await setDoc(doc(db, "crews/c2/members/z"), { uid: "z", runs: 9 });
     await setDoc(doc(db, "invites/t"), { crew_id: "c1" });
     await setDoc(doc(db, "crews/c1/bans/x"), { uid: "x", display_name: "누군가" });
+    await setDoc(doc(db, "season_summaries/b_2026-27"), { uid: "b", season: "2026-27", runs: 5, computed_at: 1 });
   });
 });
 
@@ -75,4 +76,13 @@ test("차단 기록: 크루장만 읽고, 크루원·외부인은 못 읽고, �
   await assertFails(getDocs(collection(as("b"), "crews/c1/bans")));
   await assertFails(getDoc(doc(as("x"), "crews/c1/bans/x")));
   await assertFails(setDoc(doc(as("a"), "crews/c1/bans/y"), { uid: "y" }));
+});
+
+test("시즌 합계: 본인만 읽고, 아무도 직접 쓰지 못한다", async () => {
+  await assertSucceeds(getDoc(doc(as("b"), "season_summaries/b_2026-27")));
+  await assertSucceeds(getDoc(doc(as("n"), "season_summaries/n_2026-27"))); // 아직 없는 본인 문서
+  await assertFails(getDoc(doc(as("n"), "season_summaries/b_2026-27")));
+  await assertFails(getDoc(doc(as(null), "season_summaries/b_2026-27")));
+  await assertFails(getDoc(doc(as("a"), "season_summaries/b_2026-27")));
+  await assertFails(setDoc(doc(as("b"), "season_summaries/b_2026-27"), { uid: "b", runs: 999, computed_at: 9 }));
 });

@@ -211,3 +211,59 @@ test("삭제 시작과 가입이 겹쳐도 삭제 중이 된 뒤에는 멤버가
   const s = await snapshot(crew.crewId);
   assert.equal(s.crew.member_count, s.members.length);
 });
+
+// MARK: 시즌 합계 (R15, R17)
+import { currentSeason } from "../lib/season.js";
+
+const sum = (over = {}) => ({ season: currentSeason(), visit_days: 3, runs: 18, distance_km: 18.83, resort_days: { high1: 2, yongpyong: 1 }, computed_at: Date.now(), ...over });
+
+test("합계: 크루 멤버 문서에 복사, 오래된 값·같은 값은 무시", async () => {
+  const u = await newUser();
+  const c1 = await crewWith(u);
+  const c2 = await crewWith(await newUser());
+  await call("joinCrew", { token: c2.token }, u);
+  const t = Date.now();
+  const r1 = await call("syncSummary", sum({ computed_at: t }), u);
+  assert.deepEqual(r1.result, { applied: true, crews: 2 });
+  for (const c of [c1, c2]) {
+    const m = (await db.doc(`crews/${c.crewId}/members/${u.uid}`).get()).data();
+    assert.equal(m.visit_days, 3); assert.equal(m.runs, 18); assert.equal(m.distance_km, 18.8);
+    assert.deepEqual(m.resort_days, { high1: 2, yongpyong: 1 }); assert.equal(m.season, currentSeason());
+  }
+  // 같은 값을 다시 보내도, 더 이른 시각의 값이 늦게 와도 바뀌지 않는다
+  assert.equal((await call("syncSummary", sum({ computed_at: t }), u)).result.applied, false);
+  assert.equal((await call("syncSummary", sum({ computed_at: t - 1000, runs: 99 }), u)).result.applied, false);
+  assert.equal((await db.doc(`crews/${c1.crewId}/members/${u.uid}`).get()).get("runs"), 18);
+  // 기록을 지워 합계가 줄어도 최신이면 받는다("큰 값 유지" 아님)
+  assert.equal((await call("syncSummary", sum({ computed_at: t + 1000, runs: 10, visit_days: 2 }), u)).result.applied, true);
+  assert.equal((await db.doc(`crews/${c1.crewId}/members/${u.uid}`).get()).get("runs"), 10);
+});
+
+test("합계: 가입하면 이미 보낸 이번 시즌 합계가 바로 보임", async () => {
+  const u = await newUser();
+  await call("syncSummary", sum(), u);
+  const crew = await crewWith(await newUser());
+  await call("joinCrew", { token: crew.token }, u);
+  assert.equal((await db.doc(`crews/${crew.crewId}/members/${u.uid}`).get()).get("visit_days"), 3);
+  const own = await call("createCrew", { name: "내 반" }, u);
+  assert.equal((await db.doc(`crews/${own.result.crewId}/members/${u.uid}`).get()).get("runs"), 18);
+});
+
+test("합계 거부: 정해진 필드 밖(R17), 다른 시즌, 범위 밖, 미래 시각, 삭제 중", async () => {
+  const u = await newUser();
+  for (const bad of [sum({ lat: 37.1 }), sum({ points: [] }), sum({ resort_days: { "../x": 1 } }), sum({ runs: -1 }),
+                     sum({ visit_days: 1.5 }), sum({ distance_km: "1" }), sum({ computed_at: Date.now() + 3600_000 })]) {
+    assert.equal((await call("syncSummary", bad, u)).error.status, "INVALID_ARGUMENT", JSON.stringify(bad));
+  }
+  assert.equal((await call("syncSummary", sum({ season: "2001-02" }), u)).error.status, "FAILED_PRECONDITION");
+  await db.doc(`users/${u.uid}`).update({ deleting: true });
+  assert.equal((await call("syncSummary", sum(), u)).error.status, "PERMISSION_DENIED");
+  assert.equal((await db.collection("season_summaries").get()).size, 0);
+});
+
+test("시즌 이름: 한국 시간 영업일(06:00) 기준, 5~10월은 다가오는 시즌", () => {
+  assert.equal(currentSeason(new Date("2027-01-15T03:00:00Z")), "2026-27");
+  assert.equal(currentSeason(new Date("2027-04-30T20:59:00Z")), "2026-27"); // 5월 1일 05:59 KST = 4월 30일 영업일
+  assert.equal(currentSeason(new Date("2027-04-30T21:00:00Z")), "2027-28");
+  assert.equal(currentSeason(new Date("2026-08-01T00:00:00Z")), "2026-27");
+});
