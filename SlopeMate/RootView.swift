@@ -4,6 +4,7 @@ import SwiftUI
 struct RootView: View {
     @Bindable var recorder: Recorder
     var account: Account
+    var crews: Crews
     @State private var showRecording = false
     @State private var tab = Tab.record
     /// S1: 첫 실행에 한 번
@@ -22,6 +23,12 @@ struct RootView: View {
         .fullScreenCover(isPresented: $setup) { HomeSetupView(db: recorder.db) { setup = false } }
         // Live Activity를 누르면 기록 중 화면(S5) (R23)
         .onOpenURL { url in
+            // 초대 링크(Universal Links 단계에서 앱으로 열림) → 크루 탭에서 S16
+            if url.host == Crews.inviteURL("x").host, let t = Crews.token(from: url.absoluteString) {
+                tab = .crew
+                crews.pendingInvite = t
+                return
+            }
             guard url == RecordingActivityAttributes.url, recorder.recording != nil else { return }
             tab = .record
             showRecording = true
@@ -34,7 +41,7 @@ struct RootView: View {
                 .tabItem { Label("기록", systemImage: "figure.skiing.downhill") }.tag(Tab.record)
             page(SeasonView(db: recorder.db))
                 .tabItem { Label("시즌", systemImage: "calendar") }.tag(Tab.season)
-            page(CrewStartView(account: account))
+            page(CrewTab(account: account, crews: crews))
                 .tabItem { Label("크루", systemImage: "person.3") }.tag(Tab.crew)
         }
     }

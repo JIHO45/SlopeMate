@@ -1,50 +1,133 @@
 import AuthenticationServices
 import SwiftUI
 
-/// S11 크루 시작 (확정 v5; R13, R14). 크루가 없을 때 크루 탭 첫 화면.
-struct CrewStartView: View {
+/// 크루 탭: 가입·크루가 없으면 S11, 있으면 S13. 만들기·링크 참여·가입 시트와 크루 상세 이동을 여기서 모은다.
+struct CrewTab: View {
     var account: Account
-    @State private var signUp = false
+    var crews: Crews
+    @State private var path: [String] = []
+    @State private var sheet: CrewSheet?
+    @State private var signUp: CrewSheet?
+    @State private var afterSignUp: CrewSheet?
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    Image(systemName: "person.2").font(.title).foregroundStyle(Color.accentText)
-                        .frame(width: 64, height: 64).background(Color.surface, in: Circle()).accessibilityHidden(true)
-                    Text("친구들과 이번 시즌 기록을 비교해요").font(.title2.bold())
-                    Text("크루원끼리 방문일, 하강 횟수, 거리 순위를 봐요.").foregroundStyle(Color.secondaryText)
-                    VStack(alignment: .leading, spacing: 14) {
-                        Label("보이는 것", systemImage: "eye").font(.subheadline.weight(.semibold))
-                        FlowChips(items: ["방문일", "하강 횟수", "거리", "선택한 리조트별 방문일"])
-                        Divider()
-                        Label("보이지 않는 것", systemImage: "eye.slash").font(.subheadline.weight(.semibold))
-                        Text("경로와 위치")
+        NavigationStack(path: $path) {
+            Group {
+                // 받은 목록이 0개일 때만 S11. 처음부터 못 받으면 오류와 다시 시도.
+                if !account.signedIn || (crews.status == .ready && crews.ids.isEmpty) {
+                    CrewStartView(create: { open(.create) }, join: { open(.link) })
+                } else if crews.status == .failed {
+                    ContentUnavailableView {
+                        Label("크루를 불러오지 못했어요", systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text("인터넷 연결을 확인하고 다시 시도해 주세요.")
+                    } actions: {
+                        Button("다시 시도") { crews.retry() }.buttonStyle(.borderedProminent)
                     }
-                    .card(padding: 16)
-                    .padding(.top, 8)
+                    .background(FadeBackground())
+                    .navigationTitle("크루")
+                } else if crews.status == .loading {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(FadeBackground())
+                } else {
+                    CrewListView(crews: crews, create: { open(.create) }, join: { open(.link) })
                 }
-                .foregroundStyle(Color.primaryText)
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
             }
-            .safeAreaInset(edge: .bottom) {
-                Button { if account.signedIn { /* 크루 만들기 시트: 크루 함수 단계에서 */ } else { signUp = true } } label: {
-                    Label("크루 만들기", systemImage: "plus")
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                .padding(.horizontal, 16).padding(.bottom, 12)
-                // 링크로 참여: 초대 링크(Universal Links) 단계에서 붙인다
-            }
-            .background(FadeBackground())
-            .navigationTitle("크루")
+            .navigationDestination(for: String.self) { CrewDetailView(crews: crews, crewId: $0) }
         }
-        .fullScreenCover(isPresented: $signUp) { SignUpView(account: account) }
+        .sheet(item: $sheet) { s in
+            switch s {
+            case .create:
+                CreateCrewSheet(crews: crews) { id in sheet = nil; path = [id] }
+            case .link:
+                InviteLinkSheet { token in sheet = .invite(token) }
+            case .invite(let token):
+                JoinCrewSheet(crews: crews, token: token, signedIn: account.signedIn,
+                              needSignUp: { sheet = nil; afterSignUp = .invite(token); signUp = .create },
+                              opened: { id in sheet = nil; path = [id] })
+            }
+        }
+        .fullScreenCover(item: $signUp, onDismiss: {
+            // 가입을 마쳤으면 하려던 일(만들기·참여)을 이어서
+            if account.signedIn, let next = afterSignUp { sheet = next }
+            afterSignUp = nil
+        }) { _ in SignUpView(account: account) }
+        .onChange(of: account.uid, initial: true) { crews.follow(account.uid) }
+        .onChange(of: crews.pendingInvite, initial: true) {
+            if let t = crews.pendingInvite { crews.pendingInvite = nil; sheet = .invite(t) }
+        }
+    }
+
+    /// 만들기는 가입이 먼저. 링크 참여는 미리보기까지 가입 없이 보고, 참여할 때 가입한다.
+    private func open(_ s: CrewSheet) {
+        if s == .create && !account.signedIn { afterSignUp = .create; signUp = .create } else { sheet = s }
+    }
+}
+
+enum CrewSheet: Identifiable, Equatable {
+    case create, link, invite(String)
+    var id: String {
+        switch self {
+        case .create: "create"
+        case .link: "link"
+        case .invite(let t): "invite-\(t)"
+        }
+    }
+}
+
+/// S11 크루 시작 (확정 v5; R13, R14). 크루가 없을 때 크루 탭 첫 화면.
+struct CrewStartView: View {
+    var create: () -> Void
+    var join: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Image(systemName: "person.2").font(.title).foregroundStyle(Color.accentText)
+                    .frame(width: 64, height: 64).background(Color.surface, in: Circle()).accessibilityHidden(true)
+                Text("친구들과 이번 시즌 기록을 비교해요").font(.title2.bold())
+                Text("크루원끼리 방문일, 하강 횟수, 거리 순위를 봐요.").foregroundStyle(Color.secondaryText)
+                VisibilityCard().padding(.top, 8)
+            }
+            .foregroundStyle(Color.primaryText)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+        }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 8) {
+                Button(action: create) { Label("크루 만들기", systemImage: "plus") }
+                    .buttonStyle(PrimaryButtonStyle())
+                Button(action: join) {
+                    HStack(spacing: 6) {
+                        Text("초대 링크가 있나요?").foregroundStyle(Color.secondaryText)
+                        Text("링크로 참여 ›").fontWeight(.semibold).foregroundStyle(Color.accentText)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                }
+            }
+            .padding(.horizontal, 16).padding(.bottom, 12)
+        }
+        .background(FadeBackground())
+        .navigationTitle("크루")
+    }
+}
+
+/// 보이는 것·보이지 않는 것 (S11, S16)
+struct VisibilityCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("보이는 것", systemImage: "eye").font(.subheadline.weight(.semibold))
+            FlowChips(items: ["방문일", "하강 횟수", "거리", "선택한 리조트별 방문일"])
+            Divider()
+            Label("보이지 않는 것", systemImage: "eye.slash").font(.subheadline.weight(.semibold))
+            Text("경로와 위치")
+        }
+        .foregroundStyle(Color.primaryText)
+        .card(padding: 16)
     }
 }
 
 /// 칩 줄: 한 줄 → 3개 + 1개 두 줄 → 세로 (시안은 줄바꿈)
-private struct FlowChips: View {
+struct FlowChips: View {
     var items: [String]
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -74,6 +157,7 @@ struct SignUpView: View {
     @State private var over14: Bool?
     @State private var busy = false
     @State private var failed = false
+    @State private var refused = false
 
     private var cleanName: String? { Account.cleanName(name) }
 
@@ -127,7 +211,10 @@ struct SignUpView: View {
         .background(Color.bg.ignoresSafeArea())
         .alert("Apple 로그인을 마치지 못했어요", isPresented: $failed) {
             Button("확인", role: .cancel) {}
-        } message: { Text("인터넷 연결을 확인하고 다시 시도해 주세요.") }
+        } message: {
+            Text(refused ? "이 계정으로는 지금 가입할 수 없어요. 계정 삭제가 진행 중이면 끝난 뒤 다시 가입해 주세요."
+                         : "인터넷 연결을 확인하고 다시 시도해 주세요.")
+        }
     }
 
     /// 만 14세 미만이면 Apple 버튼을 끄고 아래에 돌아가기 (만 14세 미만 v2)
@@ -141,12 +228,12 @@ struct SignUpView: View {
             SignInWithAppleButton(.continue, onRequest: account.prepare) { result in
                 guard case .success(let auth) = result, let n = cleanName else {
                     // 사용자가 취소한 경우는 조용히 둔다
-                    if case .failure(let e) = result, (e as? ASAuthorizationError)?.code != .canceled { failed = true }
+                    if case .failure(let e) = result, (e as? ASAuthorizationError)?.code != .canceled { refused = false; failed = true }
                     return
                 }
                 busy = true
                 Task {
-                    do { try await account.complete(auth, name: n); dismiss() } catch { failed = true }
+                    do { try await account.complete(auth, name: n); dismiss() } catch { refused = Account.isRefusal(error); failed = true }
                     busy = false
                 }
             }
