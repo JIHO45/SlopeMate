@@ -5,6 +5,7 @@ import SwiftUI
 struct CrewTab: View {
     var account: Account
     var crews: Crews
+    var summary: SummarySync
     @State private var path: [String] = []
     @State private var sheet: CrewSheet?
     @State private var signUp: CrewSheet?
@@ -32,7 +33,7 @@ struct CrewTab: View {
                     CrewListView(crews: crews, create: { open(.create) }, join: { open(.link) })
                 }
             }
-            .navigationDestination(for: String.self) { CrewDetailView(crews: crews, crewId: $0) }
+            .navigationDestination(for: String.self) { CrewDetailView(crews: crews, summary: summary, crewId: $0) }
         }
         .sheet(item: $sheet) { s in
             switch s {

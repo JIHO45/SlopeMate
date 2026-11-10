@@ -336,6 +336,7 @@ struct JoinCrewSheet: View {
 
 struct CrewDetailView: View {
     var crews: Crews
+    var summary: SummarySync
     var crewId: String
     @Environment(\.dismiss) private var dismiss
     @State private var metric = Crews.Metric.visitDays
@@ -367,11 +368,26 @@ struct CrewDetailView: View {
         let list = crews.ranking(crewId, by: metric)
         return ScrollView {
             VStack(alignment: .leading, spacing: 8) {
+                if summary.failed {
+                    HStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(Color(light: 0xA87400, dark: 0xF2C14E))
+                            .accessibilityHidden(true)
+                        Text("최신 기록을 올리지 못했어요." + (synced.map { " 마지막 갱신 \($0)" } ?? "")).font(.subheadline)
+                        Spacer(minLength: 0)
+                        Button("다시 시도") { summary.sync(force: true) }.font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.accentText).frame(minHeight: 44)
+                    }
+                    .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6)
+                    .background(Color.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: 20))
+                    .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.cardBorder))
+                    .padding(.bottom, 8)
+                }
                 Picker("순위 기준", selection: $metric) {
                     ForEach(Crews.Metric.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                Text(([Stats.season(of: .now).map { "\($0) 시즌" }, "\(crew.memberCount)명"] as [String?]).compactMap { $0 }.joined(separator: " · "))
+                Text(([Stats.season(of: .now).map { "\($0) 시즌" }, "\(crew.memberCount)명",
+                       summary.failed ? nil : synced.map { "마지막 갱신 \($0)" }] as [String?]).compactMap { $0 }.joined(separator: " · "))
                     .font(.subheadline).foregroundStyle(Color.secondaryText).padding(.horizontal, 4).padding(.top, 6)
                 VStack(spacing: 0) {
                     ForEach(Array(list.enumerated()), id: \.element.id) { i, m in
@@ -416,6 +432,11 @@ struct CrewDetailView: View {
         .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 60)
         .background(me ? Color(light: 0xEEF6F8, dark: 0x183A44) : .clear)
         .accessibilityElement(children: .combine)
+    }
+
+    /// 내 합계를 서버가 마지막으로 받은 시각 "10:42"(오늘이 아니면 "11월 9일")
+    private var synced: String? {
+        summary.lastSynced.map { HomeData.seoul.isDateInToday($0) ? $0.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)) : HomeData.monthDay($0) }
     }
 
     /// "하이원 10 · 웰리힐리파크 2"

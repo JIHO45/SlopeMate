@@ -5,6 +5,8 @@ struct RootView: View {
     @Bindable var recorder: Recorder
     var account: Account
     var crews: Crews
+    var summary: SummarySync
+    @Environment(\.scenePhase) private var phase
     @State private var showRecording = false
     @State private var tab = Tab.record
     /// S1: 첫 실행에 한 번
@@ -21,6 +23,19 @@ struct RootView: View {
             }
         }
         .fullScreenCover(isPresented: $setup) { HomeSetupView(db: recorder.db) { setup = false } }
+        // 시즌 합계를 크루 순위로(R15): 크루가 생기거나 바뀔 때, 앱이 켜질 때, 기록이 끝났을 때
+        .onChange(of: account.uid, initial: true) { summary.follow(account.uid) }
+        .onChange(of: crews.ids) { if !crews.ids.isEmpty { summary.sync() } }
+        .onChange(of: phase) { if phase == .active && !crews.ids.isEmpty { summary.sync() } }
+        .onChange(of: recorder.recording == nil) { _, ended in if ended && !crews.ids.isEmpty { summary.sync() } }
+        .alert("이 기기에는 기록이 없어요. 크루 합계를 이 기기 기준으로 바꿀까요?",
+               isPresented: Binding(get: { summary.askReplace != nil }, set: { if !$0 { summary.askReplace = nil } }),
+               presenting: summary.askReplace) { s in
+            Button("그대로 두기", role: .cancel) { summary.answer(replace: false, season: s.season) }
+            Button("이 기기 기준으로 바꾸기", role: .destructive) { summary.answer(replace: true, season: s.season) }
+        } message: { s in
+            Text("크루 순위에는 이번 시즌 \(s.visitDays)일 · \(s.runs)회가 있어요. 바꾸면 이 기기 기록(0회)으로 보여요.")
+        }
         // Live Activity를 누르면 기록 중 화면(S5) (R23)
         .onOpenURL { url in
             // 초대 링크(Universal Links 단계에서 앱으로 열림) → 크루 탭에서 S16
@@ -41,7 +56,7 @@ struct RootView: View {
                 .tabItem { Label("기록", systemImage: "figure.skiing.downhill") }.tag(Tab.record)
             page(SeasonView(db: recorder.db))
                 .tabItem { Label("시즌", systemImage: "calendar") }.tag(Tab.season)
-            page(CrewTab(account: account, crews: crews))
+            page(CrewTab(account: account, crews: crews, summary: summary))
                 .tabItem { Label("크루", systemImage: "person.3") }.tag(Tab.crew)
         }
     }

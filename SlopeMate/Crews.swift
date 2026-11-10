@@ -21,6 +21,12 @@ import Foundation
         var distanceKm: Double
         var resortDays: [String: Int]
         var joinedAt: Date
+        /// 합계의 시즌. 지난 시즌 값이면 순위에서 0으로 본다(새 시즌 첫 동기화 전).
+        var season: String
+        var current: Member {
+            guard season != HomeData.currentSeason() else { return self }
+            var m = self; m.visitDays = 0; m.runs = 0; m.distanceKm = 0; m.resortDays = [:]; return m
+        }
     }
 
     enum Metric: String, CaseIterable, Identifiable {
@@ -173,7 +179,8 @@ import Foundation
                        visitDays: d.get("visit_days") as? Int ?? 0, runs: d.get("runs") as? Int ?? 0,
                        distanceKm: d.get("distance_km") as? Double ?? Double(d.get("distance_km") as? Int ?? 0),
                        resortDays: d.get("resort_days") as? [String: Int] ?? [:],
-                       joinedAt: (d.get("joined_at") as? Timestamp)?.dateValue() ?? .now)
+                       joinedAt: (d.get("joined_at") as? Timestamp)?.dateValue() ?? .now,
+                       season: d.get("season") as? String ?? "").current
             }
         }
         perCrew[id] = [crewL, memL]
