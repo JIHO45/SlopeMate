@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// S17 설정 (확정 v3 로그인 안 함, 지도 데이터 출처 v2; R9, R11, R12, R19). 계정 칸은 서버 기능(로그인)과 함께 붙인다.
+/// S17 설정 (확정 v3, 지도 데이터 출처 v2; R9, R11, R12, R13, R19). 계정 칸은 로그인했을 때만 보인다.
 struct SettingsView: View {
     let db: AppDatabase
     /// 홈 리조트·시즌권을 바꿨을 수 있으니 홈이 다시 읽도록 알린다
@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var editingHomes = false
     @State private var error: String?
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(AccountDeletion.self) private var deletion
 
     /// 아직 정하지 않았으면 행을 숨긴다(빈 링크를 내보내지 않음)
     static let privacyPolicyURL: URL? = nil
@@ -58,6 +59,16 @@ struct SettingsView: View {
                 row("버전", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
             }
             .listRowBackground(Color.card)
+            if deletion.account.signedIn {
+                Section {
+                    Button("계정 삭제") { deletion.phase = .confirm }.foregroundStyle(AccountDeleteSheet.dangerText)
+                } header: {
+                    Text("계정")
+                } footer: {
+                    Text("계정, 활동 합계, 크루 소속이 지워져요. 기기의 기록은 남아요.").foregroundStyle(Color.secondaryText)
+                }
+                .listRowBackground(Color.card)
+            }
         }
         .tint(Color.accentFill)
         .scrollContentBackground(.hidden)
@@ -126,5 +137,86 @@ struct MapSourceView: View {
         .navigationTitle("지도 데이터 출처")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+    }
+}
+
+/// S17 계정 삭제 확인·완료·실패 (확정 v3; R13, R21). 진행 중에는 같은 내용에 버튼만 잠근다.
+struct AccountDeleteSheet: View {
+    var deletion: AccountDeletion
+    /// 진행 중일 때 계속 보여 줄 직전 화면
+    @State private var shown = AccountDeletion.Phase.confirm
+
+    static let dangerText = Color(light: 0x8A1C1C, dark: 0xFFB4B4)
+    private static let dangerFill = Color(light: 0xFDE8E8, dark: 0x4A1F22)
+    private static let warning = Color(light: 0xA87400, dark: 0xF2B92E)
+
+    var body: some View {
+        let busy = deletion.phase == .working
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                switch shown {
+                case .done:
+                    icon("checkmark", .accentText)
+                    title("계정을 삭제했어요")
+                    note("기기의 기록은 그대로 남아 있어요. 크루를 다시 쓰려면 새로 가입해야 해요.")
+                    button("확인", fill: .accentFill, text: .onAccent) { deletion.close() }.padding(.top, 8)
+                case .failed:
+                    icon("exclamationmark.triangle", Self.warning)
+                    title("계정을 삭제하지 못했어요")
+                    note("인터넷 연결을 확인하고 다시 시도해 주세요. 계속 안 되면 문의해 주세요.")
+                    VStack(spacing: 8) {
+                        button("다시 시도", fill: .accentFill, text: .onAccent) { Task { await deletion.proceed() } }
+                        if let mail = SettingsView.contactEmail, let url = URL(string: "mailto:\(mail)") {
+                            Link(destination: url) { label("문의하기", fill: Color.primaryText.opacity(0.08), text: .primaryText) }
+                        }
+                        Button("닫기") { deletion.close() }
+                            .font(.headline).foregroundStyle(Color.primaryText).frame(maxWidth: .infinity, minHeight: 48)
+                    }
+                    .padding(.top, 8)
+                default:
+                    icon("person.fill.xmark", .accentText)
+                    title("계정을 삭제할까요?")
+                    note("다음 항목이 지워져요.")
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(["계정", "이번 시즌 활동 합계(서버)", "크루 소속", "Apple 로그인 연결"], id: \.self) { item in
+                            HStack(spacing: 10) {
+                                Circle().fill(Self.dangerText).frame(width: 6, height: 6).accessibilityHidden(true)
+                                Text(item)
+                            }
+                        }
+                    }
+                    .font(.subheadline)
+                    .card(padding: 14)
+                    Text("기기의 기록은 그대로 남아요.").font(.subheadline)
+                    VStack(spacing: 8) {
+                        button("계정 삭제", fill: Self.dangerFill, text: Self.dangerText) { Task { await deletion.proceed() } }
+                        button("취소", fill: Color.primaryText.opacity(0.08), text: .primaryText) { deletion.close() }
+                    }
+                    .padding(.top, 8)
+                }
+            }
+            .padding(.horizontal, 20).padding(.top, 28).padding(.bottom, 16)
+            .disabled(busy)
+        }
+        .overlay { if busy { ProgressView().controlSize(.large) } }
+        .foregroundStyle(Color.primaryText)
+        .background(Color.bg)
+        .presentationDetents(shown == .confirm ? [.large] : [.medium, .large])
+        .interactiveDismissDisabled(busy)
+        .onChange(of: deletion.phase, initial: true) { _, p in if p != .working && p != .idle { shown = p } }
+    }
+
+    private func icon(_ name: String, _ color: Color) -> some View {
+        Image(systemName: name).font(.title2).foregroundStyle(color)
+            .frame(width: 56, height: 56).background(Color.surface, in: Circle()).accessibilityHidden(true)
+    }
+    private func title(_ t: String) -> some View { Text(t).font(.title2.bold()).accessibilityAddTraits(.isHeader) }
+    private func note(_ t: String) -> some View { Text(t).font(.subheadline).foregroundStyle(Color.secondaryText) }
+    private func label(_ t: String, fill: Color, text: Color) -> some View {
+        Text(t).font(.headline).foregroundStyle(text)
+            .padding(.vertical, 8).frame(maxWidth: .infinity, minHeight: 52).background(fill, in: Capsule())
+    }
+    private func button(_ t: String, fill: Color, text: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) { label(t, fill: fill, text: text) }.buttonStyle(.plain)
     }
 }

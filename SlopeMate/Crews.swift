@@ -71,10 +71,25 @@ import Foundation
 
     /// 로그인 상태가 바뀔 때마다 부른다. nil이면 구독을 모두 끊고 비운다.
     func follow(_ uid: String?) {
-        guard uid != self.uid else { return }
+        guard Self.needsFollow(uid, current: self.uid, purgePending: purgePending) else { return }
         stop()
         self.uid = uid
         if purgePending { purgeCache() } else { start() }
+    }
+
+    /// 계정 삭제 뒤: 구독을 끊고 기기에 남은 순위 캐시를 비운다. 실패하면 표시가 남아 다음에 다시 시도한다.
+    /// 캐시를 다 비웠으면 true. 실패해도 표시가 남아 다음 실행에 다시 비운다.
+    @MainActor func forget() async -> Bool {
+        uid = nil
+        return await withCheckedContinuation { c in
+            waiters.append(c)
+            purgeCache()
+        }
+    }
+
+    /// 계정이 바뀌었거나, 끝내지 못한 캐시 비우기가 있을 때(로그아웃 상태로 다시 켠 경우 포함) 다시 따라간다.
+    static func needsFollow(_ uid: String?, current: String?, purgePending: Bool) -> Bool {
+        uid != current || purgePending
     }
 
     /// 조회가 끊겼을 때(스냅샷 리스너는 오류가 나면 멈춘다) 처음부터 다시 구독한다. 남은 캐시 비우기도 다시 한다.
@@ -125,9 +140,16 @@ import Foundation
     }
 
     /// 두 단계(종료 → 캐시 삭제)가 모두 성공해야 끝난 것으로 본다. 실패하면 표시를 남겨 다시 시도할 수 있게 한다.
+    @ObservationIgnored private var purging = false
+    /// 캐시 비우기 결과를 기다리는 쪽(계정 삭제)
+    @ObservationIgnored private var waiters: [CheckedContinuation<Bool, Never>] = []
+
     private func purgeCache() {
         stop()
         purgePending = true
+        // 이미 비우는 중이면 그 결과를 기다린다(같은 Firestore를 두 번 종료하지 않게)
+        guard !purging else { return }
+        purging = true
         Firestore.firestore().terminate { error in
             guard error == nil else { return self.purgeFinished(ok: false) }
             Firestore.firestore().clearPersistence { error in self.purgeFinished(ok: error == nil) }
@@ -137,7 +159,10 @@ import Foundation
     private func purgeFinished(ok: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            purging = false
             purgeFailed = !ok
+            for w in waiters { w.resume(returning: ok) }
+            waiters = []
             // 실패하면 남은 캐시의 예전 멤버 목록으로 다시 구독하지 않도록 멈추고 오류 화면(다시 시도 = 캐시 비우기 재시도)
             guard ok else { status = .failed; return }
             purgePending = false

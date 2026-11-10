@@ -35,11 +35,7 @@ import Foundation
     /// Apple 로그인 결과로 Firebase에 로그인하고 users/{uid}를 만든다.
     /// 다시 로그인하면 표시 이름만 바꾸고, 속한 크루의 이름도 함께 바뀐다(setDisplayName 함수).
     func complete(_ authorization: ASAuthorization, name: String) async throws {
-        guard let apple = authorization.credential as? ASAuthorizationAppleIDCredential,
-              let token = apple.identityToken.flatMap({ String(data: $0, encoding: .utf8) })
-        else { throw URLError(.badServerResponse) }
-        let credential = OAuthProvider.appleCredential(withIDToken: token, rawNonce: nonce, fullName: nil)
-        let user = try await Auth.auth().signIn(with: credential).user
+        let user = try await Auth.auth().signIn(with: try credential(authorization).credential).user
         let doc = Firestore.firestore().collection("users").document(user.uid)
         do {
             if try await doc.getDocument().exists {
@@ -56,6 +52,15 @@ import Foundation
         uid = user.uid
     }
 
+    /// Apple 로그인 결과 → Firebase 자격 증명과 인증 코드(연결 해제에 바로 쓴다, 5분 유효·한 번만).
+    func credential(_ authorization: ASAuthorization) throws -> (credential: AuthCredential, code: String) {
+        guard let apple = authorization.credential as? ASAuthorizationAppleIDCredential,
+              let token = apple.identityToken.flatMap({ String(data: $0, encoding: .utf8) }),
+              let code = apple.authorizationCode.flatMap({ String(data: $0, encoding: .utf8) })
+        else { throw URLError(.badServerResponse) }
+        return (OAuthProvider.appleCredential(withIDToken: token, rawNonce: nonce, fullName: nil), code)
+    }
+
     /// 다시 시도해도 안 되는 거절(삭제 중인 계정, 형식)인지. 그 밖은 연결 문제로 본다.
     static func isRefusal(_ error: Error) -> Bool {
         let e = error as NSError
@@ -69,10 +74,12 @@ import Foundation
 
 /// 크루 함수 호출 (서울 리전 Callable). 경합으로 끝난 aborted만 몇 번 다시 부른다.
 enum CrewAPI {
-    static func call(_ name: String, _ data: [String: Any]) async throws -> [String: Any] {
+    /// `as`를 주면 보낼 때마다 로그인 계정이 그 uid인지 확인한다(계정이 바뀌거나 지워진 뒤 늦게 나가는 요청을 막음).
+    static func call(_ name: String, _ data: [String: Any], as uid: String? = nil) async throws -> [String: Any] {
         let fn = Functions.functions(region: "asia-northeast3").httpsCallable(name)
         var attempt = 0
         while true {
+            if let uid, Auth.auth().currentUser?.uid != uid { throw CancellationError() }
             do {
                 return try await fn.call(data).data as? [String: Any] ?? [:]
             } catch let e as NSError where e.domain == FunctionsErrorDomain

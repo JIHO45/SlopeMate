@@ -5,6 +5,7 @@ import Foundation
 /// - `-SMFailWeather`: "다시 시도"를 누르기 전까지 날씨 조회가 실패한다
 /// - `-SMFailVideoOnce`: 첫 동영상 만들기만 만드는 중 화면을 띄운 뒤 실패한다
 /// - `-SMBanner battery|weak`: 배터리 12%(충전 안 함) 또는 약한 위치 신호를 실제 배너 조건에 넣는다
+/// - `-SMDeleteSheet confirm|done|failed`: 계정 삭제 시트를 그 상태로 띄운다(시뮬레이터는 Apple 로그인이 안 됨)
 nonisolated enum DebugFailures {
     struct Injected: LocalizedError { var errorDescription: String? { "디버그 실패 주입" } }
 
@@ -20,6 +21,15 @@ nonisolated enum DebugFailures {
         #if DEBUG
         let a = ProcessInfo.processInfo.arguments
         return a.firstIndex(of: "-SMBanner").flatMap { a.indices.contains($0 + 1) ? a[$0 + 1] : nil }
+        #else
+        nil
+        #endif
+    }
+
+    static var deleteSheet: String? {
+        #if DEBUG
+        let a = ProcessInfo.processInfo.arguments
+        return a.firstIndex(of: "-SMDeleteSheet").flatMap { a.indices.contains($0 + 1) ? a[$0 + 1] : nil }
         #else
         nil
         #endif

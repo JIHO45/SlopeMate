@@ -6,6 +6,7 @@ struct RootView: View {
     var account: Account
     var crews: Crews
     var summary: SummarySync
+    var deletion: AccountDeletion
     @Environment(\.scenePhase) private var phase
     @State private var showRecording = false
     @State private var tab = Tab.record
@@ -27,6 +28,20 @@ struct RootView: View {
         .onChange(of: account.uid, initial: true) { summary.follow(account.uid) }
         .onChange(of: crews.ids) { if !crews.ids.isEmpty { summary.sync() } }
         .onChange(of: phase) { if phase == .active && !crews.ids.isEmpty { summary.sync() } }
+        // 계정 삭제(R13): 끝내지 못한 삭제는 앱을 켜거나 다시 볼 때 잇는다. 확인·완료·실패 시트는 어느 화면에서든 뜬다.
+        .environment(deletion)
+        .task(id: phase) { if phase == .active { await deletion.resume() } }
+        .task {
+            switch DebugFailures.deleteSheet {
+            case "confirm": deletion.phase = .confirm
+            case "done": deletion.phase = .done
+            case "failed": deletion.phase = .failed
+            default: break
+            }
+        }
+        .sheet(isPresented: Binding(get: { deletion.phase != .idle }, set: { if !$0 { deletion.close() } })) {
+            AccountDeleteSheet(deletion: deletion)
+        }
         .onChange(of: recorder.recording == nil) { _, ended in if ended && !crews.ids.isEmpty { summary.sync() } }
         .alert("이 기기에는 기록이 없어요. 크루 합계를 이 기기 기준으로 바꿀까요?",
                isPresented: Binding(get: { summary.askReplace != nil }, set: { if !$0 { summary.askReplace = nil } }),

@@ -654,7 +654,7 @@ private struct KickMembersView: View {
                     do { _ = try await CrewAPI.call("kickMember", ["crewId": crewId, "uid": m.id]) } catch { failed = true }
                 }
             }
-        } message: { Text("이 크루에서 기록이 사라져요. 새 초대 링크를 받아도 이 크루에 다시 참여할 수 없어요. 크루 설정의 차단한 사람에서 풀 수 있어요.") }
+        } message: { Text("이 크루에서 기록이 사라져요. 새 초대 링크를 받아도 이 계정으로는 이 크루에 다시 참여할 수 없어요. 크루 설정의 차단한 사람에서 풀 수 있어요.") }
         .alert("내보내지 못했어요", isPresented: $failed) { Button("확인", role: .cancel) {} } message: { Text(failMessage) }
     }
 }

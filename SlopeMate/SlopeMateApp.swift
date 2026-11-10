@@ -8,8 +8,8 @@ struct SlopeMateApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if let recorder = delegate.recorder {
-                RootView(recorder: recorder, account: delegate.account!, crews: delegate.crews, summary: delegate.summary!)
+            if let recorder = delegate.recorder, let deletion = delegate.deletion {
+                RootView(recorder: recorder, account: delegate.account!, crews: delegate.crews, summary: delegate.summary!, deletion: deletion)
             } else {
                 ContentUnavailableView("기록 저장소를 열지 못했어요", systemImage: "externaldrive.badge.exclamationmark",
                                        description: Text("저장된 기록은 지우지 않았어요. 앱을 업데이트하거나 다시 실행해 주세요.\n\(delegate.dbError ?? "")"))
@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     var account: Account?
     let crews = Crews()
     var summary: SummarySync?
+    var deletion: AccountDeletion?
     var dbError: String?
 
     /// 시스템이 종료한 앱을 위치 이벤트로 다시 실행하면, 여기서 바로 세션과 수신을 복원해야 한다(WWDC23 10180).
@@ -36,8 +37,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         }
         // 크루용 Firebase는 기록 복원 뒤에 켠다(위치 재실행 때 복원이 먼저)
         FirebaseApp.configure()
-        account = Account()
-        if let recorder { summary = SummarySync(db: recorder.db) }
+        let account = Account()
+        self.account = account
+        if let recorder {
+            let summary = SummarySync(db: recorder.db)
+            self.summary = summary
+            deletion = AccountDeletion(account: account, crews: crews, summary: summary, db: recorder.db)
+        }
         return true
     }
 }
