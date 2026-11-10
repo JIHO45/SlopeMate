@@ -86,3 +86,11 @@ test("시즌 합계: 본인만 읽고, 아무도 직접 쓰지 못한다", async
   await assertFails(getDoc(doc(as("a"), "season_summaries/b_2026-27")));
   await assertFails(setDoc(doc(as("b"), "season_summaries/b_2026-27"), { uid: "b", runs: 999, computed_at: 9 }));
 });
+
+test("삭제를 끝낸 계정은 남은 로그인으로 계정 문서를 다시 만들지 못한다", async () => {
+  const ok = { display_name: "지호", age14_confirmed: true, deleting: false, created_at: serverTimestamp() };
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), "deleted_users/gone"), { at: new Date() }));
+  await assertFails(setDoc(doc(as("gone"), "users/gone"), ok));
+  await assertFails(getDoc(doc(as("gone"), "deleted_users/gone")));
+  await assertFails(setDoc(doc(as("n"), "deleted_users/n"), { at: new Date() }));
+});

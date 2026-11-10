@@ -1,8 +1,10 @@
 // 크루 함수 (R14, 05-design 6장). 권한 변경은 서버 함수만 하고, 함수는 보안 규칙을 거치지 않으므로 여기서 직접 확인한다.
 // 전제 조건(계정, 크루장, 초대, 멤버 여부, 인원)은 바꾸는 트랜잭션 안에서 읽는다.
 import { initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { DocumentSnapshot, FieldValue, getFirestore, Transaction } from "firebase-admin/firestore";
-import { setGlobalOptions } from "firebase-functions/v2";
+import { logger, setGlobalOptions } from "firebase-functions/v2";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { CallableRequest, HttpsError, onCall } from "firebase-functions/v2/https";
 import { randomBytes } from "node:crypto";
 import { currentSeason } from "./season.js";
@@ -150,31 +152,34 @@ export const joinCrew = onCall(async (req) => {
 
 /** 크루장이 나가면 가장 먼저 가입한 다음 사람이 크루장. 마지막 한 명이면 크루와 초대를 지운다.
  *  나가기는 계정 상태와 무관하게 로그인만 확인한다(계정 문서가 없어도 나갈 수 있게). */
+/** 크루에서 빠진다(나가기, 계정 삭제 공용). 크루장이면 가장 먼저 가입한 사람에게 넘기고, 마지막 멤버면 크루를 지운다. */
+async function leaveTx(tx: Transaction, uid: string, crewId: string) {
+  const crewRef = crews.doc(crewId);
+  const crew = await tx.get(crewRef);
+  const me = await tx.get(crewRef.collection("members").doc(uid));
+  if (!crew.exists || !me.exists) return { left: true };
+  if (crew.get("member_count") <= 1) {
+    const bans = await tx.get(crewRef.collection("bans"));
+    for (const b of bans.docs) tx.delete(b.ref);
+    tx.delete(me.ref);
+    tx.delete(invites.doc(crew.get("invite_token")));
+    tx.delete(crewRef);
+    return { left: true, deleted: true };
+  }
+  let owner = crew.get("owner_uid") as string;
+  if (owner === uid) {
+    const first = await tx.get(crewRef.collection("members").orderBy("joined_at").limit(2));
+    owner = first.docs.map((d) => d.id).find((id) => id !== uid) ?? owner;
+  }
+  tx.delete(me.ref);
+  tx.update(crewRef, { member_count: FieldValue.increment(-1), owner_uid: owner });
+  return { left: true };
+}
+
 export const leaveCrew = onCall(async (req) => {
   const uid = uidOf(req);
   const crewId = idArg(req.data?.crewId, "crewId");
-  return run(async (tx) => {
-    const crewRef = crews.doc(crewId);
-    const crew = await tx.get(crewRef);
-    const me = await tx.get(crewRef.collection("members").doc(uid));
-    if (!crew.exists || !me.exists) return { left: true };
-    if (crew.get("member_count") <= 1) {
-      const bans = await tx.get(crewRef.collection("bans"));
-      for (const b of bans.docs) tx.delete(b.ref);
-      tx.delete(me.ref);
-      tx.delete(invites.doc(crew.get("invite_token")));
-      tx.delete(crewRef);
-      return { left: true, deleted: true };
-    }
-    let owner = crew.get("owner_uid") as string;
-    if (owner === uid) {
-      const first = await tx.get(crewRef.collection("members").orderBy("joined_at").limit(2));
-      owner = first.docs.map((d) => d.id).find((id) => id !== uid) ?? owner;
-    }
-    tx.delete(me.ref);
-    tx.update(crewRef, { member_count: FieldValue.increment(-1), owner_uid: owner });
-    return { left: true };
-  });
+  return run((tx) => leaveTx(tx, uid, crewId));
 });
 
 export const kickMember = onCall(async (req) => {
@@ -286,4 +291,90 @@ export const syncSummary = onCall(async (req) => {
     for (const m of mine.docs) tx.update(m.ref, { season, ...values, summary_at: FieldValue.serverTimestamp() });
     return { applied: true, crews: mine.size };
   });
+});
+
+// MARK: 계정 삭제 (R13, 05-design 6장)
+
+/** 처음 삭제를 접수할 때 요구하는 재인증 기한(초). 앱은 Apple 재로그인 직후에 부른다. */
+const REAUTH_SECONDS = 600;
+/** 삭제를 끝낸 uid 표시. 지워진 계정의 남은 로그인 토큰(최대 1시간)이 users를 다시 만들지 못하게 규칙이 본다. */
+const tombstones = db.collection("deleted_users");
+
+/** 삭제를 접수하고 끝까지 지운다. 접수(deleting=true)는 한 번만 재인증을 요구하고, 그 뒤 재호출은 이어서 정리한다.
+ *  접수할 때 users 문서를 표시만 남기고 덮어써서 표시 이름 등은 바로 사라진다. 문서가 없던 계정도 표시가 생긴다. */
+export const deleteAccount = onCall(async (req) => {
+  const uid = uidOf(req);
+  const authTime = Number(req.auth?.token.auth_time);
+  const done = await run(async (tx) => {
+    const ref = db.doc(`users/${uid}`);
+    const user = await tx.get(ref);
+    const tomb = await tx.get(tombstones.doc(uid));
+    if (!user.exists && tomb.exists) return true;
+    if (user.get("deleting") !== true) {
+      if (!(Date.now() / 1000 - authTime <= REAUTH_SECONDS)) throw new HttpsError("failed-precondition", "reauth");
+      tx.set(ref, { deleting: true, delete_requested_at: FieldValue.serverTimestamp() });
+    }
+    return false;
+  });
+  if (!done) await purgeUser(uid);
+  return { deleted: true };
+});
+
+/** 접수된 계정의 서버 데이터를 모두 지운다. 단계마다 이미 없으면 지나가므로 여러 번, 동시에 불러도 된다.
+ *  Auth 사용자를 지운 뒤에도 users(deleting=true)가 남아 있는 동안은 requireUser와 create 규칙이, 그 뒤로는 표시 문서가 막는다. */
+async function purgeUser(uid: string) {
+  const mine = await db.collectionGroup("members").where("uid", "==", uid).get();
+  for (const m of mine.docs) {
+    const crewId = m.ref.parent.parent?.id;
+    if (crewId) await run((tx) => leaveTx(tx, uid, crewId));
+  }
+  // 크루에서 빠진 뒤에는 새 차단 기록이 생기지 않는다(내보내기는 멤버일 때만)
+  const sums = await summaries.where("uid", "==", uid).get();
+  const bans = await db.collectionGroup("bans").where("uid", "==", uid).get();
+  // ponytail: 한 배치(500개)로 지운다. 한 사람이 500개 크루에서 차단될 일은 없다
+  const batch = db.batch();
+  for (const d of [...sums.docs, ...bans.docs]) batch.delete(d.ref);
+  await batch.commit();
+  try {
+    await getAuth().deleteUser(uid);
+  } catch (e) {
+    if ((e as { code?: unknown }).code !== "auth/user-not-found") throw e;
+  }
+  const end = db.batch();
+  end.delete(db.doc(`users/${uid}`));
+  end.set(tombstones.doc(uid), { at: FieldValue.serverTimestamp() });
+  await end.commit();
+}
+
+/** 삭제가 어디까지 갔는지(로그인 없이). 앱이 성공 응답을 받지 못했을 때 확인한다. uid는 추측할 수 없는 값이고 답은 상태 하나뿐이다.
+ *  deleted: 계정 문서와 Auth 사용자가 모두 없음. deleting: 접수됨(스케줄 함수가 마저 지움). active: 접수되지 않음. */
+export const deletionStatus = onCall(async (req) => {
+  const uid = idArg(req.data?.uid, "uid");
+  const user = await db.doc(`users/${uid}`).get();
+  if (user.exists) return { state: user.get("deleting") === true ? "deleting" : "active" };
+  try {
+    await getAuth().getUser(uid);
+    return { state: "active" };
+  } catch (e) {
+    if ((e as { code?: unknown }).code !== "auth/user-not-found") throw e;
+    return { state: "deleted" };
+  }
+});
+
+/** 중간에 끊긴 삭제를 마저 한다. 계정 하나가 실패해도 나머지는 계속하고, 세 번 넘게 실패하면 오류로 남긴다. */
+export const sweepDeletions = onSchedule("every 60 minutes", async () => {
+  const pending = await db.collection("users").where("deleting", "==", true).get();
+  for (const u of pending.docs) {
+    try {
+      await purgeUser(u.id);
+    } catch (e) {
+      const attempts = ((u.get("delete_attempts") as number | undefined) ?? 0) + 1;
+      await u.ref.update({ delete_attempts: attempts }).catch(() => undefined);
+      (attempts >= 3 ? logger.error : logger.warn)("account purge failed", { uid: u.id, attempts, error: String(e) });
+    }
+  }
+  const old = await tombstones.where("at", "<", new Date(Date.now() - 24 * 3600_000)).get();
+  const batch = db.batch();
+  for (const d of old.docs) batch.delete(d.ref);
+  await batch.commit();
 });
