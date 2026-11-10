@@ -2,7 +2,7 @@
 import { test, before, after, beforeEach } from "node:test";
 import { readFileSync } from "node:fs";
 import { assertFails, assertSucceeds, initializeTestEnvironment } from "@firebase/rules-unit-testing";
-import { collection, collectionGroup, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
+import { collection, collectionGroup, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from "firebase/firestore";
 
 let env;
 before(async () => {
@@ -22,6 +22,7 @@ beforeEach(async () => {
     await setDoc(doc(db, "crews/c2"), { name: "다른반", owner_uid: "z", member_count: 1, invite_token: "u" });
     await setDoc(doc(db, "crews/c2/members/z"), { uid: "z", runs: 9 });
     await setDoc(doc(db, "invites/t"), { crew_id: "c1" });
+    await setDoc(doc(db, "crews/c1/bans/x"), { uid: "x", display_name: "누군가" });
   });
 });
 
@@ -56,4 +57,22 @@ test("클라이언트는 크루·멤버·초대를 쓰거나 초대를 읽지 �
   await assertFails(setDoc(doc(as("b"), "crews/c3"), { name: "x", owner_uid: "b" }));
   await assertFails(getDoc(doc(as("b"), "invites/t")));
   await assertFails(setDoc(doc(as("b"), "invites/new"), { crew_id: "c1" }));
+});
+
+test("계정 문서: 본인만 처음 한 번 만들고, 표시 이름은 직접 못 바꾼다(함수로만)", async () => {
+  const ok = { display_name: "지호", age14_confirmed: true, deleting: false, created_at: serverTimestamp() };
+  await assertFails(setDoc(doc(as("n"), "users/n"), { ...ok, age14_confirmed: false }));
+  await assertFails(setDoc(doc(as("n"), "users/other"), ok));
+  await assertSucceeds(setDoc(doc(as("n"), "users/n"), ok));
+  await assertSucceeds(getDoc(doc(as("n"), "users/n")));
+  await assertFails(getDoc(doc(as("b"), "users/n")));
+  await assertFails(updateDoc(doc(as("n"), "users/n"), { display_name: "JH" }));
+  await assertFails(setDoc(doc(as("n"), "users/n"), ok));
+});
+
+test("차단 기록: 크루장만 읽고, 크루원·외부인은 못 읽고, 아무도 쓰지 못한다", async () => {
+  await assertSucceeds(getDocs(collection(as("a"), "crews/c1/bans")));
+  await assertFails(getDocs(collection(as("b"), "crews/c1/bans")));
+  await assertFails(getDoc(doc(as("x"), "crews/c1/bans/x")));
+  await assertFails(setDoc(doc(as("a"), "crews/c1/bans/y"), { uid: "y" }));
 });

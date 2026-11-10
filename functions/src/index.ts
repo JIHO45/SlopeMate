@@ -109,7 +109,10 @@ export const previewInvite = onCall(async (req) => {
   const crew = inv.exists ? await crews.doc(inv.get("crew_id")).get() : undefined;
   if (!crew?.exists) throw new HttpsError("not-found", "invite");
   const count = crew.get("member_count") as number;
-  const result: Record<string, unknown> = { name: crew.get("name"), member_count: count, full: count >= MAX_MEMBERS };
+  const owner = await crew.ref.collection("members").doc(crew.get("owner_uid")).get();
+  const result: Record<string, unknown> = {
+    name: crew.get("name"), member_count: count, full: count >= MAX_MEMBERS, owner_name: owner.get("display_name") ?? "",
+  };
   if (req.auth) result.already_member = (await crew.ref.collection("members").doc(req.auth.uid).get()).exists;
   return result;
 });
@@ -125,7 +128,10 @@ export const joinCrew = onCall(async (req) => {
     const crew = await tx.get(crewRef);
     const me = await tx.get(crewRef.collection("members").doc(uid));
     if (!crew.exists) throw new HttpsError("not-found", "invite");
+    const ban = await tx.get(crewRef.collection("bans").doc(uid));
     if (me.exists) return { crewId: crewRef.id };
+    // 크루장이 내보낸 사람은 크루장이 차단을 풀기 전까지 새 링크로도 다시 들어오지 못한다(R16)
+    if (ban.exists) throw new HttpsError("permission-denied", "kicked");
     if (crew.get("member_count") >= MAX_MEMBERS) throw new HttpsError("resource-exhausted", "full");
     tx.set(me.ref, memberDoc(uid, user));
     tx.update(crewRef, { member_count: FieldValue.increment(1) });
@@ -133,17 +139,19 @@ export const joinCrew = onCall(async (req) => {
   });
 });
 
-/** 크루장이 나가면 가장 먼저 가입한 다음 사람이 크루장. 마지막 한 명이면 크루와 초대를 지운다. */
+/** 크루장이 나가면 가장 먼저 가입한 다음 사람이 크루장. 마지막 한 명이면 크루와 초대를 지운다.
+ *  나가기는 계정 상태와 무관하게 로그인만 확인한다(계정 문서가 없어도 나갈 수 있게). */
 export const leaveCrew = onCall(async (req) => {
   const uid = uidOf(req);
   const crewId = idArg(req.data?.crewId, "crewId");
   return run(async (tx) => {
-    await requireUser(tx, uid);
     const crewRef = crews.doc(crewId);
     const crew = await tx.get(crewRef);
     const me = await tx.get(crewRef.collection("members").doc(uid));
     if (!crew.exists || !me.exists) return { left: true };
     if (crew.get("member_count") <= 1) {
+      const bans = await tx.get(crewRef.collection("bans"));
+      for (const b of bans.docs) tx.delete(b.ref);
       tx.delete(me.ref);
       tx.delete(invites.doc(crew.get("invite_token")));
       tx.delete(crewRef);
@@ -171,6 +179,8 @@ export const kickMember = onCall(async (req) => {
     if (!member.exists) return { kicked: false };
     tx.delete(member.ref);
     tx.update(crew.ref, { member_count: FieldValue.increment(-1) });
+    // 차단 기록은 크루원에게 보이지 않는 bans에 둔다(크루장만 읽음, 해제할 때 이름을 보여 주려고 이름도)
+    tx.set(crew.ref.collection("bans").doc(target), { uid: target, display_name: member.get("display_name") ?? "", at: FieldValue.serverTimestamp() });
     return { kicked: true };
   });
 });
@@ -197,5 +207,30 @@ export const rotateInvite = onCall(async (req) => {
     tx.set(invites.doc(token), { crew_id: crewId });
     tx.update(crew.ref, { invite_token: token });
     return { token };
+  });
+});
+
+/** 표시 이름 바꾸기: users와 내가 속한 모든 크루의 멤버 문서를 함께 바꾼다. */
+export const setDisplayName = onCall(async (req) => {
+  const uid = uidOf(req);
+  const name = nameArg(req.data?.name);
+  return run(async (tx) => {
+    const user = await requireUser(tx, uid);
+    const mine = await tx.get(db.collectionGroup("members").where("uid", "==", uid));
+    tx.update(user.ref, { display_name: name });
+    for (const m of mine.docs) tx.update(m.ref, { display_name: name });
+    return { name, crews: mine.size };
+  });
+});
+
+/** 차단 해제(크루장). 해제하면 초대 링크로 다시 참여할 수 있다. */
+export const unbanMember = onCall(async (req) => {
+  const uid = uidOf(req);
+  const crewId = idArg(req.data?.crewId, "crewId");
+  const target = idArg(req.data?.uid, "uid");
+  return run(async (tx) => {
+    const crew = await ownerCrew(tx, uid, crewId);
+    tx.delete(crew.ref.collection("bans").doc(target));
+    return { unbanned: true };
   });
 });

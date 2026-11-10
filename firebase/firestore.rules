@@ -4,7 +4,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function validName(n) { return n is string && n.size() >= 1 && n.size() <= 20; }
 
-    // USER: 본인만 읽고 쓴다. 만 14세 확인 없이는 만들 수 없다(R20). 삭제 중이면 쓰기 거부(R13).
+    // USER: 본인만 읽고, 처음 가입할 때만 직접 만든다. 만 14세 확인 없이는 만들 수 없다(R20).
+    // 표시 이름 변경은 setDisplayName 함수로만(크루 멤버 문서와 함께 바꾸려고). 삭제 중 상태도 함수가 확인한다(R13).
     match /users/{uid} {
       allow read: if request.auth.uid == uid;
       allow create: if request.auth.uid == uid
@@ -13,10 +14,6 @@ service cloud.firestore {
         && request.resource.data.age14_confirmed == true
         && request.resource.data.deleting == false
         && request.resource.data.created_at == request.time;
-      allow update: if request.auth.uid == uid
-        && resource.data.deleting == false
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['display_name'])
-        && validName(request.resource.data.display_name);
     }
 
     // 크루 (R14, R15): 같은 크루 멤버만 읽는다. 쓰기는 서버 함수만. 나가거나 내보내지면 바로 못 읽는다.
@@ -28,6 +25,11 @@ service cloud.firestore {
       allow read: if isMember(crewId);
       match /members/{memberId} {
         allow read: if isMember(crewId);
+      }
+      // 차단 기록: 크루장만 읽는다(해제 화면). 크루원은 누가 내보내졌는지 보지 못한다.
+      match /bans/{banId} {
+        allow read: if request.auth != null
+          && get(/databases/$(database)/documents/crews/$(crewId)).data.owner_uid == request.auth.uid;
       }
     }
     // 내 크루 목록: collectionGroup('members') where uid == 내 uid
