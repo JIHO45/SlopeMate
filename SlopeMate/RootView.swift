@@ -31,6 +31,16 @@ struct RootView: View {
         // 계정 삭제(R13): 끝내지 못한 삭제는 앱을 켜거나 다시 볼 때 잇는다. 확인·완료·실패 시트는 어느 화면에서든 뜬다.
         .environment(deletion)
         .task(id: phase) { if phase == .active { await deletion.resume() } }
+        // 슬로프 이름 켜기·시간표 갱신·차단 스위치(R7, R9): 켤 때와 다시 볼 때(1시간 안에 받았으면 건너뜀),
+        // 켜 둔 동안에는 1시간마다. 백그라운드로 가면 멈춘다.
+        .task(id: phase) {
+            guard phase == .active else { return }
+            while !Task.isCancelled {
+                await ServerConfig.refresh()
+                // refresh가 다음 시각을 미래로 정하므로 0이 될 일은 없지만, 연달아 돌지 않게 1초는 쉰다
+                try? await Task.sleep(for: .seconds(max(ServerConfig.secondsUntilRefresh(), 1)))
+            }
+        }
         .task {
             switch DebugFailures.deleteSheet {
             case "confirm": deletion.phase = .confirm

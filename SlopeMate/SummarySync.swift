@@ -85,7 +85,7 @@ import Network
 
     /// 크루가 있을 때 앱이 켜질 때, 기록이 끝났을 때, 크루에 들어갔을 때 부른다. 겹쳐 부르면 한 번 더 돈다.
     func sync(force: Bool = false) {
-        guard let uid else { return }
+        guard let uid, ServerConfig.config.crewSync else { return }
         if running { again = true; return }
         running = true
         let g = generation
@@ -131,6 +131,8 @@ import Network
     }
 
     private func send(_ p: Payload, _ uid: String, _ g: Int) async throws {
+        // 차단 스위치는 보내기 직전에도 본다(새 설치 확인의 "바꾸기", 설정을 받는 동안 대기한 작업)
+        guard ServerConfig.config.crewSync else { return }
         let r = try await CrewAPI.call("syncSummary", [
             "season": p.season, "visit_days": p.visitDays, "runs": p.runs, "distance_km": p.distanceKm,
             "resort_days": p.resortDays, "computed_at": Int(Date.now.timeIntervalSince1970 * 1000),

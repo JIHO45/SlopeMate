@@ -57,7 +57,7 @@ nonisolated enum Settings {
     }
 }
 
-/// 리조트별 슬로프 이름 표시 (R9). 서버 설정 파일을 받는 코드(서버 기능)가 `update`로 채운다. 그전에는 모두 꺼짐.
+/// 리조트별 슬로프 이름 표시 (R9). 서버 설정 파일(ServerConfig)이 `update`로 채운다. 받기 전에는 모두 꺼짐.
 /// 슬로프 매칭은 표시와 관계없이 항상 한다(설질 칸·표본에 필요).
 nonisolated enum SlopeNames {
     private static let key = "slopeNamesShown"

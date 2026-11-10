@@ -193,7 +193,7 @@ enum RecordFormat {
         }
     }
     static func session(_ run: RunDetector.Run, resortId: String) -> SessionKind? {
-        Timetable.session(at: run.start, resortId: resortId, timetables: Timetable.all)
+        Timetable.session(at: run.start, resortId: resortId, timetables: ServerConfig.timetables)
     }
     /// "주간·야간". 세션을 나누지 않는 리조트·날짜면 빈 문자열
     static func sessionNames(_ day: Stats.Day) -> String {

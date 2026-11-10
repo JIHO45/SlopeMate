@@ -16,12 +16,17 @@ nonisolated struct Timetable: Codable, Hashable {
     var updatedAt: Date          // ISO8601
     var sessions: [Session]
 
+    /// 앱에 내장한 시간표. 출시 뒤 고친 것은 서버(ServerConfig.timetables)에서 받아 합친다.
     static let all: [Timetable] = {
         let url = Bundle.main.url(forResource: "timetables", withExtension: "json")!
+        return try! decode(Data(contentsOf: url))
+    }()
+
+    static func decode(_ data: Data) throws -> [Timetable] {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
-        return try! d.decode([Timetable].self, from: Data(contentsOf: url))
-    }()
+        return try d.decode([Timetable].self, from: data)
+    }
 
     /// 하강 시작 시각으로 세션을 정한다. nil = 세션을 나누지 않음(시간표 없음·오래됨).
     static func session(at t: Date, resortId: String, timetables: [Timetable]) -> SessionKind? {
