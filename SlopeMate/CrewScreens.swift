@@ -224,7 +224,7 @@ struct JoinCrewSheet: View {
     var opened: (String) -> Void
     @Environment(\.dismiss) private var dismiss
 
-    private struct Preview { var name: String; var count: Int; var owner: String; var full: Bool; var member: Bool }
+    private struct Preview { var name: String; var count: Int; var owner: String; var ownerUid: String; var full: Bool; var member: Bool }
     private enum State { case loading, ready(Preview), invalid, failed }
     @SwiftUI.State private var state = State.loading
     @SwiftUI.State private var busy = false
@@ -256,8 +256,13 @@ struct JoinCrewSheet: View {
                             CrewIcon(size: 64)
                             Text("크루 초대").font(.subheadline).foregroundStyle(Color.secondaryText).padding(.top, 6)
                             Text(p.name).font(.title.bold()).multilineTextAlignment(.center)
-                            Text((p.full ? "\(p.count)/\(Crews.maxMembers)명" : "\(p.count)명") + (p.owner.isEmpty ? "" : " · 크루장 \(p.owner)"))
+                            let ownerBlocked = crews.blocked[p.ownerUid] != nil
+                            Text((p.full ? "\(p.count)/\(Crews.maxMembers)명" : "\(p.count)명") + (p.owner.isEmpty || ownerBlocked ? "" : " · 크루장 \(p.owner)"))
                                 .foregroundStyle(Color.secondaryText)
+                            if ownerBlocked {
+                                Label("내가 차단한 사람이 크루장인 크루예요", systemImage: "hand.raised")
+                                    .font(.subheadline.weight(.semibold)).padding(.top, 4)
+                            }
                         }
                         if p.full {
                             Label {
@@ -277,6 +282,11 @@ struct JoinCrewSheet: View {
                                 Text("경로와 위치는 보이지 않아요.").font(.subheadline).foregroundStyle(Color.secondaryText)
                             }
                             .card(padding: 16)
+                        }
+                        // 가입 전에는 신고 함수를 못 쓰므로 문의로 신고한다(R16). 연락처가 정해진 뒤 보인다.
+                        if let mail = SettingsView.contactEmail,
+                           let url = URL(string: "mailto:\(mail)?subject=\("크루 이름 신고: \(p.name)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+                            Link("부적절한 이름 신고하기", destination: url).font(.subheadline).foregroundStyle(Color.secondaryText)
                         }
                     }
                     .foregroundStyle(Color.primaryText)
@@ -307,7 +317,8 @@ struct JoinCrewSheet: View {
         do {
             let r = try await CrewAPI.call("previewInvite", ["token": token])
             state = .ready(Preview(name: r["name"] as? String ?? "", count: r["member_count"] as? Int ?? 0,
-                                   owner: r["owner_name"] as? String ?? "", full: r["full"] as? Bool ?? false,
+                                   owner: r["owner_name"] as? String ?? "", ownerUid: r["owner_uid"] as? String ?? "",
+                                   full: r["full"] as? Bool ?? false,
                                    member: r["already_member"] as? Bool ?? false))
         } catch {
             state = CrewAPI.code(error).0 == .notFound ? .invalid : .failed
@@ -341,6 +352,10 @@ struct CrewDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var metric = Crews.Metric.visitDays
     @State private var seen = false
+    @State private var reporting: Crews.Member?
+    @State private var blocking: Crews.Member?
+    @State private var reported = false
+    @State private var reportFailed: String?
 
     var body: some View {
         Group {
@@ -365,7 +380,10 @@ struct CrewDetailView: View {
     }
 
     private func content(_ crew: Crews.Crew) -> some View {
-        let list = crews.ranking(crewId, by: metric)
+        // 순위 번호는 차단한 사람을 포함한 원래 값, 행은 차단한 사람을 뺀다
+        let ranked = crews.ranking(crewId, by: metric).enumerated().map { (rank: $0.offset + 1, member: $0.element) }
+        let list = ranked.filter { crews.blocked[$0.member.id] == nil }
+        let hidden = ranked.count - list.count
         return ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 if summary.failed {
@@ -390,8 +408,8 @@ struct CrewDetailView: View {
                        summary.failed ? nil : synced.map { "마지막 갱신 \($0)" }] as [String?]).compactMap { $0 }.joined(separator: " · "))
                     .font(.subheadline).foregroundStyle(Color.secondaryText).padding(.horizontal, 4).padding(.top, 6)
                 VStack(spacing: 0) {
-                    ForEach(Array(list.enumerated()), id: \.element.id) { i, m in
-                        row(rank: i + 1, m)
+                    ForEach(Array(list.enumerated()), id: \.element.member.id) { i, r in
+                        row(rank: r.rank, r.member)
                         if i < list.count - 1 { Divider().padding(.leading, 16) }
                     }
                 }
@@ -400,12 +418,30 @@ struct CrewDetailView: View {
                 .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.cardBorder))
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("\(metric.rawValue) 순위")
+                if hidden > 0 {
+                    Text("차단한 크루원 \(hidden)명은 보이지 않아요. 설정 > 차단한 크루원에서 풀 수 있어요.")
+                        .font(.subheadline).foregroundStyle(Color.secondaryText).padding(.horizontal, 4)
+                }
                 if crew.memberCount <= 1 { alone(crew) }
             }
             .foregroundStyle(Color.primaryText)
             .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 24)
         }
         .navigationTitle(crew.name).navigationBarTitleDisplayMode(.inline)
+        .alert("\(reporting?.name ?? "")님의 표시 이름을 신고할까요?", isPresented: Binding(get: { reporting != nil }, set: { if !$0 { reporting = nil } }),
+               presenting: reporting) { m in
+            Button("취소", role: .cancel) {}
+            Button("신고") { Task { await report(m) } }
+        } message: { _ in Text(ReportSheet.explain) }
+        .alert("\(blocking?.name ?? "")님을 차단할까요?", isPresented: Binding(get: { blocking != nil }, set: { if !$0 { blocking = nil } }),
+               presenting: blocking) { m in
+            Button("취소", role: .cancel) {}
+            Button("차단", role: .destructive) { crews.block(m) }
+        } message: { _ in Text(BlockedListView.explain) }
+        .alert("신고했어요", isPresented: $reported) { Button("확인", role: .cancel) {} } message: { Text("확인한 뒤 조치할게요. 결과는 앱에서 알려 드려요.") }
+        .alert("신고하지 못했어요", isPresented: Binding(get: { reportFailed != nil }, set: { if !$0 { reportFailed = nil } })) {
+            Button("확인", role: .cancel) {}
+        } message: { Text(reportFailed ?? "") }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 ShareLink(item: crew.inviteURL, message: Text("SlopeMate 크루 '\(crew.name)'에 초대해요")) {
@@ -421,17 +457,49 @@ struct CrewDetailView: View {
     private func row(rank: Int, _ m: Crews.Member) -> some View {
         let me = m.id == crews.uid
         return HStack(spacing: 12) {
-            Text("\(rank)").font(.headline).monospacedDigit().frame(minWidth: 24)
-            VStack(alignment: .leading, spacing: 1) {
-                (Text(m.name).fontWeight(.semibold) + Text(me ? " (나)" : "").font(.subheadline).foregroundStyle(Color.secondaryText))
-                Text(resorts(m)).font(.subheadline).foregroundStyle(Color.secondaryText)
+            HStack(spacing: 12) {
+                Text("\(rank)").font(.headline).monospacedDigit().frame(minWidth: 24)
+                VStack(alignment: .leading, spacing: 1) {
+                    (Text(m.name).fontWeight(.semibold) + Text(me ? " (나)" : "").font(.subheadline).foregroundStyle(Color.secondaryText))
+                    Text(resorts(m)).font(.subheadline).foregroundStyle(Color.secondaryText)
+                }
+                Spacer(minLength: 8)
+                value(m).foregroundStyle(me ? Color.accentText : Color.primaryText)
             }
-            Spacer(minLength: 8)
-            value(m).foregroundStyle(me ? Color.accentText : Color.primaryText)
+            .accessibilityElement(children: .combine)
+            // 다른 크루원: 메뉴 버튼·길게 누르기·VoiceOver 동작으로 신고·차단(R16)
+            if !me {
+                Menu {
+                    Button("표시 이름 신고", systemImage: "flag") { reporting = m }
+                    Button("차단", systemImage: "hand.raised", role: .destructive) { blocking = m }
+                } label: {
+                    Image(systemName: "ellipsis").font(.body.weight(.semibold)).foregroundStyle(Color.secondaryText)
+                        .frame(width: 32, height: 44).contentShape(Rectangle())
+                }
+                .accessibilityLabel("\(m.name) 신고·차단")
+            }
         }
-        .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 60)
+        .padding(.leading, 16).padding(.trailing, me ? 16 : 8).padding(.vertical, 8).frame(minHeight: 60)
         .background(me ? Color(light: 0xEEF6F8, dark: 0x183A44) : .clear)
-        .accessibilityElement(children: .combine)
+        .contextMenu {
+            if !me {
+                Button("표시 이름 신고", systemImage: "flag") { reporting = m }
+                Button("차단", systemImage: "hand.raised", role: .destructive) { blocking = m }
+            }
+        }
+        .accessibilityActions {
+            if !me {
+                Button("표시 이름 신고") { reporting = m }
+                Button("차단") { blocking = m }
+            }
+        }
+    }
+
+    private func report(_ m: Crews.Member) async {
+        do {
+            _ = try await CrewAPI.call("reportName", ["crewId": crewId, "target": "display_name", "targetUid": m.id])
+            reported = true
+        } catch { reportFailed = ReportSheet.failMessage(error) }
     }
 
     /// 내 합계를 서버가 마지막으로 받은 시각 "10:42"(오늘이 아니면 "11월 9일")
@@ -480,13 +548,15 @@ struct CrewSettingsView: View {
     @State private var renaming = false
     @State private var rotating = false
     @State private var leaving = false
+    @State private var reporting = false
     @State private var busy = false
     @State private var failed = false
 
     var body: some View {
         if let crew = crews.crew(crewId) {
             let owner = crew.ownerUid == crews.uid
-            let ownerName = crews.members[crewId]?.first { $0.id == crew.ownerUid }?.name ?? ""
+            let ownerName = crews.blocked[crew.ownerUid] != nil ? "(차단한 크루원)"
+                : crews.members[crewId]?.first { $0.id == crew.ownerUid }?.name ?? ""
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 14) {
@@ -519,7 +589,8 @@ struct CrewSettingsView: View {
 
                     section("크루")
                     group {
-                        // 크루 이름·표시 이름 신고는 신고 단계(R16)에서 붙인다
+                        item("크루 이름·표시 이름 신고", "flag") { reporting = true }
+                        Divider()
                         Button { leaving = true } label: {
                             itemLabel("크루 나가기", "rectangle.portrait.and.arrow.right", tint: Color(light: 0x8A1C1C, dark: 0xFF8A80))
                         }
@@ -535,6 +606,7 @@ struct CrewSettingsView: View {
             .navigationTitle("크루 설정").navigationBarTitleDisplayMode(.inline)
             .disabled(busy)
             .sheet(isPresented: $renaming) { RenameCrewSheet(crew: crew) }
+            .sheet(isPresented: $reporting) { ReportSheet(crews: crews, crewId: crewId) }
             .alert("초대 링크를 새로 만들까요?", isPresented: $rotating) {
                 Button("취소", role: .cancel) {}
                 Button("새로 만들기") { run("rotateInvite", ["crewId": crewId]) }
@@ -639,14 +711,14 @@ private struct KickMembersView: View {
         let others = (crews.members[crewId] ?? []).filter { $0.id != crews.uid }.sorted { $0.joinedAt < $1.joinedAt }
         List(others) { m in
             HStack {
-                Text(m.name)
+                Text(crews.visibleName(m.id, m.name) ?? "차단한 크루원")
                 Spacer()
                 Button("내보내기", role: .destructive) { target = m }
             }
         }
         .overlay { if others.isEmpty { ContentUnavailableView("내보낼 크루원이 없어요", systemImage: "person.2") } }
         .navigationTitle("크루원 내보내기").navigationBarTitleDisplayMode(.inline)
-        .alert("\(target?.name ?? "")님을 내보낼까요?", isPresented: Binding(get: { target != nil }, set: { if !$0 { target = nil } })) {
+        .alert("\(target.map { crews.visibleName($0.id, $0.name) ?? "차단한 크루원" } ?? "")님을 내보낼까요?", isPresented: Binding(get: { target != nil }, set: { if !$0 { target = nil } })) {
             Button("취소", role: .cancel) {}
             Button("내보내기", role: .destructive) {
                 guard let m = target else { return }
@@ -704,5 +776,115 @@ private struct BansView: View {
             failed = true
             bans = bans ?? []
         }
+    }
+}
+
+// MARK: 신고 (R16)
+
+/// 크루 이름·표시 이름 신고 시트(S15). 시안이 없어 기본 목록과 확인 창으로 만든다(07-visual-design 구현 문구).
+struct ReportSheet: View {
+    var crews: Crews
+    var crewId: String
+    @Environment(\.dismiss) private var dismiss
+    private enum Target: Identifiable {
+        case crew(String), member(Crews.Member)
+        var id: String { switch self { case .crew: "crew"; case .member(let m): m.id } }
+    }
+    @State private var target: Target?
+    @State private var busy = false
+    @State private var done = false
+    @State private var failed: String?
+
+    static let explain = "개발자가 확인한 뒤 이름을 바꾸거나 크루를 닫아요. 누가 신고했는지는 다른 크루원에게 보이지 않아요."
+
+    static func failMessage(_ error: Error) -> String {
+        switch CrewAPI.code(error) {
+        case (.resourceExhausted?, "daily-limit"): "오늘은 더 신고할 수 없어요. 내일 다시 시도해 주세요."
+        case (.resourceExhausted?, _): "잠시 뒤 다시 시도해 주세요."
+        case (.notFound?, _): "이 크루원은 이미 크루에 없어요."
+        default: "인터넷 연결을 확인하고 다시 시도해 주세요."
+        }
+    }
+
+    var body: some View {
+        let crew = crews.crew(crewId)
+        let others = (crews.members[crewId] ?? []).filter { $0.id != crews.uid }.sorted { $0.joinedAt < $1.joinedAt }
+        NavigationStack {
+            List {
+                if let crew {
+                    Section("크루 이름") {
+                        Button { target = .crew(crew.name) } label: { Label(crew.name, systemImage: "person.3") }
+                    }
+                }
+                Section {
+                    ForEach(others) { m in
+                        Button { target = .member(m) } label: { Label(crews.visibleName(m.id, m.name) ?? "차단한 크루원", systemImage: "person") }
+                    }
+                } header: { Text("크루원 표시 이름") } footer: {
+                    Text(Self.explain + (crew?.ownerUid == crews.uid ? " 크루장은 크루 설정의 크루원 내보내기로 바로 조치할 수 있어요." : ""))
+                }
+            }
+            .foregroundStyle(Color.primaryText)
+            .navigationTitle("신고할 이름").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("닫기") { dismiss() } } }
+            .disabled(busy)
+            .overlay { if busy { ProgressView() } }
+        }
+        .alert(title(target), isPresented: Binding(get: { target != nil }, set: { if !$0 { target = nil } }), presenting: target) { t in
+            Button("취소", role: .cancel) {}
+            Button("신고") { Task { await send(t) } }
+        } message: { _ in Text(Self.explain) }
+        .alert("신고했어요", isPresented: $done) { Button("확인") { dismiss() } } message: { Text("확인한 뒤 조치할게요. 결과는 앱에서 알려 드려요.") }
+        .alert("신고하지 못했어요", isPresented: Binding(get: { failed != nil }, set: { if !$0 { failed = nil } })) {
+            Button("확인", role: .cancel) {}
+        } message: { Text(failed ?? "") }
+    }
+
+    private func title(_ t: Target?) -> String {
+        switch t {
+        case .crew(let n): "크루 이름 '\(n)'을 신고할까요?"
+        case .member(let m): "\(crews.visibleName(m.id, m.name) ?? "차단한 크루원")님의 표시 이름을 신고할까요?"
+        case nil: ""
+        }
+    }
+
+    private func send(_ t: Target) async {
+        busy = true
+        defer { busy = false }
+        var data: [String: Any] = ["crewId": crewId]
+        switch t {
+        case .crew: data["target"] = "crew_name"
+        case .member(let m): data["target"] = "display_name"; data["targetUid"] = m.id
+        }
+        do { _ = try await CrewAPI.call("reportName", data); done = true } catch { failed = Self.failMessage(error) }
+    }
+}
+
+/// 이 기기에서 차단한 크루원(S17, R16). 차단은 계정별로 기기에만 저장된다.
+struct BlockedListView: View {
+    var crews: Crews
+    @State private var target: (id: String, name: String)?
+
+    static let explain = "모든 크루 순위와 신고 목록에서 이 사람이 보이지 않아요. 차단은 이 기기에만 저장되고, 앱을 지우면 풀려요. 상대에게는 알리지 않아요."
+
+    var body: some View {
+        let list = crews.blocked.sorted { $0.value < $1.value }
+        List {
+            Section {
+                ForEach(list, id: \.key) { id, name in
+                    HStack {
+                        Text(name.isEmpty ? "이름 없음" : name)
+                        Spacer()
+                        Button("차단 해제") { target = (id, name) }
+                    }
+                }
+            } footer: { Text(Self.explain) }
+        }
+        .overlay { if list.isEmpty { ContentUnavailableView("차단한 크루원이 없어요", systemImage: "hand.raised") } }
+        .navigationTitle("차단한 크루원").navigationBarTitleDisplayMode(.inline)
+        .alert("\(target?.name ?? "")님의 차단을 풀까요?", isPresented: Binding(get: { target != nil }, set: { if !$0 { target = nil } })) {
+            Button("취소", role: .cancel) {}
+            Button("차단 해제") { if let t = target { crews.unblock(t.id) } }
+        } message: { Text("크루 순위에서 다시 보여요.") }
     }
 }

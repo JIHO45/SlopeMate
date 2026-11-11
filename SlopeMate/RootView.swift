@@ -30,6 +30,17 @@ struct RootView: View {
         .onChange(of: phase) { if phase == .active && !crews.ids.isEmpty { summary.sync() } }
         // 계정 삭제(R13): 끝내지 못한 삭제는 앱을 켜거나 다시 볼 때 잇는다. 확인·완료·실패 시트는 어느 화면에서든 뜬다.
         .environment(deletion)
+        .environment(crews)
+        // 처리된 내 신고 알림(R16), 오프라인이라 확인하지 못한 가입을 다시 확인
+        .task(id: phase) {
+            guard phase == .active else { return }
+            account.recheck()
+            await crews.checkReports()
+        }
+        .onChange(of: account.uid) { Task { await crews.checkReports() } }
+        .alert(crews.reportNotice ?? "", isPresented: Binding(get: { crews.reportNotice != nil }, set: { if !$0 { crews.reportNotice = nil } })) {
+            Button("확인", role: .cancel) {}
+        } message: { Text("신고해 주셔서 고마워요.") }
         .task(id: phase) { if phase == .active { await deletion.resume() } }
         // 슬로프 이름 켜기·시간표 갱신·차단 스위치(R7, R9): 켤 때와 다시 볼 때(1시간 안에 받았으면 건너뜀),
         // 켜 둔 동안에는 1시간마다. 백그라운드로 가면 멈춘다.

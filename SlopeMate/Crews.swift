@@ -53,6 +53,11 @@ import Foundation
     var failedCrews: Set<String> { failedDocs.union(failedMembers) }
     /// 초대 링크로 앱이 열렸을 때 크루 탭이 처리할 토큰
     var pendingInvite: String?
+    /// 이 기기에서 차단한 크루원(uid → 차단할 때 이름, R16). 계정별로 기기에만 저장하고, 앱을 지우면 사라진다.
+    /// 차단한 사람은 모든 크루의 순위에서 행을 숨기고(순위 번호는 그대로), 이름이 보이는 곳에서 가린다.
+    private(set) var blocked: [String: String] = [:]
+    /// 처리된 내 신고 중 아직 알리지 않은 것(앱을 켤 때 한 번)
+    var reportNotice: String?
 
     @ObservationIgnored private var mine: ListenerRegistration?
     @ObservationIgnored private var perCrew: [String: [ListenerRegistration]] = [:]
@@ -74,7 +79,54 @@ import Foundation
         guard Self.needsFollow(uid, current: self.uid, purgePending: purgePending) else { return }
         stop()
         self.uid = uid
+        blocked = uid.flatMap { UserDefaults.standard.dictionary(forKey: Self.blockedKey($0)) as? [String: String] } ?? [:]
         if purgePending { purgeCache() } else { start() }
+    }
+
+    // MARK: 차단 (R16, 기기 안)
+
+    static func blockedKey(_ uid: String) -> String { "blocked-\(uid)" }
+    static func seenReportsKey(_ uid: String) -> String { "reportsSeen-\(uid)" }
+
+    func block(_ member: Member) {
+        guard let uid, member.id != uid else { return }
+        blocked[member.id] = member.name
+        UserDefaults.standard.set(blocked, forKey: Self.blockedKey(uid))
+    }
+
+    func unblock(_ id: String) {
+        guard let uid else { return }
+        blocked[id] = nil
+        UserDefaults.standard.set(blocked, forKey: Self.blockedKey(uid))
+    }
+
+    /// 보여 줄 이름. 차단한 사람이면 nil.
+    func visibleName(_ id: String, _ name: String) -> String? { blocked[id] == nil ? name : nil }
+
+    /// 계정 삭제 뒤 그 계정의 기기 기록(차단 목록, 본 신고)을 지운다
+    static func forgetLocal(_ uid: String) {
+        UserDefaults.standard.removeObject(forKey: blockedKey(uid))
+        UserDefaults.standard.removeObject(forKey: seenReportsKey(uid))
+    }
+
+    /// 처리된 내 신고를 알린다(05-design 6장). 신고 하나에 한 번, 계정별로 본 것을 기억한다.
+    static func notice(statuses: [String: String], seen: Set<String>) -> (text: String, ids: [String])? {
+        let done = statuses.filter { ($0.value == "resolved" || $0.value == "dismissed") && !seen.contains($0.key) }
+        guard !done.isEmpty else { return nil }
+        let text = done.values.contains("resolved") ? "신고한 이름을 확인해 조치했어요." : "신고한 이름을 검토했어요."
+        return (text, Array(done.keys))
+    }
+
+    func checkReports() async {
+        guard let uid else { return }
+        guard let snap = try? await Firestore.firestore().collection("reports").whereField("reporter_uid", isEqualTo: uid)
+            .getDocuments(source: .server), uid == self.uid else { return }
+        let key = Self.seenReportsKey(uid)
+        let seen = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        let statuses = Dictionary(snap.documents.map { ($0.documentID, $0.get("status") as? String ?? "") }, uniquingKeysWith: { a, _ in a })
+        guard let n = Self.notice(statuses: statuses, seen: seen) else { return }
+        UserDefaults.standard.set(Array(seen.union(n.ids)), forKey: key)
+        reportNotice = n.text
     }
 
     /// 계정 삭제 뒤: 구독을 끊고 기기에 남은 순위 캐시를 비운다. 실패하면 표시가 남아 다음에 다시 시도한다.
@@ -222,7 +274,7 @@ import Foundation
 
     func crew(_ id: String) -> Crew? { crews.first { $0.id == id } }
 
-    /// 기준별 순위. 같은 값이면 먼저 가입한 사람이 위.
+    /// 기준별 순위. 같은 값이면 먼저 가입한 사람이 위. 차단한 사람도 순위 계산에는 들어간다(화면에서 행만 숨김).
     func ranking(_ id: String, by metric: Metric) -> [Member] {
         (members[id] ?? []).sorted {
             let (a, b) = (Self.value($0, metric), Self.value($1, metric))

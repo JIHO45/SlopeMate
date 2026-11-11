@@ -159,6 +159,11 @@ struct SignUpView: View {
     @State private var busy = false
     @State private var failed = false
     @State private var refused = false
+    @State private var banned = false
+    /// 서버에 미리 물은 결과(R16): false면 금지어. nil은 아직 모름·묻지 못함(가입할 때 서버가 다시 본다).
+    @State private var nameOK: Bool?
+    @State private var checking = false
+    @State private var restricted = false
 
     private var cleanName: String? { Account.cleanName(name) }
 
@@ -185,7 +190,12 @@ struct SignUpView: View {
                     .background(Color.card, in: RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.cardBorder))
                     .accessibilityHint("크루원에게 보이는 이름이에요.")
-                Text("크루원에게 보이는 이름이에요.").font(.subheadline).foregroundStyle(Color.secondaryText).padding(.top, 8)
+                if nameOK == false {
+                    Label("쓸 수 없는 단어가 있어요", systemImage: "exclamationmark.circle")
+                        .font(.subheadline).foregroundStyle(Color(light: 0x8A1C1C, dark: 0xFF8A80)).padding(.top, 8)
+                } else {
+                    Text("크루원에게 보이는 이름이에요.").font(.subheadline).foregroundStyle(Color.secondaryText).padding(.top, 8)
+                }
 
                 Text("나이").font(.subheadline.weight(.semibold)).padding(.top, 24).padding(.bottom, 8)
                 VStack(spacing: 8) {
@@ -210,13 +220,33 @@ struct SignUpView: View {
         }
         .safeAreaInset(edge: .bottom) { bottom.padding(.horizontal, 16).padding(.bottom, 12).background(Color.bg) }
         .background(Color.bg.ignoresSafeArea())
-        .alert("Apple 로그인을 마치지 못했어요", isPresented: $failed) {
+        // 입력을 멈추면 서버에 미리 묻는다(금지어면 Apple 로그인 전에 알림)
+        .task(id: cleanName) {
+            nameOK = nil
+            guard let n = cleanName else { return }
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            checking = true
+            let ok = await Account.checkName(n)
+            checking = false
+            if !Task.isCancelled { nameOK = ok }
+        }
+        .alert(banned ? "쓸 수 없는 단어가 있어요" : "Apple 로그인을 마치지 못했어요", isPresented: $failed) {
             Button("확인", role: .cancel) {}
         } message: {
-            Text(refused ? "이 계정으로는 지금 가입할 수 없어요. 계정 삭제가 진행 중이면 끝난 뒤 다시 가입해 주세요."
-                         : "인터넷 연결을 확인하고 다시 시도해 주세요.")
+            Text(banned ? "표시 이름을 바꿔 다시 시도해 주세요."
+                 : refused ? "이 계정으로는 지금 가입할 수 없어요. 계정 삭제가 진행 중이면 끝난 뒤 다시 가입해 주세요."
+                 : "인터넷 연결을 확인하고 다시 시도해 주세요.")
+        }
+        .alert("이 계정은 크루 기능을 쓸 수 없어요", isPresented: $restricted) {
+            Button("확인") { dismiss() }
+        } message: {
+            Text("신고 처리로 이용이 제한된 계정이에요. 크루 나가기와 계정 삭제는 할 수 있어요.")
         }
     }
+
+    /// 이름이 있고, 만 14세 이상이고, 금지어로 확인되지 않았고, 확인 중이 아닐 때
+    private var canSignIn: Bool { cleanName != nil && over14 == true && nameOK != false && !checking }
 
     /// 만 14세 미만이면 Apple 버튼을 끄고 아래에 돌아가기 (만 14세 미만 v2)
     private var bottom: some View {
@@ -229,20 +259,27 @@ struct SignUpView: View {
             SignInWithAppleButton(.continue, onRequest: account.prepare) { result in
                 guard case .success(let auth) = result, let n = cleanName else {
                     // 사용자가 취소한 경우는 조용히 둔다
-                    if case .failure(let e) = result, (e as? ASAuthorizationError)?.code != .canceled { refused = false; failed = true }
+                    if case .failure(let e) = result, (e as? ASAuthorizationError)?.code != .canceled { refused = false; banned = false; failed = true }
                     return
                 }
                 busy = true
                 Task {
-                    do { try await account.complete(auth, name: n); dismiss() } catch { refused = Account.isRefusal(error); failed = true }
+                    do {
+                        if try await account.complete(auth, name: n) { restricted = true } else { dismiss() }
+                    } catch {
+                        banned = Account.isBannedName(error)
+                        if banned { nameOK = false }
+                        refused = Account.isRefusal(error)
+                        failed = true
+                    }
                     busy = false
                 }
             }
             .signInWithAppleButtonStyle(scheme == .dark ? .white : .black)
             .frame(height: 60)
             .clipShape(RoundedRectangle(cornerRadius: 20))
-            .disabled(cleanName == nil || over14 != true || busy)
-            .opacity(cleanName == nil || over14 != true ? 0.35 : 1)
+            .disabled(!canSignIn || busy)
+            .opacity(canSignIn ? 1 : 0.35)
             .overlay { if busy { ProgressView() } }
             if over14 == false {
                 Button("돌아가기") { dismiss() }

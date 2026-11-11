@@ -6,17 +6,48 @@ import FirebaseFunctions
 import Foundation
 
 /// 크루용 계정 (R13, R20). 가입하지 않아도 기록은 모두 쓴다. 서버에는 표시 이름과 만 14세 확인만 둔다(05-design 4장 USER).
+/// Firebase 로그인과 가입 완료(계정 문서)를 구분한다. `uid`는 가입을 마친 계정만이고, 크루 구독·합계 동기화·설정의 계정 칸이 이것을 따른다.
 @Observable final class Account {
+    /// 가입을 마친 계정
     private(set) var uid: String?
     private var nonce = ""
     @ObservationIgnored private var listener: AuthStateDidChangeListenerHandle?
+    /// 가입·계정 삭제가 로그인을 다루는 동안에는 가입 확인(로그인만 있고 계정 문서가 없으면 로그아웃)을 멈춘다
+    @ObservationIgnored var holdCheck = false
 
     var signedIn: Bool { uid != nil }
 
     /// 로그인 상태가 바뀌면(로그아웃, 서버에서 사용자 삭제·토큰 무효) 바로 따라간다.
     init() {
-        uid = Auth.auth().currentUser?.uid
-        listener = Auth.auth().addStateDidChangeListener { [weak self] _, user in self?.uid = user?.uid }
+        listener = Auth.auth().addStateDidChangeListener { [weak self] _, user in self?.authChanged(user?.uid) }
+    }
+
+    static func readyKey(_ uid: String) -> String { "profileReady-\(uid)" }
+
+    /// 가입을 마친 로그인만 계정으로 본다. 기기에 가입 완료 표시가 없으면(가입 도중 앱이 꺼짐, 다른 기기에서 가입)
+    /// 계정 문서를 한 번 읽어 정한다: 있으면 완료, 없으면 로그아웃(가입 화면부터 다시), 삭제 중이면 삭제 흐름에 맡긴다.
+    private func authChanged(_ id: String?) {
+        guard let id else { uid = nil; return }
+        if UserDefaults.standard.bool(forKey: Self.readyKey(id)) { uid = id; return }
+        uid = nil
+        guard !holdCheck else { return }
+        Task { await verify(id) }
+    }
+
+    /// 앱을 다시 볼 때 확인하지 못한 로그인(오프라인이었음)을 다시 본다
+    func recheck() {
+        if uid == nil, !holdCheck, let id = Auth.auth().currentUser?.uid { Task { await verify(id) } }
+    }
+
+    @MainActor private func verify(_ id: String) async {
+        guard let doc = try? await Firestore.firestore().collection("users").document(id).getDocument(),
+              !holdCheck, Auth.auth().currentUser?.uid == id else { return }
+        if !doc.exists {
+            try? Auth.auth().signOut()
+        } else if doc.get("deleting") as? Bool != true {
+            UserDefaults.standard.set(true, forKey: Self.readyKey(id))
+            uid = id
+        }
     }
 
     /// 표시 이름: 앞뒤 공백을 빼고 20자까지. 서버(함수 [...t].length, 규칙 size())와 같게 유니코드 문자 단위로 센다.
@@ -32,24 +63,33 @@ import Foundation
         request.nonce = SHA256.hash(data: Data(nonce.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Apple 로그인 결과로 Firebase에 로그인하고 users/{uid}를 만든다.
-    /// 다시 로그인하면 표시 이름만 바꾸고, 속한 크루의 이름도 함께 바뀐다(setDisplayName 함수).
-    func complete(_ authorization: ASAuthorization, name: String) async throws {
+    /// Apple 로그인 결과로 Firebase에 로그인하고 signUp 함수로 계정 문서를 만든다(금지어·만 14세 확인·삭제 표시는 서버가 본다).
+    /// 다시 로그인하면 표시 이름만 바뀌고 속한 크루의 이름도 함께 바뀐다. 이용 제한 계정은 이름을 바꾸지 않고 restricted를 돌려준다.
+    /// 실패하면 로그아웃해 가입 화면에서 이름을 고쳐 다시 할 수 있게 한다.
+    @discardableResult
+    func complete(_ authorization: ASAuthorization, name: String) async throws -> Bool {
+        holdCheck = true
+        defer { holdCheck = false }
         let user = try await Auth.auth().signIn(with: try credential(authorization).credential).user
-        let doc = Firestore.firestore().collection("users").document(user.uid)
         do {
-            if try await doc.getDocument().exists {
-                _ = try await CrewAPI.call("setDisplayName", ["name": name])
-            } else {
-                try await doc.setData(["display_name": name, "age14_confirmed": true, "deleting": false,
-                                       "created_at": FieldValue.serverTimestamp()])
-            }
+            let r = try await CrewAPI.call("signUp", ["name": name, "age14Confirmed": true])
+            UserDefaults.standard.set(true, forKey: Self.readyKey(user.uid))
+            uid = user.uid
+            return r["restricted"] as? Bool ?? false
         } catch {
-            // 계정 문서 없이 로그인 상태로 남지 않게 한다. 다시 시도하면 처음부터.
             try? Auth.auth().signOut()
             throw error
         }
-        uid = user.uid
+    }
+
+    /// 금지어·사칭으로 거절된 이름(R16): "쓸 수 없는 단어가 있어요"
+    static func isBannedName(_ error: Error) -> Bool { CrewAPI.code(error) == (.invalidArgument, "banned") }
+
+    /// 이름을 쓸 수 있는지 서버에 미리 묻는다(로그인 없이, 안내용). 묻지 못하면 nil(가입할 때 서버가 다시 본다).
+    static func checkName(_ name: String) async -> Bool? {
+        do { _ = try await CrewAPI.call("checkName", ["name": name]); return true } catch {
+            return isBannedName(error) ? false : nil
+        }
     }
 
     /// Apple 로그인 결과 → Firebase 자격 증명과 인증 코드(연결 해제에 바로 쓴다, 5분 유효·한 번만).

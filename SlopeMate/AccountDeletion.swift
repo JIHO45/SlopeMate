@@ -77,6 +77,9 @@ import UIKit
     @MainActor private func start() async {
         let before = phase
         phase = .working
+        // 다시 로그인하는 동안 가입 확인이 로그아웃시키지 않게(계정 문서가 없는 계정도 지울 수 있어야 함)
+        account.holdCheck = true
+        defer { account.holdCheck = false }
         do {
             let auth = try await AppleAuth.authorize(prepare: account.prepare)
             let (credential, code) = try account.credential(auth)
@@ -140,6 +143,8 @@ import UIKit
         guard let p = pending, p.serverDone else { return }
         phase = .working
         summary.forget(p.uid)
+        Crews.forgetLocal(p.uid)
+        UserDefaults.standard.removeObject(forKey: Account.readyKey(p.uid))
         try? Auth.auth().signOut()
         let cacheCleared = await crews.forget()
         guard (try? db.dropPendingSamples()) != nil, cacheCleared else {

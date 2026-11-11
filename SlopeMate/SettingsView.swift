@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var error: String?
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(AccountDeletion.self) private var deletion
+    @Environment(Crews.self) private var crews
 
     /// 아직 정하지 않았으면 행을 숨긴다(빈 링크를 내보내지 않음)
     static let privacyPolicyURL: URL? = nil
@@ -61,6 +62,9 @@ struct SettingsView: View {
             .listRowBackground(Color.card)
             if deletion.account.signedIn {
                 Section {
+                    NavigationLink { BlockedListView(crews: crews) } label: {
+                        row("차단한 크루원", value: crews.blocked.isEmpty ? "없음" : "\(crews.blocked.count)명")
+                    }
                     Button("계정 삭제") { deletion.phase = .confirm }.foregroundStyle(AccountDeleteSheet.dangerText)
                 } header: {
                     Text("계정")

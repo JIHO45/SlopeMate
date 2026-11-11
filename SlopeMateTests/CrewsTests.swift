@@ -1,3 +1,4 @@
+import FirebaseFunctions
 import Foundation
 import Testing
 @testable import SlopeMate
@@ -30,5 +31,27 @@ struct SummaryPayloadTests {
         #expect(p.visitDays == 1 && p.runs > 0 && p.distanceKm > 0)
         #expect(p.resortDays == ["high1": 1])
         #expect(p.distanceKm == (p.distanceKm * 10).rounded() / 10)
+    }
+}
+
+/// 신고·금지어 (R16): 앱 쪽 판단
+struct ReportTests {
+    @Test func noticeOncePerReport() {
+        // 처리된 신고만, 본 것은 빼고, 조치가 하나라도 있으면 "조치했어요"
+        let n = Crews.notice(statuses: ["a": "resolved", "b": "dismissed", "c": "open"], seen: [])
+        #expect(n?.text == "신고한 이름을 확인해 조치했어요.")
+        #expect(Set(n?.ids ?? []) == ["a", "b"])
+        #expect(Crews.notice(statuses: ["b": "dismissed"], seen: [])?.text == "신고한 이름을 검토했어요.")
+        #expect(Crews.notice(statuses: ["a": "resolved", "c": "open"], seen: ["a"]) == nil)
+    }
+
+    @Test func bannedNameIsItsOwnError() {
+        let banned = NSError(domain: FunctionsErrorDomain, code: FunctionsErrorCode.invalidArgument.rawValue,
+                             userInfo: [NSLocalizedDescriptionKey: "banned"])
+        let format = NSError(domain: FunctionsErrorDomain, code: FunctionsErrorCode.invalidArgument.rawValue,
+                             userInfo: [NSLocalizedDescriptionKey: "name"])
+        #expect(Account.isBannedName(banned))
+        #expect(!Account.isBannedName(format))
+        #expect(Account.isRefusal(format))
     }
 }
