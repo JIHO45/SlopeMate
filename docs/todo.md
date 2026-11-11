@@ -130,15 +130,16 @@
 - [ ] 신고·금지어 (R16)
     - [x] 서버: 금지어·사칭 거르기(`banned.ts`, 정규화), 가입 함수 signUp·이름 확인 checkName(계정 문서 직접 생성 규칙 닫음), reportName(멤버만, 당시 이름, 중복·5초·하루 10건), 이용 제한, 신고자만 읽기 규칙, 처리 스크립트 `functions/scripts/moderate.mjs`(신고로 이용 제한, 실제로 바꾼 것이 없으면 "검토"로 닫음, 조치와 신고 닫기를 한 트랜잭션으로·다시 실행해도 결과 유지), 서버 테스트 41개 (2026-11-11)
     - [x] 앱: 가입 완료와 로그인 구분, 가입 화면 금지어 안내·이용 제한 안내, S15 신고 시트, S14 순위 행 메뉴(신고·차단, 길게 누르기·VoiceOver), 차단한 사람 행 숨김·이름 가림(S15·S16·내보내기·신고 목록), S17 차단한 크루원, 처리된 신고 알림, S16 "부적절한 이름 신고하기"(문의 메일, 연락처가 정해지면 보임), 앱 테스트 130개 (2026-11-11)
-    - [ ] 배포: `firebase deploy --only functions,firestore:rules` (함수 먼저 올라가고 규칙이 users 직접 생성을 닫음)
-    - [ ] 신고 로그("name reported") 알림을 Cloud Logging에 설정하고 받는지 확인 — 사용자
-    - [ ] 처리 스크립트 인증 준비(`gcloud auth application-default login` 또는 저장소 밖 서비스 계정 키)와 `node scripts/moderate.mjs list` 확인 — 사용자
+    - [x] 배포: 함수(checkName·signUp·reportName 포함)와 규칙(users 직접 생성 닫음, 신고 읽기). 운영 checkName이 "주말반" 통과, "시ㅂㅏㄹ"·"관리자1" banned (2026-11-11)
+    - [x] 신고 로그 알림 정책 "SlopeMate 신고 접수"(`jsonPayload.message="name reported"`, 5분에 한 번) 만듦 (2026-11-11)
+    - [ ] 배포 뒤 실제 신고 한 건으로 알림 메일이 오는지 확인 — 사용자
+    - [x] 처리 스크립트 인증: gcloud 설치, `gcloud auth application-default login`(cloud-platform 범위), 사용량 프로젝트 slopemate-f9a5b, 운영 Firestore에서 `node scripts/moderate.mjs list` 동작 확인 (2026-11-11)
 - [ ] 계정 삭제 6단계 (R13)
     - [x] 서버: deleteAccount(재인증 확인·접수·정리·Auth 삭제·완료 표시), deletionStatus, 매시간 sweepDeletions, 완료 표시가 있으면 계정 재생성 거부 규칙, bans.uid 그룹 인덱스, 서버 테스트 31개 (2026-11-10)
     - [x] 앱: S17 계정 칸과 삭제 확인·완료·실패 시트(v3), Apple 재인증 → 연결 해제 → 서버 삭제 → 기기 정리, 진행 표시로 재개, 동기화 작업 무효화, 앱 테스트 123개. 검토 반영: 시트를 닫아도 진행 표시 유지, 서버 완료와 기기 정리를 나눠 표본 폐기 실패 시 재시도, 로그아웃 상태에서도 크루 캐시 비우기 재시도, 캐시 비우기가 성공한 뒤에만 완료 시트(앱 테스트 124개). 시트 세 상태는 시뮬레이터에서 DEBUG 실행 인자 `-SMDeleteSheet confirm|done|failed`로 확인(확인 시트는 내용이 길어 큰 시트로 열림) (2026-11-10)
     - [x] 배포: deleteAccount·deletionStatus·sweepDeletions(스케줄), 규칙, bans.uid 인덱스 (2026-11-11)
     - [x] Firebase 콘솔 Apple 제공업체에 Services ID·Team ID·Key ID·비공개 키 등록(Apple 연결 해제의 전제) (2026-11-11) — 실제 해제는 실기기 확인에서
-    - [ ] 삭제 반복 실패 로그("account purge failed", 오류 수준) 알림을 Cloud Logging에 설정 — 사용자
+    - [x] 삭제 반복 실패 로그 알림 정책 "계정 삭제 실패"(`jsonPayload.message="account purge failed" AND severity>=ERROR`, 5분에 한 번) (2026-11-11)
     - [x] 신고 기록 처리: 내가 낸 신고는 신고자 정보만 지우고, 나에 대한 신고는 지움 (2026-11-11)
 - [ ] 초대 링크 Universal Links + 웹페이지
 - [ ] 익명 표본 집계 함수, 로그 제외, 동의·철회 (R12) — 기기에서는 `sendState = pending`이고 차량 재조회가 끝난 기록(종료 15분 뒤 조회했거나 6일 지남)의 표본만 보낸다
@@ -151,7 +152,8 @@
 - [ ] 2026-27 시즌 운영 시간표 12곳 입력 (앱 내장 `SlopeMate/Resources/timetables.json`, 출시 뒤 고친 것은 `hosting/public/timetables.json`에 버전을 올려)
 - [ ] 권한·고지 문구, 접근성 (R18, R19, R21)
 - [ ] 개인정보처리방침 작성·URL 게시: 계정, 크루 공유, 신고(접수 후 90일 보관), 익명 집계, Firebase Authentication 국외 이전(미국) → 설정(S17)에 연결하고 링크 확인 (`SettingsView.privacyPolicyURL`, 정하기 전에는 행을 숨김) (R19)
-- [ ] 지원(문의) URL, 앱 안 문의 연락처 → 설정(S17) 문의 행에 연결 (`SettingsView.contactEmail`) — App Store 1.2 필수, 실패 시트 "문의하기"와 S16 이름 신고 안내도 이것을 씀
+- [x] 앱 안 문의 연락처 joe45dev@gmail.com → 설정(S17) 문의 행, 계정 삭제 실패 시트 "문의하기", S16 "부적절한 이름 신고하기" (`SettingsView.contactEmail`) (2026-11-11)
+- [ ] 앱스토어 지원 URL(웹 페이지, 문의 메일 안내) — App Store 1.2·제출 필수
 - [ ] 06-verification 6장 출시 체크리스트 전부
 - [ ] 앱스토어 카테고리·설명·스크린샷·업데이트 노트·개인정보 항목
 - [x] 앱 아이콘: 기존 스키어 그림 유지, 그림에 박힌 흰 테두리·둥근 모서리를 잘라 1024 전면 채움으로 교체 (2026-11-09)
