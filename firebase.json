@@ -22,7 +22,15 @@
   "hosting": {
     "public": "hosting/public",
     "ignore": [
-      "**/.*"
+      "**/.DS_Store",
+      "**/.git/**"
+    ],
+    "cleanUrls": true,
+    "rewrites": [
+      {
+        "source": "/i/**",
+        "destination": "/invite.html"
+      }
     ],
     "headers": [
       {
@@ -31,6 +39,45 @@
           {
             "key": "Cache-Control",
             "value": "max-age=300"
+          }
+        ]
+      },
+      {
+        "source": "/.well-known/apple-app-site-association",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "max-age=3600"
+          }
+        ]
+      },
+      {
+        "source": "/i/**",
+        "headers": [
+          {
+            "key": "X-Robots-Tag",
+            "value": "noindex"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Referrer-Policy",
+            "value": "no-referrer"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
           }
         ]
       }

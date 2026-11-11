@@ -16,7 +16,7 @@ struct SettingsView: View {
     @Environment(Crews.self) private var crews
 
     /// 아직 정하지 않았으면 행을 숨긴다(빈 링크를 내보내지 않음)
-    static let privacyPolicyURL: URL? = nil
+    static let privacyPolicyURL: URL? = URL(string: "https://slopemate-f9a5b.web.app/privacy")
     static let contactEmail: String? = "joe45dev@gmail.com"
 
     var body: some View {

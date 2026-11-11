@@ -1,0 +1,10 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["CH7CDR7288.com.Joe.SlopeMate"],
+        "components": [{ "/": "/i/*", "comment": "크루 초대 링크" }]
+      }
+    ]
+  }
+}

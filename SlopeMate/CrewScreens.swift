@@ -285,7 +285,7 @@ struct JoinCrewSheet: View {
                         }
                         // 가입 전에는 신고 함수를 못 쓰므로 문의로 신고한다(R16). 연락처가 정해진 뒤 보인다.
                         if let mail = SettingsView.contactEmail,
-                           let url = URL(string: "mailto:\(mail)?subject=\("크루 이름 신고: \(p.name)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+                           let url = Crews.reportMail(to: mail, token: token, crewName: p.name, ownerName: p.owner) {
                             Link("부적절한 이름 신고하기", destination: url).font(.subheadline).foregroundStyle(Color.secondaryText)
                         }
                     }
@@ -307,6 +307,8 @@ struct JoinCrewSheet: View {
         .presentationDetents(invalid ? [.medium] : [.large])
         .presentationDragIndicator(.visible)
         .task { await load() }
+        // 화면이 실제로 열렸으니 받아 둔 초대를 비운다
+        .onAppear { if crews.pendingInvite == token { crews.pendingInvite = nil } }
         .alert("참여하지 못했어요", isPresented: $failed) { Button("확인", role: .cancel) {} } message: { Text(failMessage) }
     }
 

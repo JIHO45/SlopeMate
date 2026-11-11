@@ -51,8 +51,15 @@ import Foundation
     private(set) var failedDocs: Set<String> = []
     private(set) var failedMembers: Set<String> = []
     var failedCrews: Set<String> { failedDocs.union(failedMembers) }
-    /// 초대 링크로 앱이 열렸을 때 크루 탭이 처리할 토큰
+    /// 초대 링크로 앱이 열렸을 때 크루 탭이 처리할 토큰. S16이 나타나면 비운다.
     var pendingInvite: String?
+    /// 초대를 받을 때마다 오른다(같은 링크를 다시 눌러도 크루 탭이 알아채게)
+    private(set) var inviteRequests = 0
+
+    func receiveInvite(_ token: String) {
+        pendingInvite = token
+        inviteRequests += 1
+    }
     /// 이 기기에서 차단한 크루원(uid → 차단할 때 이름, R16). 계정별로 기기에만 저장하고, 앱을 지우면 사라진다.
     /// 차단한 사람은 모든 크루의 순위에서 행을 숨기고(순위 번호는 그대로), 이름이 보이는 곳에서 가린다.
     private(set) var blocked: [String: String] = [:]
@@ -302,10 +309,26 @@ import Foundation
         URL(string: "https://slopemate-f9a5b.web.app/i/\(token)")!
     }
 
-    /// 붙여 넣은 링크나 토큰에서 토큰(22자)을 꺼낸다.
+    /// 가입 전 크루 이름 신고 메일(S16, 웹 초대 페이지와 같은 내용). 동명 크루를 구분할 수 있게 초대 링크·당시 이름을 넣는다.
+    static func reportMail(to mail: String, token: String, crewName: String, ownerName: String) -> URL? {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+?#")
+        let enc = { (s: String) in s.addingPercentEncoding(withAllowedCharacters: allowed) ?? "" }
+        let body = "초대 링크: \(inviteURL(token).absoluteString)\n크루 이름: \(crewName)\n크루장 이름: \(ownerName.isEmpty ? "(없음)" : ownerName)\n\n신고 이유를 적어 주세요:\n"
+        return URL(string: "mailto:\(mail)?subject=\(enc("크루 이름 신고: \(crewName)"))&body=\(enc(body))")
+    }
+
+    /// 붙여 넣은 링크나 토큰에서 토큰(22자)을 꺼낸다. 링크는 https, 우리 호스트, 정확히 `/i/{토큰}`만 받는다.
     static func token(from text: String) -> String? {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let candidate = URL(string: t).flatMap { $0.host != nil ? $0.lastPathComponent : nil } ?? t
-        return candidate.range(of: "^[A-Za-z0-9_-]{22}$", options: .regularExpression) != nil ? candidate : nil
+        let valid = { (s: String) in s.range(of: "^[A-Za-z0-9_-]{22}$", options: .regularExpression) != nil }
+        if valid(t) { return t }
+        guard let url = URLComponents(string: t), url.scheme == "https", url.host == inviteURL("x").host,
+              url.port == nil else { return nil }
+        let parts = url.path.split(separator: "/", omittingEmptySubsequences: false)
+        // ["", "i", 토큰] 또는 끝에 / 하나
+        guard parts.count == 3 || (parts.count == 4 && parts[3].isEmpty), parts[0].isEmpty, parts[1] == "i" else { return nil }
+        let token = String(parts[2])
+        return valid(token) ? token : nil
     }
 }

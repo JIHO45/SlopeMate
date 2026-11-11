@@ -10,6 +10,35 @@ struct CrewsTests {
         #expect(Crews.token(from: "  \(t)\n") == t)
         #expect(Crews.token(from: "https://slopemate-f9a5b.web.app/i/short") == nil)
         #expect(Crews.token(from: "아무 글") == nil)
+        // 우리 호스트의 /i/{토큰}만: 끝의 / 하나는 허용, 다른 경로·호스트·http·추가 경로는 거부
+        #expect(Crews.token(from: "https://slopemate-f9a5b.web.app/i/\(t)/") == t)
+        #expect(Crews.token(from: "https://slopemate-f9a5b.web.app/i/\(t)?utm=x") == t)
+        #expect(Crews.token(from: "https://slopemate-f9a5b.web.app/support/\(t)") == nil)
+        #expect(Crews.token(from: "https://slopemate-f9a5b.web.app/i/\(t)/more") == nil)
+        #expect(Crews.token(from: "https://evil.example.com/i/\(t)") == nil)
+        #expect(Crews.token(from: "http://slopemate-f9a5b.web.app/i/\(t)") == nil)
+        #expect(Crews.token(from: "https://slopemate-f9a5b.web.app/x/i/\(t)") == nil)
+    }
+
+    /// 가입 전 이름 신고 메일: 초대 링크·당시 이름이 본문에 들어가고, 이름의 &·= 같은 글자가 주소를 깨지 않는다
+    @Test func reportMailHasLinkAndNames() throws {
+        let t = "AbCdEfGhIjKlMnOpQr_-12"
+        let url = try #require(Crews.reportMail(to: "a@b.c", token: t, crewName: "주말&반=1", ownerName: "지호"))
+        let items = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        #expect(items.keys.sorted() == ["body", "subject"])
+        #expect(items["subject"] == "크루 이름 신고: 주말&반=1")
+        #expect(items["body"]?.contains(Crews.inviteURL(t).absoluteString) == true)
+        #expect(items["body"]?.contains("크루장 이름: 지호") == true)
+    }
+
+    /// 같은 초대 링크를 다시 눌러도(앞의 초대를 비운 뒤든 아니든) 받을 때마다 알린다
+    @Test func sameInviteAgain() {
+        let crews = Crews()
+        crews.receiveInvite("AbCdEfGhIjKlMnOpQr_-12")
+        let first = crews.inviteRequests
+        crews.receiveInvite("AbCdEfGhIjKlMnOpQr_-12")
+        #expect(crews.inviteRequests == first + 1)
+        #expect(crews.pendingInvite == "AbCdEfGhIjKlMnOpQr_-12")
     }
 }
 

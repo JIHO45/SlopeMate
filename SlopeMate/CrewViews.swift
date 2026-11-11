@@ -6,6 +6,8 @@ struct CrewTab: View {
     var account: Account
     var crews: Crews
     var summary: SummarySync
+    /// 첫 실행 설정처럼 앱 전체를 덮는 화면이 떠 있는지(그동안 받은 초대는 미뤘다가 연다)
+    var covered = false
     @State private var path: [String] = []
     @State private var sheet: CrewSheet?
     @State private var signUp: CrewSheet?
@@ -53,9 +55,20 @@ struct CrewTab: View {
             afterSignUp = nil
         }) { _ in SignUpView(account: account) }
         .onChange(of: account.uid, initial: true) { crews.follow(account.uid) }
-        .onChange(of: crews.pendingInvite, initial: true) {
-            if let t = crews.pendingInvite { crews.pendingInvite = nil; sheet = .invite(t) }
-        }
+        // 초대 링크(Universal Links·붙여 넣기): 화면을 실제로 열 수 있을 때 연다. 여러 개가 오면 마지막 것.
+        // pendingInvite는 S16이 나타날 때 비운다(가려져서 못 열면 남았다가 가림이 풀릴 때 다시 연다).
+        .onChange(of: crews.inviteRequests, initial: true) { openPendingInvite() }
+        .onChange(of: covered) { openPendingInvite() }
+        .onChange(of: signUp == nil) { openPendingInvite() }
+    }
+
+    private func openPendingInvite() {
+        guard let t = crews.pendingInvite, !covered, signUp == nil else { return }
+        // 이미 그 초대를 보고 있으면 받은 것으로 친다(남겨 두면 닫은 뒤 같은 링크가 무시됨)
+        if sheet == .invite(t) { crews.pendingInvite = nil; return }
+        // 가입 화면이 끝난 뒤 이어서 할 일도 이 초대로 바꾼다(가입 중에 새 링크가 온 경우)
+        afterSignUp = nil
+        sheet = .invite(t)
     }
 
     /// 만들기는 가입이 먼저. 링크 참여는 미리보기까지 가입 없이 보고, 참여할 때 가입한다.

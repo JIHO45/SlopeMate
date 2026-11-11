@@ -77,7 +77,7 @@ struct RootView: View {
             // 초대 링크(Universal Links 단계에서 앱으로 열림) → 크루 탭에서 S16
             if url.host == Crews.inviteURL("x").host, let t = Crews.token(from: url.absoluteString) {
                 tab = .crew
-                crews.pendingInvite = t
+                crews.receiveInvite(t)
                 return
             }
             guard url == RecordingActivityAttributes.url, recorder.recording != nil else { return }
@@ -92,7 +92,7 @@ struct RootView: View {
                 .tabItem { Label("기록", systemImage: "figure.skiing.downhill") }.tag(Tab.record)
             page(SeasonView(db: recorder.db))
                 .tabItem { Label("시즌", systemImage: "calendar") }.tag(Tab.season)
-            page(CrewTab(account: account, crews: crews, summary: summary))
+            page(CrewTab(account: account, crews: crews, summary: summary, covered: setup))
                 .tabItem { Label("크루", systemImage: "person.3") }.tag(Tab.crew)
         }
     }
