@@ -10,6 +10,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var phase
     @State private var showRecording = false
     @State private var tab = Tab.record
+    /// 기록 시작 캡슐(S2 v15): 누르면 기록 탭으로 가서 S3. 보조 줄은 HomeView가 정한다.
+    @State private var startBar = StartBarModel()
     /// S1: 첫 실행에 한 번
     @State private var setup = !Settings.homeSetupDone
 
@@ -23,6 +25,9 @@ struct RootView: View {
                 tabs
             }
         }
+        .environment(startBar)
+        .onChange(of: recorder.recording == nil, initial: true) { _, idle in startBar.visible = idle }
+        .onAppear { startBar.open = { tab = .record; startBar.requests += 1 } }
         .fullScreenCover(isPresented: $setup) { HomeSetupView(db: recorder.db) { setup = false } }
         // 시즌 합계를 크루 순위로(R15): 크루가 생기거나 바뀔 때, 앱이 켜질 때, 기록이 끝났을 때
         .onChange(of: account.uid, initial: true) { summary.follow(account.uid) }
@@ -97,18 +102,20 @@ struct RootView: View {
         }
     }
 
-    /// iOS 17.6~25: 탭 막대 위에 같은 내용의 반투명 막대
+    /// iOS 17.6~25: 탭 막대 위에 같은 내용의 반투명 막대 (iOS 26은 탭 막대 액세서리)
     @ViewBuilder private func page(_ content: some View) -> some View {
+        content.safeAreaInset(edge: .bottom, spacing: 0) {
+            if recorder.recording != nil { legacyRecordingBar }
+        }
+    }
+
+    @ViewBuilder private var legacyRecordingBar: some View {
         if #available(iOS 26, *) {
-            content
+            EmptyView()
         } else {
-            content.safeAreaInset(edge: .bottom, spacing: 0) {
-                if recorder.recording != nil {
-                    RecordingBar(recorder: recorder) { tab = .record; showRecording = true }
-                        .background(.regularMaterial)
-                        .overlay(alignment: .top) { Divider() }
-                }
-            }
+            RecordingBar(recorder: recorder) { tab = .record; showRecording = true }
+                .background(.regularMaterial)
+                .overlay(alignment: .top) { Divider() }
         }
     }
 }
@@ -124,6 +131,67 @@ private extension View {
         } else {
             self
         }
+    }
+}
+
+/// 기록 시작 캡슐의 상태. 기록 중이 아닐 때 기록·시즌 탭 첫 화면 아래에 붙는다(startBarInset).
+/// 들어간 화면(설정·하루 기록 등)에는 붙지 않는다. 기록 중에는 같은 자리가 기록 중 막대.
+@Observable final class StartBarModel {
+    var visible = true
+    var subtitle = ""
+    /// 누른 횟수. HomeView가 바뀌면 S3를 연다.
+    var requests = 0
+    @ObservationIgnored var open: () -> Void = {}
+}
+
+extension View {
+    /// 탭 첫 화면 아래 기록 시작 캡슐
+    func startBarInset() -> some View { modifier(StartBarInset()) }
+}
+
+private struct StartBarInset: ViewModifier {
+    @Environment(StartBarModel.self) private var model: StartBarModel?
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .bottom, spacing: 0) {
+            if let model, model.visible {
+                StartBar(subtitle: model.subtitle, start: model.open)
+                    .padding(.horizontal, 16).padding(.bottom, 8)
+            }
+        }
+    }
+}
+
+/// 기록 시작 캡슐 (S2 v15): 화면 폭, 최소 높이 64, 강조 면. "기록 시작" + 리조트 보조 줄. 누르면 S3.
+struct StartBar: View {
+    var subtitle: String
+    var start: () -> Void
+
+    var body: some View {
+        Button(action: start) {
+            HStack(spacing: 12) {
+                Image(systemName: "record.circle")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(Color.frost)
+                    .frame(width: 44, height: 44)
+                    .background(Color.onAccent, in: Circle())
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("기록 시작").font(.title3.bold())
+                    Text(subtitle).font(.footnote).opacity(0.85)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.body.weight(.semibold)).accessibilityHidden(true)
+            }
+            .foregroundStyle(Color.onAccent)
+            .padding(.leading, 10).padding(.trailing, 16).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .background(Color.accentFill, in: Capsule())
+            .shadow(color: Color.accentText.opacity(0.25), radius: 10, y: 6)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("리조트 고르기 열기")
     }
 }
 

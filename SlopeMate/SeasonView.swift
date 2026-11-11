@@ -13,6 +13,7 @@ struct SeasonView: View {
                 content.padding(.bottom, 24)
             }
             .background(FadeBackground())
+            .startBarInset()
             .navigationTitle("시즌")
             .toolbar { ToolbarItem(placement: .topBarTrailing) { seasonMenu } }
             .task(id: season) { await load() }

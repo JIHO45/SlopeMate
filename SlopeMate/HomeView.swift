@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// S2 기록 홈 (확정 시안 v10, S2 상태 v1·저장 공간 v3).
+/// S2 기록 홈 (확정 시안 v15, S2 상태 v1). 기록 시작 캡슐(RootView의 StartBar)을 누르면 여기서 S3를 연다.
 struct HomeView: View {
     @Bindable var recorder: Recorder
     @State private var homes: [String] = []
@@ -16,6 +16,8 @@ struct HomeView: View {
     @Binding var showRecording: Bool
     /// S1이 떠 있는지. 닫히면 홈 리조트·날씨·시작 기본값을 다시 읽는다.
     var setupShown = false
+    /// 탭 막대 위 기록 시작 캡슐: 누른 횟수가 바뀌면 S3, 보조 줄("용평 · 마지막으로 기록한 리조트")은 여기서 정한다
+    @Environment(StartBarModel.self) private var startBar: StartBarModel?
     /// 앱을 켰을 때 이어지는 기록이면 한 번만 S5를 연다. 탭을 오갈 때는 다시 열지 않는다.
     @State private var launched = false
     @State private var settingsEdits = 0
@@ -26,6 +28,7 @@ struct HomeView: View {
     /// S7 끝내기·영업일 끝 안내 뒤 여는 하루 기록(S6)
     @State private var openDay: Stats.Day?
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .largeTitle) private var bigSize = 64
     @ScaledMetric(relativeTo: .title) private var unitSize = 28
 
@@ -39,21 +42,29 @@ struct HomeView: View {
         startResort.flatMap { id in Resort.all.first { $0.id == id } }
     }
 
+    private var startLabel: String {
+        guard let id = startResort else { return "시작할 때 리조트를 골라요" }
+        return "\(Resort.name(id)) · \(id == Recorder.lastResortId ? "마지막으로 기록한 리조트" : "첫 번째 홈 리조트")"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
+                    warnings
+                    today
                     cards
                     #if TESTFLIGHT
                     VStack(alignment: .leading) { ExportSection(recorder: recorder) }
                         .padding(.horizontal, 20).padding(.top, 24)
                     #endif
                 }
+                .padding(.bottom, 24)
             }
             .scrollBounceBehavior(.basedOnSize)
             .background(FadeBackground())
-            .safeAreaInset(edge: .bottom, spacing: 0) { bottom }
+            .startBarInset()
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: Binding(get: { openDay != nil }, set: { if !$0 { openDay = nil } })) {
                 if let openDay { DayDetailView(db: recorder.db, day: openDay) }
@@ -61,6 +72,8 @@ struct HomeView: View {
         }
         .task(id: reloadKey) { await reload() }
         .task(id: "\(weatherResort?.id ?? "")-\(weatherRetry)") { await loadWeather() }
+        .onChange(of: startLabel, initial: true) { startBar?.subtitle = startLabel }
+        .onChange(of: startBar?.requests) { if recorder.recording == nil { step = .pick } }
         .onAppear {
             guard !launched else { return }
             launched = true
@@ -129,70 +142,138 @@ struct HomeView: View {
         "\(recorder.recording?.id.uuidString ?? "-")-\(recorder.todayRecordings.count)-\(recorder.today.runs.count)-\(setupShown)-\(settingsEdits)"
     }
 
-    // MARK: 위: 홈 리조트, 설정, 이번 시즌
+    // MARK: 위: 홈 리조트, 설정
 
     private var header: some View {
-        let totals = Stats.totals(days)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(homes.isEmpty ? "홈 리조트 없음" : homes.map { Resort.name($0) }.joined(separator: " · "))
-                    .font(.subheadline).foregroundStyle(Color.secondaryText)
-                Spacer()
-                NavigationLink {
-                    SettingsView(db: recorder.db) { settingsEdits += 1 }
-                } label: {
-                    Image(systemName: "gearshape").font(.title3).frame(width: 44, height: 44).glassCircle()
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("설정")
+        HStack {
+            Text(homes.isEmpty ? "홈 리조트 없음" : homes.map { Resort.name($0) }.joined(separator: " · "))
+                .font(.subheadline).foregroundStyle(Color.secondaryText)
+            Spacer()
+            NavigationLink {
+                SettingsView(db: recorder.db) { settingsEdits += 1 }
+            } label: {
+                Image(systemName: "gearshape").font(.title3).frame(width: 44, height: 44).glassCircle()
             }
-            .padding(.bottom, 14)
-
-            Text("이번 시즌").font(.headline).foregroundStyle(Color.primaryText)
-            if loaded && days.isEmpty {
-                Text("스키장에 도착하면\n기록 시작을 누르세요").font(.title.bold()).foregroundStyle(Color.primaryText)
-                Text("아직 기록이 없어요").font(.subheadline).foregroundStyle(Color.secondaryText)
-            } else {
-                (Text("\(totals.visitDays)").font(.system(size: bigSize, weight: .bold))
-                    + Text("일").font(.system(size: unitSize, weight: .bold)))
-                    .monospacedDigit().foregroundStyle(Color.accentText)
-                    .accessibilityLabel("방문일 \(totals.visitDays)일")
-                Text("\(totals.runs)회 · \(RecordFormat.km(totals.distance))")
-                    .font(.subheadline).foregroundStyle(Color.secondaryText)
-            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("설정")
         }
-        .padding(.horizontal, 20).padding(.top, 4).padding(.bottom, 24)
-        .redacted(reason: loaded ? [] : .placeholder)
+        .padding(.horizontal, 20).padding(.top, 4).padding(.bottom, 10)
     }
 
-    // MARK: 옆으로 넘기는 카드: 날씨 → 최근 기록 → 시즌권
+    // MARK: 경고 (홈 맨 위, decisions 2026-11-11 S2 v15). 기록 중에는 숨김
 
-    private enum Card: Int { case weather, recent, howTo, pass }
+    @ViewBuilder private var warnings: some View {
+        if recorder.recording == nil {
+            VStack(spacing: 12) {
+                if let b = recorder.blocked {
+                    StatusBanner(kind: .stop, icon: "location.slash", title: HomeData.blockedTitle(b),
+                                 message: "설정에서 위치 권한을 켜면 기록할 수 있어요. 위치 기록은 이 iPhone에만 저장돼요.",
+                                 action: ("설정 열기", { openURL(URL(string: UIApplication.openSettingsURLString)!) }))
+                } else if case .failed(let msg) = recorder.status, !showRecording {
+                    let (title, body) = HomeData.split(msg)
+                    StatusBanner(kind: .stop, icon: "stop.circle", title: title, message: body)
+                }
+                if lowStorage {
+                    StatusBanner(kind: .warning, icon: "externaldrive.badge.exclamationmark", title: "저장 공간이 부족해요",
+                                 message: "기록이 중간에 멈출 수 있어요", compact: true)
+                }
+            }
+            .padding(.horizontal, 16).padding(.bottom, 14)
+        }
+    }
+
+    // MARK: 오늘: 기준 리조트의 날씨·예상 설질 (카드 없이 배경 위)
+
+    @ViewBuilder private var today: some View {
+        if let resort = weatherResort {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(resort.name) · \(HomeData.dayLabel(.now))")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText)
+                switch weather {
+                case .loading:
+                    VStack(alignment: .leading, spacing: 10) {
+                        RoundedRectangle(cornerRadius: 8).fill(Color.surface).frame(width: 150, height: 56)
+                        RoundedRectangle(cornerRadius: 8).fill(Color.surface).frame(width: 160, height: 14)
+                    }
+                    .padding(.vertical, 6).opacity(0.6)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(resort.name) 날씨 불러오는 중")
+                case .failed:
+                    Text("날씨를 불러오지 못했어요").font(.headline).foregroundStyle(Color.primaryText).padding(.top, 6)
+                    Button { DebugFailures.weatherFails = false; weatherRetry += 1 } label: {
+                        Label("다시 시도", systemImage: "arrow.clockwise")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText)
+                            .padding(.horizontal, 18).frame(minHeight: 44)
+                            .background(Color.surface, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                case .loaded(let s):
+                    NavigationLink {
+                        WeatherDetailView(cache: weatherCache, homes: homes, selected: resort.id)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text(WeatherFormat.temp(s.current.temperature))
+                                    .font(.system(size: bigSize, weight: .bold)).monospacedDigit()
+                                    .foregroundStyle(Color.accentText)
+                                Text(s.current.condition).font(.system(size: unitSize, weight: .bold))
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right").font(.title3.weight(.semibold))
+                                    .foregroundStyle(Color.secondaryText).accessibilityHidden(true)
+                            }
+                            if let est = SnowForecast.estimate(hours: s.hours, now: .now) {
+                                HStack(spacing: 4) {
+                                    Text("설질 · \(est.level.label)")
+                                    ForecastTag()
+                                }
+                                .font(.subheadline).foregroundStyle(Color.secondaryText)
+                            }
+                        }
+                        .foregroundStyle(Color.primaryText)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Text("Apple Weather · 데이터 출처").font(.caption).foregroundStyle(Color.secondaryText).padding(.top, 4)
+            }
+            .padding(.horizontal, 20).padding(.bottom, 22)
+        }
+    }
+
+    // MARK: 기록 카드: 최근 기록(오늘 기록) → 이번 시즌 → 시즌권. 기록이 없으면 기록 방법
+
+    private enum Card: Int { case recent, season, pass }
 
     private var cardList: [Card] {
-        var c: [Card] = []
-        if weatherResort != nil { c.append(.weather) }
-        c.append(loaded && days.isEmpty ? .howTo : .recent)
+        var c: [Card] = [.recent, .season]
         if pass != nil { c.append(.pass) }
         return c
     }
 
-    private var cards: some View {
-        let list = cardList
-        return VStack(spacing: 14) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(Array(list.enumerated()), id: \.element) { i, card in
-                        cardView(card).id(i)
-                    }
-                }
-                .scrollTargetLayout()
+    @ViewBuilder private var cards: some View {
+        if loaded && days.isEmpty {
+            howTo.padding(.horizontal, 16)
+        } else if typeSize.isAccessibilitySize {
+            // 가장 큰 글씨: 옆으로 넘기지 않고 세로로 쌓는다(v15 큰 글씨 판)
+            VStack(spacing: 12) {
+                ForEach(cardList, id: \.self) { cardView($0) }
             }
-            .contentMargins(.horizontal, 16, for: .scrollContent)
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: $page)
+            .padding(.horizontal, 16)
+        } else {
+            let list = cardList
+            VStack(spacing: 14) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(Array(list.enumerated()), id: \.element) { i, card in
+                            cardView(card).frame(width: 250).id(i)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .contentMargins(.horizontal, 16, for: .scrollContent)
+                .scrollTargetBehavior(.viewAligned)
+                .scrollPosition(id: $page)
 
-            if list.count > 1 {
                 HStack(spacing: 8) {
                     ForEach(list.indices, id: \.self) { i in
                         Circle().fill(i == (page ?? 0) ? Color.accentText : Color.cardBorder).frame(width: 7, height: 7)
@@ -206,145 +287,46 @@ struct HomeView: View {
 
     @ViewBuilder private func cardView(_ card: Card) -> some View {
         switch card {
-        case .weather: weatherCard
         case .recent:
             if let day = days.first(where: \.isVisit) ?? days.first {
+                let t = Stats.totals([day])
+                let isToday = BusinessDay.same(day.date, .now)
                 NavigationLink { DayDetailView(db: recorder.db, day: day) } label: {
-                    let t = Stats.totals([day])
-                    HomeCard(icon: "clock", label: "최근 기록 · \(HomeData.monthDay(day.date))") {
-                        Text("\(t.runs)회").font(.title.bold())
-                        Text("\(RecordFormat.km(t.distance)) · 고도차 \(Int(t.drop).formatted())m").font(.subheadline)
-                    }
+                    RecordCard(icon: "clock", label: isToday ? "오늘 기록" : "최근 기록 · \(HomeData.monthDay(day.date))",
+                               value: "\(t.runs)회", sub: "\(RecordFormat.km(t.distance)) · 고도차 \(Int(t.drop).formatted())m")
                 }
                 .buttonStyle(.plain)
             } else {
-                HomeCard(icon: "clock", label: "최근 기록") { EmptyView() }.redacted(reason: .placeholder)
+                RecordCard(icon: "clock", label: "최근 기록", value: "0회", sub: "불러오는 중").redacted(reason: .placeholder)
             }
-        case .howTo:
-            HomeCard(icon: "list.number", label: "기록 방법") {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(["리프트 전에 기록 시작", "휴대폰은 주머니에", "다 타면 종료 길게 누르기"].enumerated()), id: \.offset) { i, s in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text("\(i + 1)").fontWeight(.bold).monospacedDigit().foregroundStyle(Color.accentText)
-                            Text(s)
-                        }
-                        .font(.subheadline)
-                    }
-                }
-            }
+        case .season:
+            let t = Stats.totals(days)
+            RecordCard(icon: "chart.bar", label: "이번 시즌", value: "\(t.visitDays)일",
+                       sub: "\(t.runs)회 · \(RecordFormat.km(t.distance))")
+                .redacted(reason: loaded ? [] : .placeholder)
         case .pass:
             if let pass {
-                HomeCard(icon: "ticket", label: pass.label) {
-                    if let v = pass.value {
-                        Text("\(Int(v.perVisit.rounded()).formatted())원").font(.title.bold())
-                        Text("리프트권이었다면 \(pass.ticket.formatted())원").font(.subheadline)
-                    } else {
-                        Text("방문 전").font(.title.bold())
-                        Text("방문하면 1회 방문당 금액을 계산해요").font(.subheadline)
-                    }
+                if let v = pass.value {
+                    RecordCard(icon: "ticket", label: pass.label, value: "\(Int(v.perVisit.rounded()).formatted())원", sub: "1회 방문당")
+                } else {
+                    RecordCard(icon: "ticket", label: pass.label, value: "방문 전", sub: "방문하면 1회 방문당 금액을 계산해요")
                 }
             }
         }
     }
 
-    @ViewBuilder private var weatherCard: some View {
-        let name = weatherResort.map { "\($0.name) 날씨" } ?? "날씨"
-        switch weather {
-        case .loading:
-            HomeCard(icon: "cloud.sun", label: name, dim: true) {
-                VStack(alignment: .leading, spacing: 10) {
-                    RoundedRectangle(cornerRadius: 8).fill(Color.surface).frame(width: 120, height: 26)
-                    RoundedRectangle(cornerRadius: 8).fill(Color.surface).frame(width: 160, height: 14)
+    private var howTo: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("스키장에 도착하면 아래 기록 시작을 누르세요").font(.headline).foregroundStyle(Color.primaryText)
+            ForEach(Array(["리프트 타기 전에 아래 기록 시작", "휴대폰은 주머니에", "다 타면 종료 길게 누르기"].enumerated()), id: \.offset) { i, s in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(i + 1)").fontWeight(.bold).monospacedDigit().foregroundStyle(Color.accentText)
+                    Text(s).foregroundStyle(Color.primaryText)
                 }
-                .padding(.top, 6).opacity(0.6)
-            } footer: { attributionLine }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(name) 불러오는 중")
-        case .failed:
-            HomeCard(icon: "cloud.sun", label: name) {
-                Text("날씨를 불러오지 못했어요").font(.headline)
-            } footer: {
-                Button { DebugFailures.weatherFails = false; weatherRetry += 1 } label: {
-                    Label("다시 시도", systemImage: "arrow.clockwise")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText)
-                        .padding(.horizontal, 18).frame(minHeight: 44)
-                        .background(Color.surface, in: Capsule())
-                }
-                .buttonStyle(.plain)
+                .font(.subheadline)
             }
-        case .loaded(let s):
-            NavigationLink {
-                WeatherDetailView(cache: weatherCache, homes: homes, selected: weatherResort?.id ?? homes[0])
-            } label: {
-                HomeCard(icon: s.current.symbolName, label: name) {
-                    Text("\(WeatherFormat.temp(s.current.temperature)) \(s.current.condition)").font(.title.bold())
-                    if let est = SnowForecast.estimate(hours: s.hours, now: .now) {
-                        HStack(spacing: 4) {
-                            Text("예상 설질 \(est.level.label)")
-                            ForecastTag()
-                        }
-                        .font(.subheadline)
-                    }
-                } footer: { attributionLine }
-            }
-            .buttonStyle(.plain)
         }
-    }
-
-    private var attributionLine: some View {
-        Text("Apple Weather · 데이터 출처").font(.caption).foregroundStyle(Color.secondaryText)
-    }
-
-    // MARK: 아래: 경고와 기록 시작 (기록 중에는 숨김)
-
-    @ViewBuilder private var bottom: some View {
-        if recorder.recording == nil {
-            VStack(spacing: 12) {
-                // 읽기 순서도 경고가 먼저 (decisions 2026-11-09)
-                if let b = recorder.blocked {
-                    StatusBanner(kind: .stop, icon: "location.slash", title: HomeData.blockedTitle(b),
-                                 message: "설정에서 위치 권한을 켜면 기록할 수 있어요. 위치 기록은 이 iPhone에만 저장돼요.",
-                                 action: ("설정 열기", { openURL(URL(string: UIApplication.openSettingsURLString)!) }))
-                } else if case .failed(let msg) = recorder.status, !showRecording {
-                    let (title, body) = HomeData.split(msg)
-                    StatusBanner(kind: .stop, icon: "stop.circle", title: title, message: body)
-                }
-                if lowStorage {
-                    StatusBanner(kind: .warning, icon: "externaldrive.badge.exclamationmark", title: "저장 공간이 부족해요",
-                                 message: "기록이 중간에 멈출 수 있어요", compact: true)
-                }
-                startCard
-            }
-            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 16)
-        }
-    }
-
-    private var startCard: some View {
-        let subtitle: String = {
-            guard let id = startResort else { return "시작할 때 리조트를 골라요" }
-            return "\(Resort.name(id)) · \(id == Recorder.lastResortId ? "마지막으로 기록한 리조트" : "첫 번째 홈 리조트")"
-        }()
-        return Button {
-            step = .pick
-        } label: {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("기록 시작").font(.title2.bold())
-                    Text(subtitle).font(.subheadline)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "record.circle")
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(Color.frost)
-                    .frame(width: 56, height: 56)
-                    .background(Color.onAccent, in: Circle())
-                    .accessibilityHidden(true)
-            }
-            .foregroundStyle(Color.onAccent)
-            .padding(.horizontal, 20).padding(.vertical, 16)
-            .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
-        }
-        .buttonStyle(StartCardStyle())
+        .card()
     }
 
     // MARK: 불러오기
@@ -372,41 +354,32 @@ struct HomeView: View {
     }
 }
 
-/// 홈 카드 하나 (250×200, 아이콘 바로 아래 본문, 출처·버튼 줄은 맨 아래)
-private struct HomeCard<Content: View, Footer: View>: View {
+/// 홈 기록 카드 (v15): 제목 블록 아래 큰 숫자 + 보조 줄 블록을 남은 높이의 가운데에. 최소 높이 168
+private struct RecordCard: View {
     var icon: String
     var label: String
-    var dim = false
-    @ViewBuilder var content: Content
-    @ViewBuilder var footer: Footer
+    var value: String
+    var sub: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            IconCircle(systemName: icon).opacity(dim ? 0.5 : 1).padding(.bottom, 10)
-            Text(label).font(.subheadline).foregroundStyle(Color.secondaryText)
-            content.foregroundStyle(Color.primaryText)
-            Spacer(minLength: 8)
-            footer
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                IconCircle(systemName: icon, size: 36)
+                Text(label).font(.headline).foregroundStyle(Color.primaryText)
+            }
+            Spacer(minLength: 4)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value).font(.largeTitle.bold()).monospacedDigit().foregroundStyle(Color.accentText)
+                Text(sub).font(.subheadline).foregroundStyle(Color.secondaryText)
+            }
+            Spacer(minLength: 0)
         }
         .padding(18)
-        .frame(width: 250, alignment: .leading)
-        .frame(minHeight: 200, alignment: .top)
+        .frame(maxWidth: .infinity, minHeight: 168, alignment: .leading)
         .background(Color.card, in: RoundedRectangle(cornerRadius: 24))
         .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.cardBorder))
         .contentShape(RoundedRectangle(cornerRadius: 24))
-    }
-}
-
-private extension HomeCard where Footer == EmptyView {
-    init(icon: String, label: String, dim: Bool = false, @ViewBuilder content: () -> Content) {
-        self.init(icon: icon, label: label, dim: dim, content: content, footer: { EmptyView() })
-    }
-}
-
-private struct StartCardStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(Color.accentFill.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 24))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -414,19 +387,17 @@ private struct StartCardStyle: ButtonStyle {
 struct PassSummary {
     var label: String
     var value: PassValue.Value?
-    var ticket: Int
 
     init?(db: AppDatabase, season: String, days: [Stats.Day]) {
         guard let passes = try? db.passes(season: season), let first = passes.first else { return nil }
         let r = PassValue.compute(passes, days: days, season: season)
         if passes.count == 1 {
-            label = "\(first.pass.name) · 1회 방문당"
+            label = first.pass.name
             value = r.perPass[first.pass.id] ?? nil
         } else {
-            label = "시즌권 \(passes.count)장 · 1회 방문당"
+            label = "시즌권 \(passes.count)장"
             value = r.total
         }
-        ticket = r.ticketValue.values.reduce(0, +)
     }
 }
 
@@ -435,6 +406,14 @@ nonisolated extension HomeData {
     static func seasonStart(_ season: String) -> Date {
         let y = Int(season.prefix(4)) ?? 2026
         return seoul.date(from: DateComponents(year: y, month: 11, day: 1, hour: 6))!
+    }
+
+    /// 영업일 날짜 "11월 27일 목요일" (06:00 전이면 전날)
+    static func dayLabel(_ now: Date) -> String {
+        let d = BusinessDay.start(of: now)
+        let c = seoul.dateComponents([.month, .day, .weekday], from: d)
+        let w = ["일", "월", "화", "수", "목", "금", "토"][(c.weekday ?? 1) - 1]
+        return "\(c.month ?? 0)월 \(c.day ?? 0)일 \(w)요일"
     }
 
     static func monthDay(_ d: Date) -> String {
@@ -462,7 +441,7 @@ extension Resort {
 }
 
 extension Color {
-    /// 기록 시작 카드의 원 안 아이콘 (시안: 밝게·어둡게 모두 프로스트)
+    /// 기록 시작 캡슐의 원 안 아이콘 (시안: 밝게·어둡게 모두 프로스트)
     static let frost = Color(light: 0x5CE1E6, dark: 0x5CE1E6)
 }
 

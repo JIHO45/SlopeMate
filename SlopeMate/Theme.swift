@@ -66,14 +66,15 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 
-/// 카드 머리의 둥근 아이콘 (48pt, 보조 면)
+/// 카드 머리의 둥근 아이콘 (기본 48pt, 홈 기록 카드는 36pt, 보조 면)
 struct IconCircle: View {
     var systemName: String
+    var size: CGFloat = 48
     var body: some View {
         Image(systemName: systemName)
-            .font(.title3)
+            .font(size < 48 ? .body : .title3)
             .foregroundStyle(Color.accentText)
-            .frame(width: 48, height: 48)
+            .frame(width: size, height: size)
             .background(Color.surface, in: Circle())
             .accessibilityHidden(true)
     }
