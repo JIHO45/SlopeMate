@@ -60,15 +60,13 @@ test("클라이언트는 크루·멤버·초대를 쓰거나 초대를 읽지 �
   await assertFails(setDoc(doc(as("b"), "invites/new"), { crew_id: "c1" }));
 });
 
-test("계정 문서: 본인만 처음 한 번 만들고, 표시 이름은 직접 못 바꾼다(함수로만)", async () => {
+test("계정 문서: 본인만 읽고, 만들기·바꾸기는 함수만(금지어·만 14세 확인)", async () => {
   const ok = { display_name: "지호", age14_confirmed: true, deleting: false, created_at: serverTimestamp() };
-  await assertFails(setDoc(doc(as("n"), "users/n"), { ...ok, age14_confirmed: false }));
-  await assertFails(setDoc(doc(as("n"), "users/other"), ok));
-  await assertSucceeds(setDoc(doc(as("n"), "users/n"), ok));
+  await assertFails(setDoc(doc(as("n"), "users/n"), ok));
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), "users/n"), { display_name: "지호" }));
   await assertSucceeds(getDoc(doc(as("n"), "users/n")));
   await assertFails(getDoc(doc(as("b"), "users/n")));
   await assertFails(updateDoc(doc(as("n"), "users/n"), { display_name: "JH" }));
-  await assertFails(setDoc(doc(as("n"), "users/n"), ok));
 });
 
 test("차단 기록: 크루장만 읽고, 크루원·외부인은 못 읽고, 아무도 쓰지 못한다", async () => {
@@ -87,10 +85,18 @@ test("시즌 합계: 본인만 읽고, 아무도 직접 쓰지 못한다", async
   await assertFails(setDoc(doc(as("b"), "season_summaries/b_2026-27"), { uid: "b", runs: 999, computed_at: 9 }));
 });
 
-test("삭제를 끝낸 계정은 남은 로그인으로 계정 문서를 다시 만들지 못한다", async () => {
+test("삭제를 끝낸 계정은 계정 문서를 다시 만들지 못하고, 신고는 신고자만 읽는다", async () => {
   const ok = { display_name: "지호", age14_confirmed: true, deleting: false, created_at: serverTimestamp() };
   await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), "deleted_users/gone"), { at: new Date() }));
   await assertFails(setDoc(doc(as("gone"), "users/gone"), ok));
   await assertFails(getDoc(doc(as("gone"), "deleted_users/gone")));
+  // 신고: 신고한 본인만 읽고 아무도 쓰지 못한다
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), "reports/r1"), { reporter_uid: "b", target_uid: "a", status: "open" }));
+  await assertSucceeds(getDoc(doc(as("b"), "reports/r1")));
+  await assertSucceeds(getDocs(query(collection(as("b"), "reports"), where("reporter_uid", "==", "b"))));
+  await assertFails(getDoc(doc(as("a"), "reports/r1")));
+  await assertFails(getDocs(collection(as("b"), "reports")));
+  await assertFails(setDoc(doc(as("b"), "reports/r2"), { reporter_uid: "b" }));
+  await assertFails(updateDoc(doc(as("b"), "reports/r1"), { status: "resolved" }));
   await assertFails(setDoc(doc(as("n"), "deleted_users/n"), { at: new Date() }));
 });

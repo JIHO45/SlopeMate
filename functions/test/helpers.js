@@ -29,6 +29,15 @@ export async function call(fn, data, who) {
   return res.json();
 }
 
+/** 앱(CrewAPI.call)과 같은 재시도: aborted만, 최대 3번, 대기 200×회차 + 0~200ms */
+export async function callApp(fn, data, who) {
+  for (let attempt = 0; ; attempt++) {
+    const r = await call(fn, data, who);
+    if (r.error?.status !== "ABORTED" || attempt >= 3) return r;
+    await new Promise((s) => setTimeout(s, 200 * (attempt + 1) + Math.random() * 200));
+  }
+}
+
 /** aborted(경합)만 몇 번 다시 부른다 */
 export async function callRetry(fn, data, who) {
   for (let i = 0; ; i++) {

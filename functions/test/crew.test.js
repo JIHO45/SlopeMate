@@ -1,7 +1,7 @@
 // 크루 함수 (R14): 함수 에뮬레이터로 로그인 토큰을 붙여 호출한다.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { call, callRetry, clear, db, newUser, snapshot } from "./helpers.js";
+import { call, callApp, callRetry, clear, db, newUser, snapshot } from "./helpers.js";
 
 beforeEach(clear);
 
@@ -48,6 +48,15 @@ test("크루장인 크루 5개 상한: 동시에 만들어도 5개", async () =>
   assert.equal(rs.filter((r) => r.result).length, 5);
   assert.ok(rs.filter((r) => !r.result).every((r) => r.error.status === "RESOURCE_EXHAUSTED"));
   assert.equal((await db.collection("crews").where("owner_uid", "==", owner.uid).get()).size, 5);
+});
+
+test("5개 상한, 앱과 같은 재시도(3번): 5개를 넘지 않고, 실패는 상한 초과나 경합(다시 시도 안내)뿐", async () => {
+  const owner = await newUser();
+  const rs = await Promise.all(Array.from({ length: 8 }, () => callApp("createCrew", { name: "반" }, owner)));
+  const ok = rs.filter((r) => r.result).length;
+  assert.ok(ok <= 5);
+  assert.ok(rs.filter((r) => !r.result).every((r) => ["RESOURCE_EXHAUSTED", "ABORTED"].includes(r.error.status)), JSON.stringify(rs));
+  assert.equal((await db.collection("crews").where("owner_uid", "==", owner.uid).get()).size, ok);
 });
 
 test("승계는 상한과 무관: 크루장인 크루가 5개여도 넘겨받고, 그동안 새로 만들 수 없음", async () => {
@@ -267,3 +276,12 @@ test("시즌 이름: 한국 시간 영업일(06:00) 기준, 5~10월은 다가오
   assert.equal(currentSeason(new Date("2027-04-30T21:00:00Z")), "2027-28");
   assert.equal(currentSeason(new Date("2026-08-01T00:00:00Z")), "2026-27");
 });
+
+test("경합으로 닫힌 트랜잭션 오류만 재시도 대상(aborted)으로 본다", async () => {
+  const { isClosedTransaction } = await import("../lib/errors.js");
+  assert.ok(isClosedTransaction({ code: 3, details: "Transaction is invalid or closed." }));
+  assert.ok(!isClosedTransaction({ code: 3, details: "Value for argument is not a valid" }));
+  assert.ok(!isClosedTransaction({ code: 10, details: "Transaction is invalid or closed." }));
+  assert.ok(!isClosedTransaction(new Error("x")));
+});
+
