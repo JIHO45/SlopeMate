@@ -1,3 +1,4 @@
+import SafariServices
 import SwiftUI
 import UIKit
 
@@ -12,6 +13,8 @@ struct HomeView: View {
     @State private var weatherCache = WeatherCache()
     @State private var weather: WeatherLoad = .loading
     @State private var weatherRetry = 0
+    /// 지금 보이는 날씨의 리조트. 같은 리조트를 다시 읽을 때만 이전 값을 두고, 바뀌면 '불러오는 중'으로
+    @State private var weatherFor: String?
     @State private var page: Int? = 0
     @Binding var showRecording: Bool
     /// S1이 떠 있는지. 닫히면 홈 리조트·날씨·시작 기본값을 다시 읽는다.
@@ -29,6 +32,12 @@ struct HomeView: View {
     @State private var openDay: Stats.Day?
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.scenePhase) private var phase
+    /// 강풍 안내·오늘 운영(R34·R35)의 기준 시각. 앞에 있는 동안 5분마다 새로 잡는다(운영 종료·06:00 전환은 최대 5분 늦게 반영).
+    @State private var now = Date.now
+    @State private var tick = 0
+    /// 슬로프 현황·웹캠을 여는 앱 안 브라우저
+    @State private var browser: WebPage?
     @ScaledMetric(relativeTo: .largeTitle) private var bigSize = 64
     @ScaledMetric(relativeTo: .title) private var unitSize = 28
 
@@ -71,7 +80,17 @@ struct HomeView: View {
             }
         }
         .task(id: reloadKey) { await reload() }
-        .task(id: "\(weatherResort?.id ?? "")-\(weatherRetry)") { await loadWeather() }
+        .task(id: "\(weatherResort?.id ?? "")-\(weatherRetry)-\(tick)") { await loadWeather() }
+        // 앞에 있는 동안 5분마다: 기준 시각을 새로 잡고 날씨를 다시 읽는다(캐시 30분이 지났을 때만 새로 받음)
+        .task(id: phase) {
+            guard phase == .active else { return }
+            while !Task.isCancelled {
+                now = .now
+                tick += 1
+                try? await Task.sleep(for: .seconds(300))
+            }
+        }
+        .fullScreenCover(item: $browser) { SafariView(url: $0.url).ignoresSafeArea() }
         .onChange(of: startLabel, initial: true) { startBar?.subtitle = startLabel }
         .onChange(of: startBar?.requests) { if recorder.recording == nil { step = .pick } }
         .onAppear {
@@ -187,7 +206,7 @@ struct HomeView: View {
     @ViewBuilder private var today: some View {
         if let resort = weatherResort {
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(resort.name) · \(HomeData.dayLabel(.now))")
+                Text("\(resort.name) · \(HomeData.dayLabel(now))")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText)
                 switch weather {
                 case .loading:
@@ -221,7 +240,7 @@ struct HomeView: View {
                                 Image(systemName: "chevron.right").font(.title3.weight(.semibold))
                                     .foregroundStyle(Color.secondaryText).accessibilityHidden(true)
                             }
-                            if let est = SnowForecast.estimate(hours: s.hours, now: .now) {
+                            if let est = SnowForecast.estimate(hours: s.hours, now: now) {
                                 HStack(spacing: 4) {
                                     Text("설질 · \(est.level.label)")
                                     ForecastTag()
@@ -233,11 +252,78 @@ struct HomeView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    let open = Timetable.today(resortId: resort.id, now: now, timetables: ServerConfig.timetables)
+                    if let wind = WindNotice.evaluate(hours: s.hours, now: now, today: open) {
+                        windLine(wind)
+                    }
                 }
+                hours(resort)
                 Text("Apple Weather · 데이터 출처").font(.caption).foregroundStyle(Color.secondaryText).padding(.top, 4)
             }
             .padding(.horizontal, 20).padding(.bottom, 22)
         }
+    }
+
+    /// 강풍 안내 (R35): 바람 강조와 공식 현황 안내. 운휴는 예측하지 않는다.
+    private func windLine(_ w: WindNotice) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "wind").foregroundStyle(Color.windAmber).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(w.title).fontWeight(.bold).foregroundStyle(Color.primaryText)
+                Text(WindNotice.hint).foregroundStyle(Color.secondaryText)
+            }
+        }
+        .font(.subheadline)
+        .padding(.top, 6)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// 오늘 운영 (R34): 확인된 시간표만 시간을 보이고, 아니면 공식 안내로. 휴장으로 표시하지 않는다.
+    @ViewBuilder private func hours(_ resort: Resort) -> some View {
+        let open = Timetable.today(resortId: resort.id, now: now, timetables: ServerConfig.timetables) ?? []
+        VStack(alignment: .leading, spacing: 4) {
+            Text("오늘 운영").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText)
+            if open.isEmpty {
+                Text("운영 시간은 공식 안내에서 확인하세요").font(.subheadline).foregroundStyle(Color.secondaryText)
+            } else {
+                let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                                                          : AnyLayout(HStackLayout(alignment: .top, spacing: 10))
+                layout {
+                    ForEach(open, id: \.interval.start) { o in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(Self.kindLabel(o)).font(.footnote).foregroundStyle(Color.secondaryText)
+                            Text("\(o.start)–\(o.end)").font(.callout.weight(.semibold)).monospacedDigit()
+                                .foregroundStyle(Color.primaryText)
+                        }
+                        .frame(maxWidth: typeSize.isAccessibilitySize ? nil : .infinity, alignment: .leading)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                linkButton("슬로프 현황", resort.slopeStatusURL)
+                if let cam = resort.webCamURL { linkButton("웹캠", cam) }
+            }
+            .padding(.top, 6)
+        }
+        .padding(.top, 12)
+    }
+
+    static func kindLabel(_ o: Timetable.Open) -> String {
+        let name = switch o.kind { case .day: "주간"; case .night: "야간"; case .lateNight: "심야" }
+        return o.nextDay ? "\(name) · 다음 날" : name
+    }
+
+    private func linkButton(_ title: String, _ url: URL) -> some View {
+        Button { browser = WebPage(url: url) } label: {
+            Label(title, systemImage: "arrow.up.right.square")
+                .labelStyle(TrailingIcon())
+                .font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText)
+                .padding(.horizontal, 16).frame(minHeight: 44)
+                .glassCapsule()
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("앱 안 브라우저에서 열기")
     }
 
     // MARK: 기록 카드: 최근 기록(오늘 기록) → 이번 시즌 → 시즌권. 기록이 없으면 기록 방법
@@ -344,10 +430,10 @@ struct HomeView: View {
 
     private func loadWeather() async {
         guard let resort = weatherResort else { return }
-        weather = .loading
+        if case .loaded = weather, weatherFor == resort.id {} else { weather = .loading }
         do {
             let snapshot = try await weatherCache.weather(for: resort)
-            if !Task.isCancelled { weather = .loaded(snapshot) }
+            if !Task.isCancelled { weather = .loaded(snapshot); weatherFor = resort.id }
         } catch {
             if !Task.isCancelled { weather = .failed }
         }
@@ -436,6 +522,25 @@ nonisolated extension HomeData {
     }
 }
 
+/// 앱 안 브라우저로 여는 공식 페이지 (R34)
+struct WebPage: Identifiable {
+    let url: URL
+    var id: URL { url }
+}
+
+struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> SFSafariViewController { SFSafariViewController(url: url) }
+    func updateUIViewController(_ vc: SFSafariViewController, context: Context) {}
+}
+
+/// 글자 뒤에 아이콘 ("슬로프 현황 ↗")
+private struct TrailingIcon: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) { configuration.title; configuration.icon.imageScale(.small) }
+    }
+}
+
 extension Resort {
     static func name(_ id: String) -> String { all.first { $0.id == id }?.name ?? id }
 }
@@ -445,7 +550,21 @@ extension Color {
     static let frost = Color(light: 0x5CE1E6, dark: 0x5CE1E6)
 }
 
+extension Color {
+    /// 강풍 안내 아이콘 (경고 노랑, StatusBanner와 같은 값)
+    static let windAmber = Color(light: 0xA87400, dark: 0xF2C14E)
+}
+
 extension View {
+    /// 유리 캡슐 (iOS 26). 17.6~25는 보조 면 캡슐.
+    @ViewBuilder func glassCapsule() -> some View {
+        if #available(iOS 26, *) {
+            self.glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            self.background(Color.surface, in: Capsule())
+        }
+    }
+
     /// 유리 원 버튼 (iOS 26). 17.6~25는 유리 대신 강조색 아이콘 (B1 v1).
     @ViewBuilder func glassCircle() -> some View {
         if #available(iOS 26, *) {
