@@ -83,8 +83,16 @@ struct DayMapView: View {
         .toolbar {
             if hasRuns, data != nil {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { noticeShown ? make() : (notice = true) } label: { Image(systemName: "square.and.arrow.up") }
-                        .accessibilityLabel("동영상으로 공유")
+                    // 공유 고르기 v1: 이미지(R31)·동영상(R50)
+                    Menu {
+                        Button { playing = false; ShareImage.share(day) } label: {
+                            Label { Text("이미지"); Text("오늘 요약 한 장, 경로 없음") } icon: { Image(systemName: "photo") }
+                        }
+                        Button { noticeShown ? make() : (notice = true) } label: {
+                            Label { Text("동영상"); Text("오늘 경로 재생, \(ShareVideo.seconds)초") } icon: { Image(systemName: "video") }
+                        }
+                    } label: { Image(systemName: "square.and.arrow.up") }
+                        .accessibilityLabel("공유")
                 }
             }
         }

@@ -155,12 +155,15 @@ struct ShareMakingView: View {
 
 /// 공유 시트를 맨 위 화면에서 띄우고, 끝나면(보냈든 닫았든) 파일을 지운다
 @MainActor enum ShareSheet {
-    static func present(_ url: URL) {
-        let vc = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        vc.completionWithItemsHandler = { _, _, _, _ in try? FileManager.default.removeItem(at: url) }
+    static func present(_ url: URL) { present([url], removing: url) }
+
+    /// 파일 없이 넘길 것(공유 이미지)은 removing 없이
+    static func present(_ items: [Any], removing url: URL? = nil) {
+        let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        vc.completionWithItemsHandler = { _, _, _, _ in if let url { try? FileManager.default.removeItem(at: url) } }
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }
         guard var top = scene?.keyWindow?.rootViewController else {
-            try? FileManager.default.removeItem(at: url)
+            if let url { try? FileManager.default.removeItem(at: url) }
             return
         }
         while let next = top.presentedViewController, !next.isBeingDismissed { top = next }

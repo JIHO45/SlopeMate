@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// S6 하루 기록. 리조트 OSM 지도가 충분하면 지도형(DayMapView, B5), 아니면 목록형(B4 v3, 공유 없음).
+/// S6 하루 기록. 리조트 OSM 지도가 충분하면 지도형(DayMapView, B5), 아니면 목록형(v4, 이미지로 공유 R31).
 /// 홈의 최근 기록 카드(B2)와 기록 목록(S8)이 이 화면을 연다: `DayDetailView(db:day:)`.
 struct DayDetailView: View {
     let db: AppDatabase
@@ -45,6 +45,14 @@ struct DayDetailView: View {
         .background(Color.bg)
         .navigationTitle("\(RecordFormat.monthDay(day.date)) · \(Resort.name(day.resortId))")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if !shown.runs.isEmpty, data != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { ShareImage.share(shown) } label: { Image(systemName: "square.and.arrow.up") }
+                        .accessibilityLabel("이미지로 공유")
+                }
+            }
+        }
     }
 
     private func load() async {
