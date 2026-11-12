@@ -1,3 +1,4 @@
+import FirebaseAppCheck
 import FirebaseCore
 import SwiftUI
 import UIKit
@@ -36,7 +37,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             dbError = error.localizedDescription
         }
         // 크루용 Firebase는 기록 복원 뒤에 켠다(위치 재실행 때 복원이 먼저)
+        // App Check(R12 익명 표본): 기기는 App Attest, 시뮬레이터는 디버그 토큰(콘솔에 등록)
+        #if targetEnvironment(simulator)
+        AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory())
+        #else
+        AppCheck.setAppCheckProviderFactory(AttestFactory())
+        #endif
         FirebaseApp.configure()
+        // 동의하지 않은 기기까지 미리 App Attest를 하지 않게 자동 갱신은 끈다(토큰은 쓸 때 받음)
+        AppCheck.appCheck().isTokenAutoRefreshEnabled = false
         let account = Account()
         self.account = account
         if let recorder {
@@ -46,4 +55,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         }
         return true
     }
+}
+
+/// App Attest 공급자. 익명 표본은 일회용 토큰(SampleSender)으로 쓰고, Firebase SDK가 크루 요청에도 일반 토큰을 붙일 수 있다
+private nonisolated final class AttestFactory: NSObject, AppCheckProviderFactory {
+    func createProvider(with app: FirebaseApp) -> AppCheckProvider? { AppAttestProvider(app: app) }
 }

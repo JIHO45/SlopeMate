@@ -14,6 +14,8 @@ struct RootView: View {
     @State private var startBar = StartBarModel()
     /// S1: 첫 실행에 한 번
     @State private var setup = !Settings.homeSetupDone
+    /// 익명 표본 보내기(R12): 앞에 올 때마다
+    @State private var sampler: SampleSender?
 
     enum Tab { case record, season, crew }
 
@@ -47,6 +49,16 @@ struct RootView: View {
             Button("확인", role: .cancel) {}
         } message: { Text("신고해 주셔서 고마워요.") }
         .task(id: phase) { if phase == .active { await deletion.resume() } }
+        .task(id: phase) {
+            guard phase == .active else { return }
+            if sampler == nil { sampler = SampleSender(db: recorder.db) }
+            await sampler?.run()
+            // 앞에 올 때 시작한 차량 재조회·캐시 갱신이 끝난 기록도 같은 방문에 보낸다
+            // ponytail: 고정 1분 대기, 갱신 완료 알림이 생기면 그때 부르기
+            try? await Task.sleep(for: .seconds(60))
+            guard !Task.isCancelled else { return }
+            await sampler?.run()
+        }
         // 슬로프 이름 켜기·시간표 갱신·차단 스위치(R7, R9): 켤 때와 다시 볼 때(1시간 안에 받았으면 건너뜀),
         // 켜 둔 동안에는 1시간마다. 백그라운드로 가면 멈춘다.
         .task(id: phase) {

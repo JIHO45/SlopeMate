@@ -351,7 +351,7 @@ struct ConsentSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("설질·대기 시간을 익명으로 보낼까요?").font(.title2.bold()).accessibilityAddTraits(.isHeader)
-                    Text("직접 남긴 설질 평가와 자동으로 측정한 리프트 대기 시간을 익명으로 모아 리조트별 현황을 보여줘요.")
+                    Text("직접 남긴 설질 평가와 자동으로 측정한 리프트 대기 시간을 익명으로 모아 리조트별 현황을 만드는 데 써요.")
                         .font(.subheadline).foregroundStyle(Color.secondaryText)
                 }
                 .padding(.horizontal, 4)

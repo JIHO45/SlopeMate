@@ -508,3 +508,4 @@ async function purgeReports(uid: string) {
   for (const d of about.docs) batch.delete(d.ref);
   await batch.commit();
 }
+export { submitSample } from "./samples.js";

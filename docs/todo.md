@@ -136,7 +136,7 @@
     - [x] Firebase SDK(Auth·Firestore), S11 크루 시작, S12 가입 화면, users 문서 보안 규칙 초안 (2026-11-10)
     - [x] users 보안 규칙 배포(`firebase deploy --only firestore:rules`) (2026-11-10) — 실기기 가입 확인은 M3 "실기기 확인" 묶음
     - [x] S11 "링크로 참여"(초대 링크 붙여 넣기) (2026-11-11)
-- [ ] `GoogleService-Info.plist` 공개 저장소에 올리지 않기(.gitignore), API 키를 iOS 번들 ID로 제한 (공개 저장소)
+- [x] `GoogleService-Info.plist` 공개 저장소에 올리지 않기(.gitignore), API 키를 iOS 번들 ID로 제한 (공개 저장소) (2026-11-13)
 - [ ] 크루 함수: 생성·가입·탈퇴·추방·크루장 넘기기·초대 링크 교체, 50명·5개 상한 (R14, H)
     - [x] 함수 7개(createCrew·previewInvite·joinCrew·leaveCrew·kickMember·renameCrew·rotateInvite), 크루 읽기 규칙·멤버 그룹 인덱스, 에뮬레이터 테스트 16개 (2026-11-10)
     - [x] 배포: `firebase deploy --only functions,firestore:rules,firestore:indexes`, 컨테이너 이미지 1일 뒤 삭제 (2026-11-10)
@@ -181,6 +181,15 @@
     - [x] 가입 화면 중 초대 수신: 비로그인 상태에서 크루 만들기 → 가입 화면을 띄운 채 초대 링크 열기 → 가입 화면 X로 닫기 → S16 확인. 취소 경로는 Apple 로그인·유효 크루 없이 시뮬레이터에서 확인 가능 (R14, H) — 시뮬레이터에서 확인: 가입 화면이 떠 있는 동안 S16이 뜨지 않고, X로 닫자 S16이 열림 (2026-11-11)
     - [ ] 실기기 빌드에서 서명된 앱의 연결 도메인·앱 ID가 AASA와 같은지(자동 서명이면 Xcode가 App ID에 Associated Domains를 켬) — 실기기 확인 묶음과 함께
 - [ ] 익명 표본 집계 함수, 로그 제외, 동의·철회 (R12) — 기기에서는 `sendState = pending`이고 차량 재조회가 끝난 기록(종료 15분 뒤 조회했거나 6일 지남)의 표본만 보낸다
+    - [x] 규칙 결정(decisions 2026-11-12): 2.0은 모으기만, 설질 공개는 한 슬로프·1시간 2명 이상이 같거나 비슷할 때(R40), 기기당 같은 시간 하나·최대 한 번 전송·7일 만료, App Check 일회용 토큰, 집계 3시즌 보관. 03·05·06·07, 동의 문구, 개인정보처리방침(익명 전송·보유·App Check) 반영 (2026-11-12)
+    - [x] 서버: `submitSample`(onRequest, 표본 하나, 허용 ID `scripts/sample-ids.mjs` → `sampleIds.ts`, 8일·범위·필드 검사, App Check 소비, 집계만 increment, `SAMPLES_ENABLED` 환경 변수, 리전 서울 직접 지정), 에뮬레이터 테스트 `test/samples.test.js` 포함 서버 테스트 48개 통과 (2026-11-12)
+    - [x] 앱: `SampleSender`(확정 캐시·동작 권한 없으면 바로, 겹침 기준 설질, 1시간 중복 제거, 최대 한 번·연결 오류만 재시도, 7일 만료, 무작위 2~20초, 앞에 올 때), FirebaseAppCheck·App Attest 권한, 시뮬레이터는 디버그 공급자, 앱 테스트 4개 (2026-11-12)
+    - [x] Fable 서브에이전트 검토 반영: 서버가 집계 전에 거부한 응답(401·429·503)은 pending으로 되돌림, 앞에 다시 올 때 이전 전송 차례를 멈추고 새로 시작, 1분 뒤 한 번 더(차량 재조회 뒤), 응답 30초 제한, 최근 9일 기록만·기록별 오류 격리, App Check 자동 갱신 끔, 방침·05 남은 위험 문구, 잘못된 JSON 테스트. 서버 48개·앱 테스트 통과 (2026-11-12)
+    - [x] 남은 위험 처리(decisions 2026-11-13): 동작 권한이 있는데 6일 넘게 차량 판정 미확정이면 버림(앱 테스트 추가), 삭제 뒤 재기록 중복은 P2 전에 다시 정함, 운영자 IP 경로 끄기를 배포 ①에, 크루 합계 시각 연결 위험을 방침·05에 적음, 요청 로그는 "제외"로 통일 (2026-11-13)
+    - [ ] Firebase 콘솔: App Check에 iOS 앱 등록(App Attest), 시뮬레이터 디버그 토큰 등록, Firestore·Functions 강제 적용은 켜지 않음 — 사용자
+    - [ ] 배포 순서: ① Cloud Run 요청 로그 제외 필터(`cloud_run_revision`·`submitsample`·`run.googleapis.com/requests`, 첫 배포 전), Hosting Cloud Logging 연동 꺼짐(`gcloud logging read 'resource.type="firebase_domain"'`가 비어 있음), 데이터 액세스 감사 로그 모두 꺼짐, 다른 싱크 없음 → ② 함수 서비스 계정에 App Check 토큰 확인 권한(Firebase App Check Token Verifier) → ③ `firebase deploy --only functions:submitSample` → ④ `--only hosting`(개인정보처리방침). 방침이 실제보다 먼저 나가지 않게
+    - [ ] 배포 뒤 확인: 정상·오류 요청에 Logs Explorer 요청 정보 없음, 표본 요청에 계정 토큰 없음, 집계 문서만 생김 (06 R12)
+    - [ ] App Check가 제출 전에 안 되면 `config.json` `samples:false`로 제출
 - [x] Firebase Hosting 설정 파일: 리조트별 슬로프 이름 켜기, 시간표 갱신 (R7, R9) (2026-11-11) → `hosting/public/config.json`·`timetables.json`, `ServerConfig`(앞에 있는 동안 1시간에 한 번 받아 저장, 내장 시간표와 합침, 크루 동기화 차단 스위치는 보내기 직전에도 확인, 다음 조회 시각을 저장해 받으면 1시간 뒤·못 받거나 해석하지 못하면 5분 뒤, 다시 열어도 그 시각을 따름, 앱 테스트 128개), Hosting 파일 테스트
     - [x] 배포: `firebase deploy --only hosting`, 두 파일 200·`max-age=300`·로컬과 같은 내용, 시뮬레이터 앱이 예정 시각(5분 재시도)에 받아 저장하고 다음 조회를 1시간 뒤로 잡음 (2026-11-11)
 - [ ] TestFlight 배포 (기능이 붙는 대로)
@@ -201,6 +210,7 @@
 **실기기 확인** (사용자, 아이폰에서. 시뮬레이터로 못 하는 것만 모음. 기능을 다 붙인 뒤 심사 제출 빌드 전에 한 번에 진행)
 
 - [ ] 공유 이미지(R31): 지도형 공유 메뉴 → 이미지 → 공유 시트, 목록형 "이미지로 공유", 사진에 저장한 이미지에 위치 정보가 없는지(사진 앱 정보), 가장 큰 글씨에서 메뉴 (B8)
+- [ ] 익명 표본(R12): 실기기 App Attest 토큰 받기, 하루 기록 뒤 표본이 집계에 오르는지, 비행기 모드에서 pending 유지 (G)
 - [ ] 기록 엔진(M1): 위치 재실행 신호, 자동 재개 10분 기준, 화면 잠금 중 저장, 백그라운드 기압 (R4, decisions 2026-11-08)
 - [ ] Live Activity: 다이나믹 아일랜드(간단·확장), 권한 꺼짐 멈춤 표시, 종료 후 하루 합계, 8시간 뒤 "앱을 열면 다시 표시" (R23)
 - [ ] VoiceOver: 기록 시작 → 종료 확인 창 → 계속 기록 → 최종 종료까지 조작해 완수 확인 (R21, 06-verification)
@@ -235,6 +245,8 @@
 
 ## M5. 시즌 후 정비 (3월~10월)
 
+- [ ] 익명 집계 3시즌 지난 문서 지우는 예약 함수(첫 삭제 2029년 봄 전까지, R12)
+- [ ] 익명 표본: 하루 기록 삭제 뒤 같은 시간 재기록으로 1시간 중복 제거가 뚫리는 경우를 R40 결과 화면 전에 다시 정함(보낸 키 보관 여부)
 - [ ] 기준값 확정 (06-verification 2장)
 - [ ] OSM 수정 반영, 가공 데이터 ODbL 공개
 - [ ] OSM 보강: 오투·지산 슬로프 이름, 곤지암·오투 난이도, 웰리힐리 영역 이름 오류("알펜시아 리조트") 고치기 (R9)
