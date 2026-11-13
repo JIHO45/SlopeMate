@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 import UIKit
 
 /// S5 기록 중 (확정 시안 v7, S5 상태 v1·자동 재개 v2·저장 실패 v3). 기록 탭에서 홈 위에 전체 화면으로 뜬다.
@@ -18,6 +19,9 @@ struct RecordingView: View {
     @State private var battery = UIDevice.current.batteryLevel
     @State private var day: Stats.Day?
     @State private var showDay = false
+    /// 알림 권한(R49 카드). 읽기 전에는 nil이라 카드를 띄우지 않는다
+    @State private var notify: UNAuthorizationStatus?
+    @State private var notifyDismissed = Settings.notifyCardDismissed
     @Environment(\.openURL) private var openURL
     @ScaledMetric(relativeTo: .largeTitle) private var midSize = 44
     @ScaledMetric(relativeTo: .largeTitle) private var bigSize = 120
@@ -56,6 +60,7 @@ struct RecordingView: View {
             UIDevice.current.isBatteryMonitoringEnabled = true
             battery = UIDevice.current.batteryLevel
         }
+        .task { notify = await ForgottenStop.status() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in
             battery = UIDevice.current.batteryLevel
         }
@@ -203,6 +208,7 @@ struct RecordingView: View {
             VStack(spacing: 16) {
                 if let run = recorder.snowTarget, let rec { snowCard(run, rec: rec) }
                 banner
+                if showNotifyCard { notifyCard }
             }
             .padding(.horizontal, 16).padding(.bottom, 16)
         }
@@ -225,23 +231,69 @@ struct RecordingView: View {
     }
 
     @ViewBuilder private var banner: some View {
+        if let b = currentBanner { b }
+    }
+
+    /// 지금 띄울 상태 배너 하나(07 6장 "배너는 하나씩")
+    private var currentBanner: StatusBanner? {
         if case .failed(let msg) = recorder.status {
             let (title, body) = HomeData.split(msg)
-            StatusBanner(kind: .stop, icon: "stop.circle", title: title, message: body)
+            return StatusBanner(kind: .stop, icon: "stop.circle", title: title, message: body)
         } else if case .paused(let b) = recorder.status {
-            StatusBanner(kind: .stop, icon: "stop.circle", title: Self.pausedTitle(b), message: "멈춘 동안은 기록 없음으로 남아요",
-                         action: ("설정 열기", { openURL(URL(string: UIApplication.openSettingsURLString)!) }))
+            return StatusBanner(kind: .stop, icon: "stop.circle", title: Self.pausedTitle(b), message: "멈춘 동안은 기록 없음으로 남아요",
+                                action: ("설정 열기", { openURL(URL(string: UIApplication.openSettingsURLString)!) }))
         } else if let gap = recorder.autoResumedGap {
-            StatusBanner(kind: .info, icon: "arrow.clockwise", title: "자동으로 이어서 기록 중", message: autoResumedText(gap))
+            return StatusBanner(kind: .info, icon: "arrow.clockwise", title: "자동으로 이어서 기록 중", message: autoResumedText(gap))
         } else if let level = DebugFailures.batteryLevel ?? (UIDevice.current.batteryState == .charging ? nil : battery),
                   level >= 0, level <= 0.15 {
-            StatusBanner(kind: .warning, icon: "battery.25", title: "배터리가 부족해요",
-                         message: "\(Int((level * 100).rounded()))% 남음 · 지금까지 기록은 저장돼 있어요")
+            return StatusBanner(kind: .warning, icon: "battery.25", title: "배터리가 부족해요",
+                                message: "\(Int((level * 100).rounded()))% 남음 · 지금까지 기록은 저장돼 있어요")
         } else if recorder.status == .recording, let p = recorder.points.last,
                   (DebugFailures.weakSignal ? RunDetector.Params().maxHAcc + 1 : p.hAcc) > RunDetector.Params().maxHAcc {
-            StatusBanner(kind: .warning, icon: "exclamationmark.triangle", title: "위치 신호가 약해요",
-                         message: "기록은 계속돼요. 하늘이 트인 곳에서 나아질 수 있어요")
+            return StatusBanner(kind: .warning, icon: "exclamationmark.triangle", title: "위치 신호가 약해요",
+                                message: "기록은 계속돼요. 하늘이 트인 곳에서 나아질 수 있어요")
         }
+        return nil
+    }
+
+    // MARK: 종료 잊음 알림 카드 (R49, 확정 시안 v2)
+
+    /// 알림 권한을 아직 묻지 않았고 닫은 적 없을 때. 배너나 설질 칸이 있으면 숨겼다가 없어지면 다시 보인다.
+    private var showNotifyCard: Bool {
+        notify == .notDetermined && !notifyDismissed && recorder.status == .recording
+            && currentBanner == nil && recorder.snowTarget == nil
+    }
+
+    private var notifyCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("기록을 켜 두고 떠나면 알려 드릴까요?").font(.headline)
+                Text("1시간 하강이 없거나 5km 넘게 벗어나면 알려요.").font(.subheadline).foregroundStyle(Color.secondaryText)
+            }
+            .accessibilityElement(children: .combine)
+            HStack(spacing: 8) {
+                Button("괜찮아요") {
+                    Settings.notifyCardDismissed = true
+                    notifyDismissed = true
+                }
+                .font(.headline).foregroundStyle(Color.primaryText)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .contentShape(Capsule())
+                Button {
+                    Task {
+                        await ForgottenStop.request()
+                        notify = await ForgottenStop.status()
+                    }
+                } label: {
+                    Text("알림 받기").font(.headline.weight(.bold)).foregroundStyle(Color.primaryText)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(Color.surface, in: Capsule())
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundStyle(Color.primaryText)
+        .card(padding: 16)
     }
 
     private func autoResumedText(_ gap: TimeInterval) -> String {

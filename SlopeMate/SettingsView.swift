@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 /// S17 설정 (확정 v3, 지도 데이터 출처 v2; R9, R11, R12, R13, R19). 계정 칸은 로그인했을 때만 보인다.
 struct SettingsView: View {
@@ -10,6 +11,10 @@ struct SettingsView: View {
     @State private var snowPrompt = Settings.snowPromptOn
     @State private var consent = Settings.consentSince != nil
     @State private var editingHomes = false
+    @State private var welcome = false
+    @State private var notify: UNAuthorizationStatus?
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var phase
     @State private var error: String?
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(AccountDeletion.self) private var deletion
@@ -29,6 +34,10 @@ struct SettingsView: View {
                     SeasonPassListView(db: db, season: HomeData.currentSeason())
                 } label: {
                     row("시즌권", value: passCount == 0 ? "없음" : "\(passCount)장")
+                }
+                // R49: 알림 카드에서 "괜찮아요"를 눌렀어도 여기서 다시 켠다. 한 번 물었으면 iOS 설정으로
+                Button(action: notificationsTapped) {
+                    row("종료 잊음 알림", value: notify.map { $0 == .authorized || $0 == .provisional ? "켜짐" : "꺼짐" }, chevron: true)
                 }
             }
             .listRowBackground(Color.card)
@@ -54,6 +63,7 @@ struct SettingsView: View {
                     Link(destination: url) { row("개인정보처리방침", icon: "arrow.up.right") }
                 }
                 NavigationLink { MapSourceView() } label: { row("지도 데이터 출처", value: "OpenStreetMap") }
+                Button { welcome = true } label: { row("처음 안내 다시 보기", chevron: true) }
                 if let mail = Self.contactEmail, let url = URL(string: "mailto:\(mail)") {
                     Link(destination: url) { row("문의", icon: "arrow.up.right") }
                 }
@@ -82,8 +92,12 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .onAppear(perform: reload)
+        // iOS 설정에서 알림을 바꾸고 돌아오면 줄 값을 다시 읽는다
+        .onChange(of: phase) { if phase == .active { Task { notify = await ForgottenStop.status() } } }
         // 홈 리조트·시즌권을 바꿨을 수 있으니 설정을 떠나면(시즌권 화면으로 들어갈 때 포함) 홈이 다시 읽는다
         .onDisappear(perform: changed)
+        // R51: O1 설명만 다시. 홈 리조트·동의·완료 상태는 그대로, 권한도 묻지 않는다
+        .fullScreenCover(isPresented: $welcome) { WelcomeView(revisit: true) { welcome = false } }
         .fullScreenCover(isPresented: $editingHomes, onDismiss: reload) {
             HomeSetupView(db: db, cancel: { editingHomes = false }) { editingHomes = false }
         }
@@ -97,7 +111,16 @@ struct SettingsView: View {
         return homes.count == 1 ? Resort.name(first) : "\(Resort.name(first)) 외 \(homes.count - 1)곳"
     }
 
+    private func notificationsTapped() {
+        if notify == .notDetermined {
+            Task { await ForgottenStop.request(); notify = await ForgottenStop.status() }
+        } else if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+            openURL(url)
+        }
+    }
+
     private func reload() {
+        Task { notify = await ForgottenStop.status() }
         homes = (try? db.homeResorts()) ?? []
         passCount = ((try? db.passes(season: HomeData.currentSeason())) ?? []).count
     }

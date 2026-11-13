@@ -10,6 +10,12 @@ nonisolated enum Settings {
         set { d.set(newValue, forKey: "snowPromptOn") }
     }
 
+    /// S5 종료 잊음 알림 카드(R49)에서 "괜찮아요"를 눌렀는지. 다시 켜는 길은 설정 S17 줄
+    static var notifyCardDismissed: Bool {
+        get { d.bool(forKey: "notifyCardDismissed") }
+        set { d.set(newValue, forKey: "notifyCardDismissed") }
+    }
+
     /// 첫 실행 홈 리조트 선택(S1)을 마쳤는지. 저장에 성공한 뒤에만 켠다.
     static var homeSetupDone: Bool {
         get { d.bool(forKey: "homeSetupDone") }

@@ -24,9 +24,9 @@ struct HomeView: View {
     /// 앱을 켰을 때 이어지는 기록이면 한 번만 S5를 연다. 탭을 오갈 때는 다시 열지 않는다.
     @State private var launched = false
     @State private var settingsEdits = 0
-    /// S3·동의 시트
+    /// S3 시트
     @State private var step: StartStep?
-    /// S3에서 고른 리조트. 시트가 닫힌 뒤 동의(첫 기록) → 권한(S4) → 시작으로 넘긴다.
+    /// S3에서 고른 리조트. 시트가 닫힌 뒤 권한(S4) → 동의(첫 기록) → 시작으로 넘긴다(Recorder.requestStart).
     @State private var chosen: String?
     /// S7 끝내기·영업일 끝 안내 뒤 여는 하루 기록(S6)
     @State private var openDay: Stats.Day?
@@ -101,25 +101,26 @@ struct HomeView: View {
         .onChange(of: recorder.recording?.id) { old, new in
             if old == nil, new != nil { showRecording = true }
         }
-        // S4는 S5와 같은 전체 화면에 띄워, 권한이 생겨 시작하면 그 자리에서 S5로 바뀐다
+        // S4는 S5와 같은 전체 화면에 띄워, 권한이 생겨 시작하면 그 자리에서 S5로 바뀐다. 권한이 이미 있으면 S4 없이.
         .onChange(of: recorder.pendingStart) { _, new in
-            if new != nil { showRecording = true } else if recorder.recording == nil { showRecording = false }
+            if new != nil { if recorder.needsLocation { showRecording = true } } else if recorder.recording == nil { showRecording = false }
         }
         .fullScreenCover(isPresented: $showRecording, onDismiss: recorder.cancelPendingStart) {
-            if recorder.pendingStart != nil && recorder.recording == nil {
-                PermissionView(recorder: recorder) { showRecording = false }
-            } else {
-                RecordingView(recorder: recorder) { showRecording = false }
+            Group {
+                if recorder.pendingStart != nil && recorder.recording == nil {
+                    PermissionView(recorder: recorder) { showRecording = false }
+                } else {
+                    RecordingView(recorder: recorder) { showRecording = false }
+                }
             }
+            // 첫 기록 동의: S4가 떠 있으면 그 위에서(바뀌는 내용이 아니라 바깥 Group에 붙여 S5로 바뀌어도 유지)
+            .sheet(isPresented: consentShown(inCover: true), onDismiss: recorder.consentAnswered) { consent }
         }
+        // 권한이 이미 있으면 홈 위에서. 시트가 다 닫힌 뒤 시작해야 S5 전체 화면과 겹치지 않는다
+        .sheet(isPresented: consentShown(inCover: false), onDismiss: recorder.consentAnswered) { consent }
         .sheet(item: $step, onDismiss: next) { s in
             switch s {
             case .pick: ResortPickSheet(homes: homes) { chosen = $0; step = nil }
-            case .consent:
-                ConsentSheet { yes in
-                    try? Settings.answerConsent(yes, db: recorder.db) // 동의 저장 실패해도 기록은 시작한다
-                    step = nil
-                }
             }
         }
         .sheet(item: resumePrompt) { p in
@@ -138,16 +139,24 @@ struct HomeView: View {
         }
     }
 
-    private enum StartStep: String, Identifiable { case pick, consent; var id: String { rawValue } }
+    private enum StartStep: String, Identifiable { case pick; var id: String { rawValue } }
 
-    /// 시트가 닫힌 뒤: 첫 기록이면 동의, 아니면 시작(권한이 없으면 S4)
+    /// S3가 닫힌 뒤: 권한(S4) → 첫 기록이면 동의 → 시작
     private func next() {
         guard let id = chosen else { return }
-        if Settings.consentAsked {
-            chosen = nil
-            recorder.requestStart(resortId: id)
-        } else {
-            step = .consent
+        chosen = nil
+        recorder.requestStart(resortId: id)
+    }
+
+    private func consentShown(inCover: Bool) -> Binding<Bool> {
+        Binding(get: { recorder.awaitingConsent && showRecording == inCover }, set: { _ in })
+    }
+
+    /// 답하면 시트를 내리고, 닫힌 뒤(onDismiss) 시작을 잇는다. 저장에 실패해도 기록은 시작한다.
+    private var consent: some View {
+        ConsentSheet { yes in
+            try? Settings.answerConsent(yes, db: recorder.db)
+            recorder.awaitingConsent = false
         }
     }
 

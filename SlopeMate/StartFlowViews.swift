@@ -417,6 +417,7 @@ struct ConsentSheet: View {
 // MARK: S4 위치 권한 안내 (v3, 거부됨 v2)
 
 /// S3에서 고른 리조트를 들고 권한을 기다린다. 허용되면 Recorder가 그 리조트로 시작해 S5로 바뀐다.
+/// S4 위치 권한 안내 (v4: "계속" 하나, 거부됨 v2). 안내 화면에는 닫기가 없고(Apple 지침), 막힌 화면에는 설정 버튼과 "나중에".
 struct PermissionView: View {
     var recorder: Recorder
     var later: () -> Void
@@ -438,15 +439,17 @@ struct PermissionView: View {
                 } else if recorder.blocked != nil {
                     Button("설정에서 권한 켜기", action: openSettings).buttonStyle(PrimaryButtonStyle())
                 } else {
-                    Button("권한 설정하기") { recorder.requestPermission() }.buttonStyle(PrimaryButtonStyle())
+                    Text("계속을 누르면 권한을 고르는 창이 열려요.").font(.subheadline).foregroundStyle(Color.secondaryText)
+                        .multilineTextAlignment(.center)
+                    Button("계속") { recorder.requestPermission() }.buttonStyle(PrimaryButtonStyle())
                 }
-                Button(action: later) {
+                if recorder.blocked != nil { Button(action: later) {
                     Text("나중에").font(.body.weight(.semibold)).foregroundStyle(Color.primaryText)
                         .frame(maxWidth: .infinity, minHeight: 52)
                         .background(Color.card, in: Capsule())
                         .overlay(Capsule().strokeBorder(Color.cardBorder))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain) }
             }
             .padding(.horizontal, 16).padding(.bottom, 8)
         }
@@ -633,5 +636,62 @@ extension AppDatabase {
     func day(of rec: Recording) -> Stats.Day? {
         let date = BusinessDay.start(of: rec.startedAt)
         return (try? HomeData.days(self, since: date))?.first { $0.date == date && $0.resortId == rec.resortId }
+    }
+}
+
+/// O1 환영 (R51, 확정 시안 O1 v2). 처음 실행 때 S1 앞에 한 번, 설정 "처음 안내 다시 보기"에서는 닫기만. 권한은 묻지 않는다.
+struct WelcomeView: View {
+    var revisit = false
+    var done: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(verbatim: "SlopeMate").font(.body.bold()).foregroundStyle(Color.accentText)
+                        Text("스키장에서\n기록 시작만 누르세요").font(.title.bold()).accessibilityAddTraits(.isHeader)
+                    }
+                    VStack(alignment: .leading, spacing: 20) {
+                        item("figure.skiing.downhill", "하강과 리프트를 알아서 나눠요", "몇 번 탔는지, 얼마나 내려왔는지 보여요.")
+                        item("moon", "야간·심야까지 하루로 묶어요", "자정을 넘겨도 그날 기록으로 남아요.")
+                        item("creditcard", "시즌권 본전을 계산해요", "갈 때마다 1회 방문당 금액이 내려가요.")
+                    }
+                    Label("GPS 기록은 우리 서버로 보내지 않아요.", systemImage: "lock")
+                        .font(.subheadline).foregroundStyle(Color.secondaryText)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20).padding(.top, 48).padding(.bottom, 24)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            Button(revisit ? "닫기" : "다음", action: done).buttonStyle(PrimaryButtonStyle())
+                .padding(.horizontal, 16).padding(.bottom, 8)
+        }
+        .foregroundStyle(Color.primaryText)
+        .background { FadeBackground() }
+    }
+
+    private func item(_ icon: String, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon).foregroundStyle(Color.accentText)
+                .dynamicTypeSize(...DynamicTypeSize.xxLarge) // 원 안에 머물게
+                .frame(width: 44, height: 44).background(Color.surface, in: Circle()).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body.weight(.semibold))
+                Text(detail).foregroundStyle(Color.secondaryText)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// 첫 실행: O1 → S1. S1을 저장하거나 "자주 가는 곳이 없어요"를 누르면 끝(R51)
+struct FirstRunView: View {
+    let db: AppDatabase
+    var done: () -> Void
+    @State private var welcomed = false
+
+    var body: some View {
+        if welcomed { HomeSetupView(db: db, done: done) } else { WelcomeView { welcomed = true } }
     }
 }

@@ -18,6 +18,10 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     var blocked: Blocked?
     /// S3에서 골랐지만 위치 권한을 기다리는 리조트 (S4). 권한이 생기면 이 리조트로 시작한다.
     var pendingStart: String?
+    /// 기다리던 시작에 S4가 필요한지(위치 권한 미결정·거부·정확한 위치 꺼짐·위치 서비스 꺼짐). 권한이 이미 있으면 S4 없이 바로.
+    var needsLocation = false
+    /// 첫 기록: 권한까지 끝났고 익명 표본 동의 답을 기다린다(R12, decisions 2026-11-12 첫 기록 순서)
+    var awaitingConsent = false
     /// 영업일 끝에 닫은 기록 (S7 영업일 끝 v2). 다음 실행에도 알리고, 확인하면 지운다.
     var dayEndNotice: Recording?
     /// S7: 사용자가 직접 연 앱에서 끝나지 않은 기록을 이어갈지 묻는다
@@ -46,6 +50,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     @ObservationIgnored private var askingMotion = false
     /// 이번 시작 시도에서 동작 및 피트니스를 이미 물었다(응답이 이상해도 다시 묻지 않는다)
     @ObservationIgnored private var motionAsked = false
+    @ObservationIgnored private var askedLocationNow = false
     @ObservationIgnored private var lastAlertCheck = Date.distantPast
     /// Live Activity (R23)
     @ObservationIgnored private let live = LiveRecording()
@@ -92,6 +97,10 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         if let id = UserDefaults.standard.string(forKey: Self.dayEndKey).flatMap(UUID.init) {
             dayEndNotice = try? db.queue.read { try Recording.fetchOne($0, key: id) }
         }
+        // 알림을 나중에 허용하면(설정 줄·알림 카드) 기록 중 60분·5km 알림을 처음부터 다시 정한다
+        NotificationCenter.default.addObserver(forName: ForgottenStop.granted, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.alertsPermissionGranted() }
+        }
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.becameActive() }
         }
@@ -99,20 +108,41 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
 
     // MARK: 시작·종료
 
-    /// S3(와 첫 기록 동의) 다음. 권한이 있으면 바로 시작하고, 없으면 S4에서 권한을 기다린다.
+    /// S3 다음. 순서는 권한(S4: 위치 → 동작) → 첫 기록이면 익명 표본 동의 → 시작(R12, R18, R51).
     func requestStart(resortId: String) {
         guard recording == nil else { return }
         pendingStart = resortId
         motionAsked = false
+        askedLocationNow = false
+        awaitingConsent = false
         blocked = authProblem()
+        needsLocation = blocked != nil || manager.authorizationStatus == .notDetermined
         startPending()
     }
 
-    /// S4 "나중에": 기다리던 시작을 버린다
-    func cancelPendingStart() { pendingStart = nil }
+    /// S4를 닫거나 이번 창에서 위치를 거부함: 기다리던 시작을 버린다
+    func cancelPendingStart() {
+        pendingStart = nil
+        awaitingConsent = false
+        askedLocationNow = false
+    }
 
-    /// S4 "권한 설정하기"
-    func requestPermission() { manager.requestWhenInUseAuthorization() }
+    /// S4 "계속": iOS 위치 권한 창
+    func requestPermission() {
+        if manager.authorizationStatus == .notDetermined { askedLocationNow = true }
+        manager.requestWhenInUseAuthorization()
+    }
+
+    /// 동의 시트에 답한 뒤(저장에 실패해도 물은 것으로 남는다) 시작을 잇는다
+    func consentAnswered() {
+        awaitingConsent = false
+        startPending()
+    }
+
+    /// 방금 뜬 iOS 창에서 위치를 거부했으면 뒤의 질문 없이 홈으로(04-flows S4 순서). 정확한 위치만 끈 것은 거부가 아니라 S4에 남는다.
+    private func cancelIfDeniedNow() {
+        if askedLocationNow, pendingStart != nil, authProblem() == .denied { cancelPendingStart() }
+    }
 
     /// 기다리던 시작: 위치 권한이 있으면 동작 및 피트니스 권한을 (처음이면) 물은 뒤 시작한다. 여러 번 불려도 한 번만 시작한다.
     private func startPending() {
@@ -128,6 +158,10 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
                     self?.startPending()
                 }
             }
+            return
+        }
+        if !Settings.consentAsked {
+            awaitingConsent = true
             return
         }
         pendingStart = nil
@@ -147,7 +181,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             seq = 0
             loadToday()
             beginUpdates()
-            ForgottenStop.requestPermission()
+            // 알림 권한은 시작 때 묻지 않고 S5 카드·설정 줄에서(R49, decisions 2026-11-13)
             updateAlerts(force: true)
         } catch {
             status = .failed("기록을 시작하지 못했어요. \(error.localizedDescription)")
@@ -385,6 +419,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     private func authChanged() {
         if recording == nil {
             if blocked != nil || pendingStart != nil { blocked = authProblem() }
+            cancelIfDeniedNow()
             startPending()
             return
         }
@@ -425,6 +460,13 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     }
 
     // MARK: 종료를 잊은 기록 (R49)
+
+    private func alertsPermissionGranted() {
+        guard let rec = recording else { return }
+        ForgottenStop.setIdleDeadline(rec, nil)
+        ForgottenStop.setFarSent(rec, nil)
+        updateAlerts(force: true)
+    }
 
     /// 60분 무하강 예약과 5km 이탈 알림. 위치를 받을 때 최대 1분에 한 번.
     private func updateAlerts(force: Bool = false, now: Date = .now) {
@@ -473,6 +515,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         // 설정에서 권한을 켜고 돌아왔으면 S3에서 고른 리조트로 시작
         if recording == nil {
             if pendingStart != nil { blocked = authProblem() }
+            cancelIfDeniedNow()
             startPending()
         }
         // 8시간이 지났거나 꺼져 있던 카드를 다시 띄운다(앱이 앞에 있을 때만 된다)

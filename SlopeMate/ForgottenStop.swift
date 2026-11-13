@@ -79,8 +79,19 @@ nonisolated enum ForgottenStop {
 
     static let idleID = "forgottenStop.idle"
 
-    static func requestPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    /// 허용되면 기록 중 알림을 다시 예약하도록 알린다(권한 없이 정한 예약·5km "보냄" 표시를 버림)
+    static let granted = Notification.Name("forgottenStop.granted")
+
+    @discardableResult
+    static func request() async -> Bool {
+        let ok = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) ?? false
+        if ok { await MainActor.run { NotificationCenter.default.post(name: granted, object: nil) } }
+        return ok
+    }
+
+    /// 설정 S17 "종료 잊음 알림" 줄: 켜짐 / 꺼짐 / 아직 안 물음
+    static func status() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
     }
 
     /// 기존 예약을 지우고, 기한이 미래면 예약, nil이면 지우기만 한다. sendNow면 바로 보낸다.

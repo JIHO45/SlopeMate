@@ -30,7 +30,7 @@ struct RootView: View {
         .environment(startBar)
         .onChange(of: recorder.recording == nil, initial: true) { _, idle in startBar.visible = idle }
         .onAppear { startBar.open = { tab = .record; startBar.requests += 1 } }
-        .fullScreenCover(isPresented: $setup) { HomeSetupView(db: recorder.db) { setup = false } }
+        .fullScreenCover(isPresented: $setup) { FirstRunView(db: recorder.db) { setup = false } }
         // 시즌 합계를 크루 순위로(R15): 크루가 생기거나 바뀔 때, 앱이 켜질 때, 기록이 끝났을 때
         .onChange(of: account.uid, initial: true) { summary.follow(account.uid) }
         .onChange(of: crews.ids) { if !crews.ids.isEmpty { summary.sync() } }

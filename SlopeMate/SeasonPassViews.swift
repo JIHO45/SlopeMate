@@ -273,12 +273,18 @@ struct PassEditView: View {
         }
     }
 
+    /// 홈 리조트를 위로 올려 후보로만 보여준다. 고르지는 않는다(R51)
+    private var pickerOrder: [Resort] {
+        let homes = (try? db.homeResorts()) ?? []
+        return homes.compactMap { id in Resort.all.first { $0.id == id } } + Resort.all.filter { !homes.contains($0.id) }
+    }
+
     private var resortPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("대상 리조트").font(.subheadline.weight(.semibold)).padding(.leading, 4).padding(.bottom, 6)
             if showErrors && resorts.isEmpty { PassFieldError(text: "대상 리조트를 하나 이상 고르세요") }
             VStack(spacing: 0) {
-                ForEach(Array(Resort.all.enumerated()), id: \.element.id) { i, r in
+                ForEach(Array(pickerOrder.enumerated()), id: \.element.id) { i, r in
                     if i > 0 { Divider().overlay(Color.passRowSeparator) }
                     let on = resorts.contains(r.id)
                     Button {
