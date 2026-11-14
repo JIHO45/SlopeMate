@@ -23,6 +23,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     var recorder: Recorder?
     var account: Account?
     let crews = Crews()
+    /// 시즌 이용권(R54). 결제 대기 승인·환불을 받도록 실행 때부터 Transaction.updates를 듣는다
+    let ticket = SeasonTicket()
     var summary: SummarySync?
     var deletion: AccountDeletion?
     var dbError: String?

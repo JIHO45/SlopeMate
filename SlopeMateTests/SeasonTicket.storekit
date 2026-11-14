@@ -1,0 +1,49 @@
+{
+  "appPolicies": {
+    "eula": "",
+    "policies": [
+      {
+        "locale": "ko_KR",
+        "policyText": "",
+        "policyURL": ""
+      }
+    ]
+  },
+  "identifier": "5C0B7E2A-3D1F-4A6B-9C8D-2E4F6A8B0C1D",
+  "nonRenewingSubscriptions": [
+    {
+      "displayPrice": "9900",
+      "familyShareable": false,
+      "internalID": "6755000001",
+      "localizations": [
+        {
+          "description": "산 날이 속한 시즌의 4월 30일까지 3D 보기, 고화질 동영상, 하강 상세, 시즌 목표, 시즌 결산을 엽니다. 자동 갱신 없음.",
+          "displayName": "시즌 이용권",
+          "locale": "ko_KR"
+        }
+      ],
+      "productID": "com.Joe.SlopeMate.seasonticket",
+      "referenceName": "Season Ticket",
+      "type": "NonRenewingSubscription"
+    }
+  ],
+  "products": [],
+  "settings": {
+    "_askToBuyEnabled": false,
+    "_billingGracePeriodEnabled": false,
+    "_billingIssuesEnabled": false,
+    "_developerTeamID": "CH7CDR7288",
+    "_disableDialogs": false,
+    "_failTransactionsEnabled": false,
+    "_locale": "ko_KR",
+    "_renewalBillingIssuesEnabled": false,
+    "_storeKitErrors": [],
+    "_storefront": "KOR",
+    "_timeRate": 0
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}
