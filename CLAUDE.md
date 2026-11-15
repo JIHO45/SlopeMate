@@ -15,3 +15,12 @@
 - GPS 기록은 우리 서버로 보내지 않는다. 리조트는 사용자가 직접 고른다. (01-idea 4장, 05-design 6장)
 - 요구사항 번호(R1~R48)와 설계 묶음(A~J)을 커밋 메시지와 todo에 함께 적는다.
 - 기획 문서는 새 앱 관점으로 쓴다. 기존 날씨 앱의 상태나 방향 전환 이유는 적지 않는다.
+
+## graphify
+
+`graphify-out/`에 코드 지식 그래프가 있다.
+
+- 코드 질문은 먼저 `graphify query "<질문>"`으로 찾는다. 관계는 `graphify path "<A>" "<B>"`, 개념은 `graphify explain "<개념>"`.
+- `graphify-out/`가 dirty여도 그래프를 쓴다. 그래프가 틀렸거나 사용자가 쓰지 말라고 할 때만 건너뛴다.
+- 구조 전체를 볼 때만 `graphify-out/GRAPH_REPORT.md`를 읽는다.
+- 코드를 바꾼 뒤 `graphify update .`를 실행한다(AST만, API 비용 없음).
