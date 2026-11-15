@@ -332,6 +332,10 @@ struct Terrain3DTests {
     /// 완만히 북쪽으로 오르는 비탈(숲이 자라는 곳)
     static let hill = grid { r, _ in 1000 + 6 * (20 - r) }
 
+    static func texelLum(_ g: Terrain3D.GroundTexture, _ i: Int, _ j: Int) -> Float {
+        let k = 4 * (i * g.width + j); return (Float(g.bytes[k]) + Float(g.bytes[k + 1]) + Float(g.bytes[k + 2])) / 3
+    }
+
     /// 질감 텍셀 (i, j)의 밝기(0~255 평균)와 가운데 장면 xz
     static func texel(_ g: Terrain3D.GroundTexture, _ s: Terrain3D, _ i: Int, _ j: Int) -> (lum: Float, xz: SIMD2<Float>) {
         let k = 4 * (i * g.width + j)
@@ -362,6 +366,66 @@ struct Terrain3DTests {
         try Data(repeating: 0xFF, count: 40).write(to: dir.appendingPathComponent("test.rgba"))
         #expect(s.cachedGroundTexture(map: m, mesh: mesh, side: 64, dir: dir).bytes == a.bytes)
         #expect(s.cachedGroundTexture(map: m, mesh: mesh, side: 48, dir: dir).height == 48)
+    }
+
+    /// 숲 지도 파일(tools/canopy/build.py 형식)을 만든다. value(행, 열) → 0~15 또는 255
+    static func canopy(k: Int = 2, extraCols: Int = 0, _ value: (Int, Int) -> UInt8) -> Terrain3D.Canopy? {
+        let w = (cols - 1) * k + extraCols, h = (rows - 1) * k
+        let cells = (0..<h).flatMap { r in (0..<w).map { c in value(r, c) } }
+        let hw = w / k, hh = h / k   // 높이 판 hk=1, 모두 10m(5)
+        guard let z = try? (Data(cells + [UInt8](repeating: 5, count: hw * hh)) as NSData).compressed(using: .zlib) as Data else { return nil }
+        var d = Data("CNP2".utf8) + [UInt8(k), 1, UInt8(w & 0xFF), UInt8(w >> 8), UInt8(h & 0xFF), UInt8(h >> 8)]
+        d += z
+        return Terrain3D.Canopy(data: d)
+    }
+
+    /// 숲 지도 읽기: 머리·압축 왕복, 쌍선형, 범위 밖(255)은 nil, 깨진 파일은 nil
+    @Test func canopyDecode() throws {
+        let c = try #require(Self.canopy { _, col in col < (Self.cols - 1) ? 15 : 0 })
+        #expect(c.width == (Self.cols - 1) * 2 && c.height == (Self.rows - 1) * 2)
+        #expect(c.sample(10, 2) == 1 && c.sample(10, Float(Self.cols - 3)) == 0)
+        #expect(c.sample(10, Float(Self.cols - 1) / 2).map { $0 > 0.3 && $0 < 0.7 } == true)   // 경계는 중간값
+        #expect(Self.canopy { r, _ in r < 4 ? 255 : 15 }?.sample(1, 5) == nil)
+        // 칸 가운데((i+0.5)/k)는 그 칸 값 ÷ 15(반 칸 어긋남 확인), 가장자리는 끝 칸 값
+        let g = try #require(Self.canopy { r, col in UInt8((r * 3 + col) % 16) })
+        for (i, j) in [(3, 5), (10, 17), (0, 0)] { #expect(abs(g.sample((Float(i) + 0.5) / 2, (Float(j) + 0.5) / 2)! - Float((i * 3 + j) % 16) / 15) < 1e-5) }
+        #expect(g.sample(0, 0) == Float(0) / 15)
+        #expect(Terrain3D.Canopy(data: Data("CNP2xxxxxxxx".utf8)) == nil)
+        #expect(abs(g.treeHeight(5, 5) - 10) < 1e-4)
+    }
+
+    /// 숲 지도가 있으면 왼쪽 반(숲)은 어둡고 오른쪽 반(빈 땅)은 눈. 캐시 키에도 들어간다. 없으면 질감이 그대로다
+    @Test func canopyForestFace() throws {
+        let m = try Self.map(lifts: [], slopes: []), s = Terrain3D(terrain: Self.hill, map: m), mesh = s.mesh()
+        let half = (Self.cols - 1)   // k=2 칸 기준 가운데 열
+        let c = try #require(Self.canopy { _, col in col < half ? 15 : 0 })
+        let g = s.groundTexture(map: m, mesh: mesh, canopy: c)
+        let left = Self.texel(g, s, g.height / 2, g.width / 6).lum, right = Self.texel(g, s, g.height / 2, g.width * 5 / 6).lum
+        #expect(left + 60 < right && right > 200, "숲 \(left), 빈 땅 \(right)")
+        // 해는 북서쪽: 서쪽 숲(10m)의 그림자가 경계 동쪽 눈에 진다(먼 눈보다 어둡다)
+        let edge = Self.texel(g, s, g.height / 2, g.width / 2 + 3).lum
+        #expect(edge + 8 < right, "그림자 \(edge), 먼 눈 \(right)")
+        #expect(s.groundTexture(map: m, mesh: mesh).bytes == s.groundTexture(map: m, mesh: mesh, canopy: nil).bytes)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = s.cachedGroundTexture(map: m, mesh: mesh, side: 64, dir: dir)
+        let b = s.cachedGroundTexture(map: m, mesh: mesh, side: 64, canopy: c, dir: dir)
+        #expect(a.bytes != b.bytes && b.bytes == s.groundTexture(map: m, mesh: mesh, side: 64, canopy: c).bytes)
+        // 격자 크기가 다른 숲 파일은 무시
+        let wrong = try #require(Self.canopy(extraCols: 2) { _, _ in 15 })
+        #expect(s.groundTexture(map: m, mesh: mesh, side: 64, canopy: wrong).bytes == a.bytes)
+        // 패치(window)도 같은 격자 위치에 경계: 경계 왼쪽은 숲, 오른쪽은 눈
+        let p = s.groundTexture(map: m, mesh: mesh, side: 64, window: SIMD4(5, Float(half) / 2 - 3, 15, Float(half) / 2 + 3), canopy: c)
+        let pl = Self.texelLum(p, p.height / 2, p.width / 8), pr = Self.texelLum(p, p.height / 2, p.width * 7 / 8)
+        #expect(pl + 60 < pr, "패치 숲 \(pl), 눈 \(pr)")
+    }
+
+    /// 번들의 용평 숲 파일은 DEM 격자와 크기가 맞는다
+    @Test func bundledCanopyMatchesDEM() throws {
+        let c = try #require(Terrain3D.Canopy.load(resortId: "yongpyong"))
+        let dem = try #require(Bundle.main.url(forResource: "dem-yongpyong", withExtension: "json"))
+        let j = try JSONSerialization.jsonObject(with: Data(contentsOf: dem)) as! [String: Any]
+        #expect(c.width == ((j["cols"] as! Int) - 1) * c.k && c.height == ((j["rows"] as! Int) - 1) * c.k)
     }
 
     /// 선 슬로프(반폭 20m)는 흰 눈 띠, 40~80m 떨어진 숲보다 확실히 밝다

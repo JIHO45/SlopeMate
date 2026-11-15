@@ -2,10 +2,13 @@ import json, math, struct, sys, zlib
 sys.path.insert(0, sys.argv[1]); from cog import ifds, rng
 url, osm, out = sys.argv[2], sys.argv[3], sys.argv[4]
 d = json.load(open(osm))
-pts = [p for s in d['slopes'] for l in s['lines'] for p in l] + [p for l in d['lifts'] for p in l['line']]
-lat0, lat1 = min(p[0] for p in pts), max(p[0] for p in pts); lon0, lon1 = min(p[1] for p in pts), max(p[1] for p in pts)
-pad = 800 / 111320  # 800 m
-lat0 -= pad; lat1 += pad; lon0 -= pad / math.cos(math.radians(lat0)); lon1 += pad / math.cos(math.radians(lat0))
+if 'north' in d:   # dem-<id>.json: DEM 격자 전체 범위(앱 질감과 같은 범위, 먼 산 이음매 없음)
+    lat1, lon0 = d['north'], d['west']; lat0, lon1 = lat1 - (d['rows'] - 1) * d['step'], lon0 + (d['cols'] - 1) * d['step']
+else:              # osm-<id>.json: 슬로프·리프트 범위 + 800m
+    pts = [p for s in d['slopes'] for l in s['lines'] for p in l] + [p for l in d['lifts'] for p in l['line']]
+    lat0, lat1 = min(p[0] for p in pts), max(p[0] for p in pts); lon0, lon1 = min(p[1] for p in pts), max(p[1] for p in pts)
+    pad = 800 / 111320  # 800 m
+    lat0 -= pad; lat1 += pad; lon0 -= pad / math.cos(math.radians(lat0)); lon1 += pad / math.cos(math.radians(lat0))
 R = 6378137.0
 def merc(lat, lon): return R * math.radians(lon), R * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
 HALF = math.pi * R; TS = 2 * HALF / 1024; N = 32768; px = TS / N   # zoom 10 타일 한 장 = 32768 px

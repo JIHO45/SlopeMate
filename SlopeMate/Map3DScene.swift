@@ -114,7 +114,7 @@ nonisolated struct Map3DTerrain: @unchecked Sendable {
     init(space: Terrain3D, map: SlopeMap, side: Int = 2048) {
         let mesh = space.mesh()
         geometry = mesh.geometry()
-        texture = space.cachedGroundTexture(map: map, mesh: mesh, side: side).image
+        texture = space.cachedGroundTexture(map: map, mesh: mesh, side: side, canopy: .load(resortId: map.resortId)).image
     }
 }
 
@@ -464,7 +464,7 @@ final class Map3DScene {
         guard !detailLoading, let win = detailWindow() else { return }
         detailLoading = true
         let (space, map) = (space, map)
-        let image = await Task.detached(priority: .utility) { space.groundTexture(map: map, mesh: space.mesh(), window: win).image }.value
+        let image = await Task.detached(priority: .utility) { space.groundTexture(map: map, mesh: space.mesh(), window: win, canopy: .load(resortId: map.resortId)).image }.value
         guard let image, !Task.isCancelled else { return }
         let t = space.terrain
         let p = SCNMaterialProperty(contents: image)

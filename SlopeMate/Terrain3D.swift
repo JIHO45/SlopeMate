@@ -279,6 +279,8 @@ nonisolated extension Terrain3D {
     enum Ground {
         static let snow: UInt32 = 0xF2F6F9, slope: UInt32 = 0xFBFCFE, floor: UInt32 = 0x7A8896
         static let conifer: UInt32 = 0x223F33, broadleaf: UInt32 = 0x6E655F
+        /// 숲 지도가 있는 곳의 숲 면(청록 회색)
+        static let forestFace: UInt32 = 0x6A8088
     }
 
     static func rgb(_ v: UInt32) -> SIMD3<Float> {
@@ -389,16 +391,17 @@ nonisolated extension Terrain3D {
     }
 
     /// 질감 만드는 방식(색·폭·나무 등)을 바꾸면 올린다. 캐시 키에 들어간다
-    static let textureVersion: UInt64 = 10
+    static let textureVersion: UInt64 = 12
 
     static let textureCacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("terrain3d", isDirectory: true)
 
     /// groundTexture를 <dir>/<리조트 ID>.rgba 하나에 둔다(RGBA 다음 끝 16바이트: 키 UInt64, 너비·높이 UInt32, 리틀 엔디언).
     /// 키 = 입력(회전각, 과장, 기준 고도, 격자, 슬로프·리프트 좌표, side, textureVersion)의 FNV-1a 64. 키가 다르거나 읽기에 실패하면 새로 만들어 덮어쓴다
-    func cachedGroundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048, dir: URL = Self.textureCacheDir) -> GroundTexture {
+    func cachedGroundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048, canopy: Canopy? = nil, dir: URL = Self.textureCacheDir) -> GroundTexture {
         var key: UInt64 = 0xcbf2_9ce4_8422_2325
         func mix(_ v: UInt64) { key = (key ^ v) &* 0x100_0000_01b3 }
+        mix(canopy?.key ?? 0)
         for v in [Self.textureVersion, UInt64(side), UInt64(terrain.rows), UInt64(terrain.cols), UInt64(exaggeration.bitPattern)] { mix(v) }
         // 회전각: 해 방향이 장면 기준이라 각이 바뀌면 음영도 바뀐다
         for v in [angle, baseHeight, terrain.north, terrain.west, terrain.step] + terrain.z { mix(v.bitPattern) }
@@ -415,7 +418,7 @@ nonisolated extension Terrain3D {
             let h = Int(d.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: t + 12, as: UInt32.self).littleEndian })
             if k == key, w <= 4096, h <= 4096, t == w * h * 4 { return GroundTexture(width: w, height: h, bytes: d.prefix(t)) }
         }
-        let g = groundTexture(map: map, mesh: mesh, side: side)
+        let g = groundTexture(map: map, mesh: mesh, side: side, canopy: canopy)
         var d = g.bytes
         withUnsafeBytes(of: key.littleEndian) { d.append(contentsOf: $0) }
         for v in [UInt32(g.width), UInt32(g.height)] { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
@@ -424,10 +427,61 @@ nonisolated extension Terrain3D {
         return g
     }
 
-    /// window: 격자 (행0, 열0, 행1, 열1) 안만 side 해상도로 그린다(S19 고해상 패치). 이때 나무는 7m 칸에 별 모양 수관·긴 그림자. nil이면 격자 전체
-    func groundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048, window: SIMD4<Float>? = nil) -> GroundTexture {
+    /// 앱용 숲 지도(tools/canopy/build.py). 출처 Meta·WRI 나무 높이 지도 v2(CC BY 4.0)를 가공:
+    /// 숲 비율 판 = DEM 격자를 k배로 나눈 칸(약 5m)의 높이 4m 이상 비율 0~15(범위 밖 255),
+    /// 나무 높이 판 = DEM 격자를 hk배로 나눈 칸(약 15m)의 숲 평균 높이 ÷ 2m(0~15).
+    /// 파일 maps/canopy-<리조트>.bin = "CNP2" + k + hk + 숲 판 너비·높이(UInt16 LE) + raw DEFLATE(숲 판 + 높이 판)
+    struct Canopy: Sendable {
+        let k: Int, width: Int, height: Int, cells: [UInt8], key: UInt64
+        let hk: Int, hWidth: Int, hHeight: Int, heights: [UInt8]
+
+        init?(data d: Data) {
+            guard d.count > 10, d.prefix(4) == Data("CNP2".utf8) else { return nil }
+            let k = Int(d[d.startIndex + 4]), hk = Int(d[d.startIndex + 5])
+            let w = Int(d[d.startIndex + 6]) | Int(d[d.startIndex + 7]) << 8, h = Int(d[d.startIndex + 8]) | Int(d[d.startIndex + 9]) << 8
+            guard k > 0, hk > 0, w % k == 0, h % k == 0, w > 1, h > 1 else { return nil }
+            let hw = w / k * hk, hh = h / k * hk
+            guard hw > 1, hh > 1, let raw = try? (d.dropFirst(10) as NSData).decompressed(using: .zlib) as Data, raw.count == w * h + hw * hh else { return nil }
+            var key: UInt64 = 0xcbf2_9ce4_8422_2325
+            for b in d { key = (key ^ UInt64(b)) &* 0x100_0000_01b3 }
+            self.k = k; width = w; height = h; cells = [UInt8](raw.prefix(w * h)); self.key = key
+            self.hk = hk; hWidth = hw; hHeight = hh; heights = [UInt8](raw.suffix(hw * hh))
+        }
+
+        static func load(resortId: String, bundle: Bundle = .main) -> Canopy? {
+            bundle.url(forResource: "canopy-\(resortId)", withExtension: "bin").flatMap { try? Data(contentsOf: $0) }.flatMap(Canopy.init(data:))
+        }
+
+        /// 격자 좌표(행, 열)의 숲 비율 0~1(쌍선형, 가장자리는 끝 칸으로). 네 칸 중 하나라도 범위 밖(255)이면 nil
+        func sample(_ r: Float, _ c: Float) -> Float? { cells.withUnsafeBufferPointer { Self.sample($0, k, width, height, r, c) } }
+
+        /// 격자 좌표의 나무 높이(m, 쌍선형)
+        func treeHeight(_ r: Float, _ c: Float) -> Float { heights.withUnsafeBufferPointer { Self.treeHeight($0, hk, hWidth, hHeight, r, c) } }
+        static func treeHeight(_ p: UnsafeBufferPointer<UInt8>, _ k: Int, _ w: Int, _ h: Int, _ r: Float, _ c: Float) -> Float {
+            let y = min(max(r * Float(k) - 0.5, 0), Float(h - 1)), x = min(max(c * Float(k) - 0.5, 0), Float(w - 1))
+            let y0 = min(Int(y), h - 2), x0 = min(Int(x), w - 2), u = y - Float(y0), v = x - Float(x0), i = y0 * w + x0
+            return 2 * ((Float(p[i]) * (1 - v) + Float(p[i + 1]) * v) * (1 - u) + (Float(p[i + w]) * (1 - v) + Float(p[i + w + 1]) * v) * u)
+        }
+
+        /// 병렬 구간용: 배열 대신 포인터로 읽는다(참조 계수 경합 없음)
+        static func sample(_ p: UnsafeBufferPointer<UInt8>, _ k: Int, _ w: Int, _ h: Int, _ r: Float, _ c: Float) -> Float? {
+            let y = min(max(r * Float(k) - 0.5, 0), Float(h - 1)), x = min(max(c * Float(k) - 0.5, 0), Float(w - 1))
+            let y0 = min(Int(y), h - 2), x0 = min(Int(x), w - 2), u = y - Float(y0), v = x - Float(x0)
+            let i = y0 * w + x0, a = p[i], b = p[i + 1], c2 = p[i + w], d = p[i + w + 1]
+            guard a != 255, b != 255, c2 != 255, d != 255 else { return nil }
+            return ((Float(a) * (1 - v) + Float(b) * v) * (1 - u) + (Float(c2) * (1 - v) + Float(d) * v) * u) / 15
+        }
+    }
+
+    /// window: 격자 (행0, 열0, 행1, 열1) 안만 side 해상도로 그린다(S19 고해상 패치). 이때 나무는 7m 칸에 별 모양 수관·긴 그림자. nil이면 격자 전체.
+    /// canopy: 있으면 그 범위 안 숲은 실제 숲 비율로 칠한 면(나무 도장·절차적 빈터 없음). 밖은 원래 규칙
+    func groundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048, window: SIMD4<Float>? = nil, canopy: Canopy? = nil) -> GroundTexture {
         let t = terrain, rows = t.rows, cols = t.cols
         let win = window ?? SIMD4(0, 0, Float(rows - 1), Float(cols - 1))
+        // 숲 지도는 이 DEM 격자와 크기가 맞을 때만(DEM을 다시 만들면 숲 파일도 다시)
+        let canopy = canopy.flatMap { $0.width == (cols - 1) * $0.k && $0.height == (rows - 1) * $0.k ? $0 : nil }
+        let (ck, cw, ch) = (canopy?.k ?? 1, canopy?.width ?? 2, canopy?.height ?? 2), canopyCells = canopy?.cells ?? []
+        let (hk, hw, hh) = (canopy?.hk ?? 1, canopy?.hWidth ?? 2, canopy?.hHeight ?? 2), canopyHeights = canopy?.heights ?? []
         let cell = t.step * Self.metersPerDegree
         let wm = Float(Double(win.w - win.y) * cell * kx), hm = Float(Double(win.z - win.x) * cell)
         let long = window == nil ? max(2, min(side, 16 * max(rows, cols))) : side
@@ -623,6 +677,8 @@ nonisolated extension Terrain3D {
         let sunPx = simd_normalize(SIMD2((s2.x * dj.y - dj.x * s2.y) / det, (di.x * s2.y - s2.x * di.y) / det))
         let snow = Self.linear(Self.rgb(Ground.snow)), slope = Self.linear(Self.rgb(Ground.slope)), floor = Self.linear(Self.rgb(Ground.floor))
         let conifer = Self.linear(Self.rgb(Ground.conifer)), broadleaf = Self.linear(Self.rgb(Ground.broadleaf))
+        let forestFace = Self.linear(Self.rgb(Ground.forestFace))
+        let tanSun = Self.sun.y / simd_length(SIMD2(Self.sun.x, Self.sun.z))
         let sky = SIMD3<Float>(0.55, 0.62, 0.78), sunC = SIMD3<Float>(0.95, 0.90, 0.84)
         // 선형 → sRGB 표(4096칸)
         let lut: [UInt8] = (0..<4096).map { k in
@@ -645,10 +701,11 @@ nonisolated extension Terrain3D {
         var bytes = [UInt8](repeating: 255, count: W * H * 4)
         // 병렬 구간은 포인터로만 읽는다(여러 스레드가 같은 배열을 붙잡으면 참조 계수 경합으로 몇 배 느려진다)
         hgt.withUnsafeBufferPointer { heights in clear.withUnsafeBufferPointer { cleared in zone.withUnsafeBufferPointer { zone in
-        trees.withUnsafeBufferPointer { cells in treeKind.withUnsafeBufferPointer { kinds in
+        trees.withUnsafeBufferPointer { cells in treeKind.withUnsafeBufferPointer { kinds in canopyCells.withUnsafeBufferPointer { canopyPtr in canopyHeights.withUnsafeBufferPointer { heightPtr in
         shade.withUnsafeBufferPointer { shade in lut.withUnsafeBufferPointer { lut in
         bytes.withUnsafeMutableBufferPointer { out in
-            nonisolated(unsafe) let (heights, cleared, zone, cells, kinds, shade, lut, out) = (heights, cleared, zone, cells, kinds, shade, lut, out)
+            nonisolated(unsafe) let (heights, cleared, zone, cells, kinds, shade, lut, out, canopyPtr, heightPtr) = (heights, cleared, zone, cells, kinds, shade, lut, out, canopyPtr, heightPtr)
+            let hasCanopy = canopy != nil
             func grid(_ r: Float, _ c: Float) -> SIMD2<Float> {
                 guard shade.count == rows * cols else { return .zero }
                 let r0 = min(Int(r), rows - 2), c0 = min(Int(c), cols - 2), u = r - Float(r0), v = c - Float(c0), k = r0 * cols + c0
@@ -680,6 +737,33 @@ nonisolated extension Terrain3D {
                     // 최대 0.8: 빽빽한 숲(하이원)도 나무 사이로 눈이 비친다
                     var density = 0.8 * (z + (1 - z) * Self.smooth(0.08, 0.3, 0.55 * nm + 0.45 * nl))
                     density *= (1 - 0.85 * field) * (1 - 0.9 * ridge) * (1 - 0.7 * steep) * (1 - c)
+                    if hasCanopy, let cf = Self.Canopy.sample(canopyPtr, ck, cw, ch, gr, gc) {
+                        // 숲 면: 실제 숲 비율을 경계로. 키 큰 숲은 어둡게, 해 쪽 8m 앞뒤 나무 높이 차로 굴곡, 9m 잡음으로 수관 결
+                        func at(_ d: Float) -> (f: Float, h: Float) {
+                            let o = sunPx * (d / min(pr, pc)), r = gr + o.x * sr, cc = gc + o.y * sc
+                            let s2 = Self.Canopy.sample(canopyPtr, ck, cw, ch, r, cc) ?? 0
+                            return (s2, Self.Canopy.treeHeight(heightPtr, hk, hw, hh, r, cc) * Self.smooth(0.3, 0.7, s2))
+                        }
+                        // OSM 슬로프 띠로 비우지 않는다(중심선이 어긋나면 실제 숲을 지운다). 트인 곳은 숲 지도가 정한다
+                        let f = Self.smooth(0.35, 0.65, cf)
+                        let hgt = Self.Canopy.treeHeight(heightPtr, hk, hw, hh, gr, gc)
+                        let relief = min(max((at(8).h - at(-8).h) * 0.025, -0.2), 0.2)
+                        let grain = Self.noise(m.y / 9, m.x / 9, 5)
+                        let tone = (1.08 - 0.22 * Self.smooth(8, 24, hgt)) * (0.86 + 0.14 * nm + 0.16 * grain) * (1 + relief)
+                        // 숲 그림자: 해 쪽 d m에 높이 d·tan(해 고도)보다 큰 숲이 있으면 눈 위에 그림자(여러 거리로 부드럽게)
+                        var fsh: Float = 0
+                        if f < 0.98 {
+                            for d: Float in [3, 6, 9, 12, 16, 20, 25, 31] {
+                                let s2 = at(d)
+                                fsh = max(fsh, Self.smooth(d * tanSun - 3, d * tanSun + 3, s2.h) * Self.smooth(0.2, 0.6, s2.f))
+                            }
+                        }
+                        var albedo = simd_mix(simd_mix(snow, slope, SIMD3(repeating: c)), forestFace * tone, SIMD3(repeating: f))
+                        albedo *= 1 - 0.42 * fsh * (1 - f)
+                        let col = albedo * (sky * (0.8 + 0.25 * ao + 0.15 * fine) + sunC * (ndl * (1 - 0.75 * sh)))
+                        for ch in 0..<3 { out[4 * k + ch] = lut[Int(min(max(col[ch], 0), 1) * 4095)] }
+                        continue
+                    }
                     // 땅: 숲 바닥(그늘진 눈) ↔ 트인 눈 ↔ 슬로프
                     var albedo = simd_mix(snow, floor, SIMD3(repeating: density * 0.7))
                     albedo = simd_mix(albedo, slope, SIMD3(repeating: c))
@@ -732,7 +816,7 @@ nonisolated extension Terrain3D {
                     for ch in 0..<3 { out[4 * k + ch] = lut[Int(min(max(col[ch], 0), 1) * 4095)] }
                 }
             }
-        }}}}}}}}
+        }}}}}}}}}}
         return GroundTexture(width: W, height: H, bytes: Data(bytes))
     }
 }
