@@ -1,0 +1,7 @@
+{
+  "images" : [
+    { "filename" : "ticket-3d.png", "idiom" : "universal", "scale" : "3x" },
+    { "appearances" : [ { "appearance" : "luminosity", "value" : "dark" } ], "filename" : "ticket-3d-dark.png", "idiom" : "universal", "scale" : "3x" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}

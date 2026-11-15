@@ -19,9 +19,13 @@ struct SettingsView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(AccountDeletion.self) private var deletion
     @Environment(Crews.self) private var crews
+    @Environment(SeasonTicket.self) private var ticket
+    @State private var buying = false
 
     /// 아직 정하지 않았으면 행을 숨긴다(빈 링크를 내보내지 않음)
     static let privacyPolicyURL: URL? = URL(string: "https://slopemate-f9a5b.web.app/privacy")
+    /// 이용약관: Apple 표준 EULA
+    static let termsURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
     static let contactEmail: String? = "joe45dev@gmail.com"
 
     var body: some View {
@@ -59,9 +63,14 @@ struct SettingsView: View {
             }
             .listRowBackground(Color.card)
             Section("정보") {
+                // R54: S18 시트
+                Button { buying = true } label: {
+                    row("시즌 이용권", value: ticket.isActive ? ticket.expiry.map(SeasonTicketView.untilText) : "없음", chevron: true)
+                }
                 if let url = Self.privacyPolicyURL {
                     Link(destination: url) { row("개인정보처리방침", icon: "arrow.up.right") }
                 }
+                Link(destination: Self.termsURL) { row("이용약관", icon: "arrow.up.right") }
                 NavigationLink { MapSourceView() } label: { row("지도 데이터 출처", value: "OpenStreetMap, Copernicus") }
                 Button { welcome = true } label: { row("처음 안내 다시 보기", chevron: true) }
                 if let mail = Self.contactEmail, let url = URL(string: "mailto:\(mail)") {
@@ -97,6 +106,7 @@ struct SettingsView: View {
         // 홈 리조트·시즌권을 바꿨을 수 있으니 설정을 떠나면(시즌권 화면으로 들어갈 때 포함) 홈이 다시 읽는다
         .onDisappear(perform: changed)
         // R51: O1 설명만 다시. 홈 리조트·동의·완료 상태는 그대로, 권한도 묻지 않는다
+        .sheet(isPresented: $buying) { SeasonTicketView() }
         .fullScreenCover(isPresented: $welcome) { WelcomeView(revisit: true) { welcome = false } }
         .fullScreenCover(isPresented: $editingHomes, onDismiss: reload) {
             HomeSetupView(db: db, cancel: { editingHomes = false }) { editingHomes = false }

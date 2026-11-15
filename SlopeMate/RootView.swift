@@ -8,6 +8,7 @@ struct RootView: View {
     var summary: SummarySync
     var deletion: AccountDeletion
     @Environment(\.scenePhase) private var phase
+    @Environment(SeasonTicket.self) private var ticket
     @State private var showRecording = false
     @State private var tab = Tab.record
     /// 기록 시작 캡슐(S2 v15): 누르면 기록 탭으로 가서 S3. 보조 줄은 HomeView가 정한다.
@@ -49,6 +50,8 @@ struct RootView: View {
             Button("확인", role: .cancel) {}
         } message: { Text("신고해 주셔서 고마워요.") }
         .task(id: phase) { if phase == .active { await deletion.resume() } }
+        // 시즌 이용권(R54): 앱이 켜진 채 5월 1일 00:00(한국)을 넘겨도 잠금이 바뀌게 앞에 올 때마다 다시 계산
+        .task(id: phase) { if phase == .active { await ticket.refresh() } }
         .task(id: phase) {
             guard phase == .active else { return }
             if sampler == nil { sampler = SampleSender(db: recorder.db) }

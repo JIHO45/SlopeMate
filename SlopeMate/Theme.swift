@@ -19,6 +19,8 @@ extension Color {
     static let fadeTop = Color(light: 0xCDEAF0, dark: 0x153A43)
     /// 기록 중 화면 위쪽 페이드 시작색
     static let fadeTopRecording = Color(light: 0xB9E6EC, dark: 0x123139)
+    /// 실패 안내 면 (시즌권·기록 중 화면과 같은 값)
+    static let dangerFill = Color(light: 0xFDE8E8, dark: 0x3A1618)
 
     init(light: UInt32, dark: UInt32) {
         func ui(_ v: UInt32) -> UIColor {
@@ -52,6 +54,8 @@ extension View {
 
 /// 큰 버튼: 화면 폭, 60pt 이상, 강조 면. 기록 시작·종료 같은 화면의 주요 동작 하나에만.
 struct PrimaryButtonStyle: ButtonStyle {
+    /// 가장 큰 글씨에서 아래 고정 버튼은 88
+    var minHeight: CGFloat = 60
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.title3.weight(.bold))
@@ -60,7 +64,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             // 큰 글씨에서는 두 줄까지 쓰고 그래도 넘치면 조금 줄인다(버튼 밖으로 넘치지 않게)
             .lineLimit(2).minimumScaleFactor(0.6)
             .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: 60)
+            .frame(maxWidth: .infinity, minHeight: minHeight)
             .padding(.horizontal, 20)
             .background(Color.accentFill.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 24))
     }
