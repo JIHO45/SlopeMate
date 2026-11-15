@@ -1,11 +1,17 @@
 import SwiftUI
 
-/// S9 시즌 기록 탭 (확정 v1, 빈 상태 v1; R6, R8). 시즌 고르기, 방문일·횟수·거리, 시즌권 카드, 리조트별 막대.
+/// S9 시즌 기록 탭 (확정 v1, 빈 상태 v1, 이용권 줄 v3, 목표 줄 v1; R6, R8, R53, R36). 시즌 고르기, 방문일·횟수·거리, 시즌권 카드, 리조트별 막대.
 struct SeasonView: View {
     let db: AppDatabase
+    @Environment(SeasonTicket.self) private var ticket
     @State private var days: [Stats.Day] = []
     @State private var passes: [(pass: SeasonPass, resorts: [String])] = []
     @State private var season = HomeData.currentSeason()
+    @State private var goal: SeasonGoal?
+    @State private var editingGoal = false
+    /// 시트를 열 때 다시 읽은 이번 시즌 (화면이 시즌을 넘겨 살아 있어도 맞게)
+    @State private var goalSeason = HomeData.currentSeason()
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         NavigationStack {
@@ -23,6 +29,7 @@ struct SeasonView: View {
     private func load() async {
         days = await RecordLoader.days(db)
         passes = (try? db.passes(season: season)) ?? []
+        goal = SeasonGoal.load(season: season)
     }
 
     private var seasons: [String] {
@@ -57,6 +64,8 @@ struct SeasonView: View {
             .padding(.horizontal, 20).padding(.top, 8)
             .accessibilityElement(children: .combine)
 
+            recapCard(t).padding(.top, 16)
+
             if t.visitDays == 0 {
                 VStack(spacing: 12) {
                     Image(systemName: "figure.skiing.downhill").font(.title).foregroundStyle(Color.accentText).accessibilityHidden(true)
@@ -65,11 +74,11 @@ struct SeasonView: View {
                 .padding(.vertical, 28).padding(.horizontal, 20)
                 .frame(maxWidth: .infinity)
                 .background(Color.surface, in: RoundedRectangle(cornerRadius: 20))
-                .padding(.horizontal, 16).padding(.top, 24)
+                .padding(.horizontal, 16).padding(.top, 12)
                 passCards().padding(.top, 12)
                 linkCard(showRecords: !days.isEmpty).padding(.top, 12)
             } else {
-                passCards().padding(.top, 18)
+                passCards().padding(.top, 12)
                 Text("리조트별").font(.subheadline.weight(.semibold))
                     .padding(.horizontal, 20).padding(.top, 22).padding(.bottom, 8)
                     .accessibilityAddTraits(.isHeader)
@@ -78,6 +87,167 @@ struct SeasonView: View {
             }
         }
         .foregroundStyle(Color.primaryText)
+    }
+
+    // MARK: 결산 (S9 v3 이용권 줄)
+
+    /// 방문일 숫자 아래 카드. 결산 줄(이용권이 없으면 첫 카드만 열린다는 설명)과 시즌 목표 줄.
+    private func recapCard(_ t: Stats.Totals) -> some View {
+        let visitDays = t.visitDays
+        let final = SeasonRecap.isFinal(season: season)
+        let title = final ? "최종 결산 보기" : "지금까지 결산 보기"
+        return VStack(spacing: 0) {
+            if visitDays == 0 {
+                recapRow(title, note: Text("첫 기록을 남기면 결산을 볼 수 있어요"), chevron: false)
+                    .opacity(0.6)
+            } else {
+                NavigationLink { SeasonRecapView(days: days, season: season, passes: passes) } label: {
+                    let rest = SeasonRecapView.cards(days: days, season: season, passes: passes).count - 1
+                    let lock = SeasonRecap.lock(season: season, owned: ticket.seasons, current: SeasonTicket.season(purchase: .now))
+                    recapRow(title, note: lock == .open || rest == 0 ? nil
+                             : Text(Image(systemName: "lock.fill")).font(.caption2)
+                                + Text(lock == .pastSeason ? " 첫 카드 · \(SeasonRecap.pastSeasonNote)" : " 첫 카드 · 나머지 \(rest)장은 시즌 이용권"),
+                             chevron: true)
+                }
+                .buttonStyle(.plain)
+            }
+            goalRow(t)
+        }
+        .background(Color.card, in: RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.cardBorder))
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: 시즌 목표 (R36 v1, 무료라 자물쇠 없음)
+
+    /// 이번 시즌은 누르면 시트. 지난 시즌은 저장된 목표가 있을 때만 읽기 전용으로.
+    @ViewBuilder private func goalRow(_ t: Stats.Totals) -> some View {
+        let current = season == HomeData.currentSeason()
+        if current || goal != nil {
+            Divider().overlay(Color.seasonRowSeparator)
+            if current {
+                Button {
+                    goalSeason = HomeData.currentSeason()
+                    editingGoal = true
+                } label: { goalRowContent(t, chevron: true) }
+                    .buttonStyle(.plain)
+                    .sheet(isPresented: $editingGoal, onDismiss: { goal = SeasonGoal.load(season: season) }) {
+                        SeasonGoalSheet(season: goalSeason, visitDays: t.visitDays, runs: t.runs, initial: SeasonGoal.load(season: goalSeason))
+                    }
+            } else {
+                goalRowContent(t, chevron: false)
+            }
+        }
+    }
+
+    @ViewBuilder private func goalRowContent(_ t: Stats.Totals, chevron: Bool) -> some View {
+        let p = goal?.progress(visitDays: t.visitDays, runs: t.runs)
+        let chev = Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText)
+            .opacity(chevron ? 1 : 0).accessibilityHidden(true)
+        if let p, let d = p.days, let r = p.runs {
+            // 두 줄
+            HStack(alignment: .top, spacing: 12) {
+                IconCircle(systemName: "target", size: 36)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("시즌 목표").font(.body.weight(.semibold)).padding(.bottom, -2)
+                    goalBar("방문일", unit: "일", d)
+                    goalBar("하강", unit: "회", r)
+                }
+                chev.frame(maxHeight: .infinity)
+            }
+            .padding(.leading, 16).padding(.trailing, 12).padding(.top, 14).padding(.bottom, 16)
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+        } else if let p, let x = p.days ?? p.runs {
+            // 한 줄
+            let (name, unit) = p.days != nil ? ("방문일", "일") : ("하강", "회")
+            HStack(spacing: 12) {
+                IconCircle(systemName: "target", size: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("시즌 목표 · \(name) \(x.target)\(unit)").font(.body.weight(.semibold))
+                    bar(x).padding(.vertical, 4)
+                        .accessibilityLabel(barLabel(name, unit, x))
+                    Group {
+                        if x.done {
+                            Text("\(x.value)\(unit) · ") + Text(Image(systemName: "checkmark")).fontWeight(.bold).foregroundStyle(Color.accentText)
+                                + Text(" 달성").fontWeight(.semibold).foregroundStyle(Color.accentText)
+                        } else if chevron {
+                            Text("\(x.value)\(unit) · \(x.left)\(unit) 남음")
+                        } else {
+                            // 지난 시즌 읽기 전용: 남음 없이
+                            Text("\(x.value)\(unit) / \(x.target)\(unit)")
+                        }
+                    }
+                    .font(.footnote).foregroundStyle(Color.secondaryText).monospacedDigit()
+                    .accessibilityHidden(true)
+                }
+                chev
+            }
+            .padding(.leading, 16).padding(.trailing, 12).padding(.vertical, 10)
+            .frame(minHeight: 64)
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+        } else {
+            recapRow("목표 정하기", icon: "target", note: Text("방문일이나 하강 횟수 목표를 정해 보세요"), chevron: true)
+        }
+    }
+
+    private func goalBar(_ name: String, unit: String, _ x: SeasonGoal.Progress) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            let title = Text(name).fontWeight(.semibold)
+            let done = (Text(Image(systemName: "checkmark")).fontWeight(.bold) + Text(" 달성").fontWeight(.semibold))
+                .foregroundStyle(Color.accentText)
+            let count = (Text("\(x.value)").fontWeight(.semibold).foregroundStyle(Color.primaryText) + Text(" / \(x.target)\(unit)"))
+                .foregroundStyle(Color.secondaryText).monospacedDigit()
+            // 접근성 글씨에서는 한 줄에 하나씩 (달성, 숫자를 아랫줄로)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 2) {
+                        title
+                        if x.done { done }
+                        count
+                    }
+                } else {
+                    HStack {
+                        title
+                        if x.done { done.padding(.leading, 4) }
+                        Spacer(minLength: 8)
+                        count
+                    }
+                }
+            }
+            .font(.subheadline)
+            .accessibilityHidden(true)
+            bar(x).accessibilityLabel(barLabel(name, unit, x))
+        }
+    }
+
+    private func barLabel(_ name: String, _ unit: String, _ x: SeasonGoal.Progress) -> String {
+        x.done ? "\(name) 목표 \(x.target)\(unit), \(x.value)\(unit)로 달성" : "\(name) \(x.target)\(unit) 중 \(x.value)\(unit)"
+    }
+
+    private func bar(_ x: SeasonGoal.Progress) -> some View {
+        Capsule().fill(Color.surface).frame(height: 6)
+            .overlay(alignment: .leading) {
+                GeometryReader { g in Capsule().fill(Color.accentFill).frame(width: g.size.width * x.fraction) }
+            }
+            .accessibilityElement()
+    }
+
+    private func recapRow(_ title: String, icon: String = "rectangle.portrait.on.rectangle.portrait", note: Text?, chevron: Bool) -> some View {
+        HStack(spacing: 12) {
+            IconCircle(systemName: icon, size: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body.weight(.semibold))
+                if let note { note.font(.footnote).foregroundStyle(Color.secondaryText) }
+            }
+            Spacer(minLength: 0)
+            if chevron { Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText) }
+        }
+        .foregroundStyle(Color.primaryText)
+        .padding(.leading, 16).padding(.trailing, 12).padding(.vertical, 10)
+        .frame(minHeight: 64)
+        .contentShape(Rectangle())
     }
 
     // MARK: 시즌권
