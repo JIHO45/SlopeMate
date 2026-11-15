@@ -2,7 +2,7 @@
 
 작성: 2026-11-08 · 깊이: 충실히 · 상태: 승인 (2026-11-08)
 
-03-requirements의 P0(R1~R23, R31, R33, R34, R35, R39, R49, R50, R51)를 만들기 위한 구조, 데이터, 외부 서비스, 개인정보 보호, 일정을 정한다. 기술 선택은 승인 후 decisions.md에 기록한다.
+03-requirements의 P0(R1~R23, R31, R32, R33, R34, R35, R36, R39, R49, R50, R51, R52, R53, R54)를 만들기 위한 구조, 데이터, 외부 서비스, 개인정보 보호, 일정을 정한다. 기술 선택은 승인 후 decisions.md에 기록한다.
 
 ## 1. 기술 선택 요약
 
@@ -14,7 +14,9 @@
 | 서버 함수 | **Cloud Functions (Blaze 요금제)** | 크루 가입·탈퇴·소유권 같은 권한 변경과 계정 삭제를 서버 트랜잭션으로 처리. 익명 표본 집계 | 클라이언트 직접 쓰기: 동시 가입, 부분 삭제를 막기 어려움 |
 | 지도 데이터 | **OpenStreetMap 가공본을 앱에 내장 + 정적 파일로 갱신** | 산에서 인터넷이 없어도 슬로프 식별. 가공본은 ODbL로 따로 공개 | 실시간 Overpass 조회: 느리고 공용 서버 과부하(조회 실패 경험 있음) |
 | 운영 시간표 | **정적 JSON (Firebase Hosting), 버전 포함** | 앱 업데이트 없이 시간표를 고침(R7) | 앱 내장만: 고칠 때마다 앱 심사 |
+| 3D 지형 보기 (R50) | **SceneKit** (`SCNView`) | iOS 17.6에서 동작. 격자를 메시로 만드는 API가 단순하고 기기 안에서만 그림. 타일·네트워크 없음 | RealityKit `RealityView`: iOS 18 이상. MapKit 3D 지형: 타일을 받음(R50 오프라인 조건) |
 | 날씨 (2.0, R33·R39) | **WeatherKit** | 개발자 멤버십에 월 50만 회 포함. REST API가 있어 안드로이드에서도 사용 가능 | OpenWeatherMap: 무료 하루 1,000회. 기상청 단기예보: 정확도 비교 후 결정(06-verification) |
+| 시즌 이용권 (R54) | **StoreKit 2, 기간 고정 구독(Non-Renewing) 상품 하나** | 시즌(11월~4월)에 맞는 기간은 자동 갱신 구독으로 만들 수 없음(1주~1년 단위). StoreKit 2 거래 내역은 같은 Apple 계정의 기기에 동기화되므로 로그인·서버 없이 다른 기기와 복원을 지원. 거래는 기기에서 서명(JWS) 확인 | 자동 갱신 1년·6개월: 비시즌 갱신·환불 불만, 시즌과 안 맞음. 서버 영수증 검증·계정 연동: 로그인 없는 사용자 원칙과 맞지 않고 서버 일이 늘어남. RevenueCat 등: 상품 하나에 의존성 추가 |
 | 초대 링크 | **Universal Links + Firebase Hosting** | 앱이 있으면 앱으로 열림. 앱이 없으면 웹페이지가 열리므로 그 페이지에 크루 이름과 앱스토어 링크를 둠 | Firebase Dynamic Links: 2025년에 서비스 종료 |
 | 분석·오류 수집 | **App Store Connect와 Xcode Organizer만** | 위치가 외부 도구로 새 나갈 경로를 원천 차단(R17). 의존성 없음 | Firebase Analytics, Crashlytics: 로그에 위치가 섞일 위험, 고지 항목 증가 |
 
@@ -130,9 +132,495 @@ erDiagram
 
 - **ID 규칙:** 슬로프·리프트 ID는 우리가 정한 값이다. OSM ID는 편집 때 바뀔 수 있어 참고용(`osm_ids`)으로만 둔다. D3·D4 표본은 우리 ID를 쓴다(R40·R41 대비).
 - **시간표(R7):** 시간표마다 버전과 적용 기간이 있다. 세션은 저장하지 않고 읽을 때 계산하므로, 새 버전이 오면 그 적용 기간의 기록이 자동으로 다시 분류된다. 적용 기간이 겹치면 버전이 큰 것을 쓴다. `updated_at`이 지난 시즌이 끝나기(5월 1일) 전이면 "오래됨"으로 보고 세션을 나누지 않는다. **운영 시간 표시(R34)와 강풍 안내 구간(R35)용 유효성:** 시간표 항목에 `verifiedSeason`(예: "2026-27")을 두고, 리조트 공식 안내와 손으로 대조한 뒤에만 채운다. R34·R35는 같은 판단을 쓴다: `verifiedSeason`이 이번 시즌이고 그날이 적용 기간 안이면 유효, 아니면 미확인. 파일 수정일만으로 확인됐다고 보지 않는다. JSON 키는 다른 필드처럼 `verifiedSeason`이다. 영업일을 덮는 시간표 중 버전이 가장 큰 것을 먼저 고른 뒤 확인 여부를 본다(옛 확인본으로 돌아가지 않음). 비시즌은 미확인이다. 홈은 앞에 있는 동안 5분마다 기준 시각을 새로 잡아 다시 계산하므로, 운영 종료·06:00 영업일 전환은 최대 5분 늦게 반영된다.
-- **서버 설정 파일(R7, R9):** Firebase Hosting의 `config.json`(슬로프 이름을 켤 리조트 목록, 크루 동기화·표본 차단 스위치)과 `timetables.json`(앱 내장 시간표와 같은 형식). 앱은 앞에 있는 동안 1시간에 한 번 받아 기기에 저장하고, 받지 못하거나 형식이 틀리면 마지막으로 받은 값을 쓴다. 시간표는 내장분과 합쳐 쓰며 겹치면 버전이 큰 것을 쓰므로, 고칠 때는 버전을 올린다. 슬로프 이름은 목록에서 빠지면 꺼진다.
+- **서버 설정 파일(R7, R9):** Firebase Hosting의 `config.json`(슬로프 이름을 켤 리조트 목록, 크루 동기화·표본 차단 스위치, 내 리프트 대기(R32) 표시 켜기 `liftWait`)과 `timetables.json`(앱 내장 시간표와 같은 형식). 앱은 앞에 있는 동안 1시간에 한 번 받아 기기에 저장하고, 받지 못하거나 형식이 틀리면 마지막으로 받은 값을 쓴다. 시간표는 내장분과 합쳐 쓰며 겹치면 버전이 큰 것을 쓰므로, 고칠 때는 버전을 올린다. 슬로프 이름은 목록에서 빠지면 꺼진다.
 - **시즌권(R8):** 시즌권마다 시즌을 둔다. 다음 시즌 시즌권을 등록하거나 고쳐도 지난 시즌 계산은 바뀌지 않는다.
 - 시즌 합계, 방문일, 세션은 저장하지 않고 위 테이블에서 계산한다(규칙 변경 시 재계산).
+
+### 내장 고도 격자와 지형 바탕 (R50, K)
+
+하루 기록 지도의 슬로프 선 아래에 지형 음영과 등고선을 그린다. 결정과 기각한 대안은 decisions 2026-11-13, 모양은 07-visual-design 6장 "S6 지형 바탕 v1".
+
+- **데이터:** Copernicus DEM GLO-30. 위경도 1초 간격(국내에서 남북 약 31m, 동서 약 25m) 격자를 다시 계산하지 않고 그대로 잘라 쓴다. 나무·건물 높이가 들어간 표면 고도다.
+- **가공:** `tools/dem/build.py`가 `Resources/maps/osm-<리조트>.json`의 슬로프·리프트 범위에 여백(긴 변의 85%, 최소 1,500m)을 더해 자르되 한 변이 400칸을 넘지 않게 여백을 줄인다(`MARGIN`, `MIN_MARGIN_M`, `MAX_CELLS`). 여백은 2D 기본 배율의 세로 화면과 3D의 낮은 시점(3D v4)을 덮기 위한 값이다. 작은 리조트는 넓어지고(지산 127×152칸), 큰 리조트는 상한 때문에 그대로다(하이원 329×352, 용평 319×358). 원본 타일(1도 단위, 국내 12곳은 4장)은 `tools/dem/cache/`에 받고 저장소에 올리지 않는다. GeoTIFF 읽기는 도구에서만 rasterio를 쓴다(`tools/dem/.venv`에 설치, 저장소에 올리지 않음. 준비 명령은 build.py 주석).
+- **파일:** `SlopeMate/Resources/maps/dem-<리조트>.json`. `resort_id`, `source`(출처 문구), `generated`, `north`, `west`, `step`(도), `rows`, `cols`, `heights`(0.1m 단위 Int16 리틀 엔디언을 base64로, 북쪽 행부터 서→동). OSM 파일과 합치지 않는다(라이선스가 다름).
+- **크기 예산:** 12곳 합쳐 1.5MB 이하, 한 곳 350KB 이하(실측 2026-11-14: 12개 합계 1,412,743바이트, 가장 큰 하이원 309KB·격자 329×352). 넘으면 여백을 줄인다.
+- **없는 리조트:** 파일이 없거나 읽지 못하면 바탕 없이 지금처럼 그린다. 출처 표기에서도 고도 데이터를 뺀다.
+- **계산 (기기 안):** `Terrain`이 파일을 읽어 리조트별로 한 번만 계산해 메모리에 둔다(`SlopeMap.cached`와 같은 방식). ① 3×3 평균으로 한 번 고르게 한다(나무 높이 잡음). ② 음영: 칸마다 기울기를 구해 빛 방향과의 각도로 밝기를 정하고 격자 크기의 이미지 한 장으로 만든다. 빛은 **화면 기준** 왼쪽 위에서 온다. 지도가 리프트 방향으로 돌아가므로 `MapProjection`으로 화면의 위쪽이 실제 어느 방위인지 구해 빛 방위를 정한다. 밝게·어둡게 판은 색만 다르게 따로 만든다. ③ 등고선: 음영보다 두 번 더 고른 격자에서 20m 간격으로 선분을 뽑아(marching squares) 격자 좌표의 CGPath 2개(20m 가는 선, 100m 굵은 선)로 둔다. 리조트마다 한 번만 만든다(회전·색과 무관).
+- **그리기:** `DayMapDrawing.draw`가 바탕색 다음, 슬로프 선 앞에 지형 층을 그린다. 음영 이미지는 격자 세 모서리를 `MapProjection.point`로 옮겨 만든 변환으로 한 번에 그린다(투영이 회전과 배율뿐이라 정확히 맞음). 등고선은 경로를 다시 만들지 않고 음영 이미지와 같은 아핀 변환만 걸어 그린다. 굵기는 확대해도 그대로, 선 끝은 butt. 프레임마다 이미지 1장과 경로 2개(가는 선·굵은 선)만 그린다. 음영 이미지와 등고선 모두 바깥 10%는 바탕색으로 서서히 사라지게 한다.
+- **동영상:** `ShareVideo`가 같은 `DayMapDrawing`을 쓰므로 바탕이 그대로 들어간다. 리조트 슬로프·리프트 선과 이름은 그리지 않는다(`layers = .none`, 아래 "지도 표시·난이도 색·슬로프 누르기"). OSM 출처 줄 아래에 Copernicus 출처 문구와 면책 문장 원문을 넣는다(약 5줄, 오른쪽 맞춤).
+- **성능 목표:** 가장 큰 리조트에서 읽기와 계산을 합쳐 0.1초 이내, 재생 중 프레임이 떨어지지 않음, 동영상 만드는 시간이 눈에 띄게 늘지 않음. 못 맞추면 등고선을 기본 배율 이미지로 한 번 구워 쓴다.
+- **범위 밖:** 등고선 고도 숫자, 봉우리 이름, 고도 격자로 기록 고도 보정. 기울이고 돌려 보는 3D는 화면에만 넣는다(아래 "화면용 3D 보기"). 공유 동영상은 2D다.
+
+### 화면용 3D 보기 (R50, K)
+
+S6의 지도 층을 3D 지형으로 바꿔 볼 수 있다. 결정과 기각한 대안은 decisions 2026-11-13 "화면용 3D 보기", 모양은 07-visual-design 6장 "S6 3D 보기 v1"·"v2 (겨울 산 색)"·"v3 (겨울 산 색 다듬기)". 색·가장자리는 v3을 따른다(decisions 2026-11-13 "3D 겨울 산 색"). **v4(2026-11-14)가 색·눈 띠·시점·과장·경로·슬로프 선을 다시 바꾼다. 아래 글머리표에서 v4와 다른 값은 뒤의 "3D v4" 절을 따른다.**
+
+- **기술:** SceneKit. `SCNView`를 `UIViewRepresentable`로 감싼다. 앱 최소 버전이 iOS 17.6이라 `RealityView`(iOS 18 이상)는 쓰지 못한다. 장면은 내장 고도 격자와 OSM 선만으로 기기 안에서 만든다.
+- **2D와 같이 쓰는 것:** 재생 시계(`PlayClock`), 시간 막대, 아래 시트, 하강 선택, 출처 표시, 공유 메뉴는 그대로다. 3D는 `Canvas` 자리의 지도 층만 바꾼다. 2D의 확대·이동 값과 3D 카메라 값은 따로 두고, 전환해도 각자 남는다.
+- **진입:** 툴바 오른쪽, 공유 버튼 왼쪽에 전환 버튼(`view.3d` ↔ `view.2d`). 기본은 2D이고 선택을 기억하지 않는다(S6를 열 때마다 2D). 고도 파일이 없는 리조트(`Terrain.layer`가 nil)와 하루 데이터를 읽기 전에는 버튼이 없다. 하강 0회인 날에도 버튼은 있다(지형과 슬로프만).
+- **좌표:** 단위는 m. 원점은 슬로프·리프트 경계의 가운데(`MapProjection`과 같은 계산: 모든 점의 위도·경도 최소·최대의 중간). 동쪽 = (경도 − 경도0) × cos(위도0) × 111,320, 북쪽 = (위도 − 위도0) × 111,320. `MapProjection.angle(map)`으로 돌린 u(화면 오른쪽)·v(화면 위)를 장면 x = u, z = −v로 둔다. y = (고도 − 격자 최저 고도) × 과장. 과장 = 1.5 × clamp(750 ÷ 슬로프·리프트 높이 차(1.5배 기준 m), 1, 2.5): 하이원·용평은 1.5배 그대로, 지산은 상한 2.5배 더(3.75배). `Terrain3D`가 리조트마다 정하고 메시·리본·지형 높이·띄우는 높이·카메라가 같은 값을 쓴다. 2D 음영은 1.5배 그대로다. 카메라가 +z 쪽에서 −z를 보면 2D처럼 산 위가 화면 위다.
+- **지형 메시:** 격자 칸 중심마다 정점 하나(줄이지 않음. 하이원 329×352 = 115,808개, 삼각형 약 23만 개). 칸마다 삼각형 둘: (r,c)·(r+1,c)·(r,c+1)과 (r,c+1)·(r+1,c)·(r+1,c+1)(위에서 볼 때 시계 반대). 법선은 이웃 칸 높이 차로 구한다. 정점마다 눈 마스크용 UV(열 ÷ (cols − 1), 행 ÷ (rows − 1))를 둔다. 바깥 10%가 사라지는 값(`edge` 1 → 0)은 정점이 아니라 눈 마스크에 둔다.
+- **지형 높이 조회:** 메시와 같은 삼각형 분할로 보간한다(선이 면에 묻히지 않게). 칸 안 위치 a(행 방향)·b(열 방향)가 a + b ≤ 1이면 z00 + a(z10 − z00) + b(z01 − z00), 아니면 z11 + (1 − a)(z01 − z11) + (1 − b)(z10 − z11). 격자 밖은 가장 가까운 가장자리 값. `RoutePoint`에는 고도가 없으므로 경로도 이 높이에 붙인다.
+- **선(슬로프·리프트·경로):** 지형에 붙인 납작한 리본. 15m보다 긴 구간은 나눠 지형을 따라가게 하고, 리본 양쪽 가장자리 정점마다 높이를 따로 읽는다. 지형 위로 띄우는 높이는 max(2m, 화면 1pt 길이)에 같은 과장 배율(1.5배 대비)을 곱한다. 굵기는 2D의 pt 값(슬로프 3, 리프트 1.5 점선 4·4, 하강 5, 탄 리프트 2.5 점선 5·4, 그 밖 2·알파 0.5, 강조 7)에 "화면 1pt가 목표점에서 몇 m인지"를 곱한 m 값이다. 확대·축소 손짓이 끝났을 때 그 값이 15% 넘게 바뀌었으면 리본을 다시 만든다(손짓 중에는 지형과 함께 커지고 작아짐). 리본끼리는 깊이를 쓰지 않고 그리는 순서(슬로프 < 리프트 < 경로 < 강조 < 점)로 겹친다. 면 슬로프는 테두리 선만 그린다. 슬로프 이름과 등고선은 3D에 그리지 않는다.
+- **재질·조명:** v1의 값이다. 지형 색·조명·안개·가장자리는 아래 "겨울 산 색 (v3)"이 바꾼다. 배경은 `Palette.bg`. 지형은 Lambert, 색 `hillLight`. 주변광 + 방향광 하나(그림자 없음)로 빛을 받는 면은 `hillLight`, 등진 면은 `hillShadow`, 평지는 바탕색 근처가 되게 세기를 맞춘다(화면 보고 조정). 빛은 처음 시점 기준 화면 왼쪽 위·높이 45도에서 오고 장면에 고정한다(오는 쪽 x, y, z = −0.5, 0.707, −0.5). 리본은 조명을 받지 않는 단색(`lift`, `fill`, `text`, 슬로프는 밝게 `slopeOnTerrain` `#A9C1C8`·어둡게 3D용 `#4D707C`), 양면. 안개는 바탕색으로 처음 거리 + 반지름 × 2에서 시작해 × 6에서 끝난다. 메시 바깥 10%는 `edge`를 정점 알파로 써서 사라지게 한다. 밝게·어둡게가 바뀌면 색만 바꾼다.
+- **겨울 산 색 (v3):** 위 "재질·조명"의 색·세기·안개·가장자리와 "선"의 슬로프 굵기·면 슬로프를 아래로 바꾼다. 데이터는 고도 격자와 OSM 선 그대로다. 색 값은 밝게/어둡게 순서.
+    - **정점 색(숲·높은 곳 눈):** `Terrain3D.colors(mesh, dark:)`. 지형 재질의 diffuse는 흰색, 알파는 1. SceneKit은 정점 색을 선형 값으로 읽으므로 sRGB로 섞은 뒤 선형으로 바꿔 넣는다. 정점 (r, c)마다:
+        - 빛 받는 정도 `ndl` = max(0, 법선 · 빛 방향). 빛 방향은 (−0.5, 0.707, −0.5)를 정규화한 값.
+        - 얼룩 `noise` = 0.7 × 굵은 얼룩 + 0.3 × 잔 얼룩, 0~1. 잔 얼룩은 `hash(r, c)`, 굵은 얼룩은 8칸(약 240m)마다 둔 `hash` 값을 가로·세로로 선형 보간. `hash`는 격자 좌표만 쓰는 정수 해시(`x = r × 73856093 ^ c × 19349663; x ^= x >> 13; x *= 0x5bd1e995; x ^= x >> 15`, 아래 16비트 ÷ 65535). 난수를 쓰지 않아 매번 같은 그림이다.
+        - 침엽수 비율 = clamp(0.30 + 0.30 × (1 − `ndl`) + 0.6 × (`noise` − 0.5), 0, 1). 얼룩을 빼면 정면으로 빛을 받는 면 30%, 평지 약 39%, 등진 면 60%. 숲 색 = 활엽수 `#8C8378`/`#44525B`와 침엽수 `#46594A`/`#273E3A`를 이 비율로 섞은 값.
+        - 높은 곳 눈 = 0.35 × smoothstep(0.6, 1.0, 상대 고도). 상대 고도 = 정점 높이 ÷ 메시 최고 높이(격자 최저가 0).
+        - 정점 색 = 숲 색에 눈 색 `#E9EFF2`/`#768C9B`를 높은 곳 눈만큼 섞은 값.
+        - 메시와 격자 크기가 안 맞으면 모두 흰색을 돌려준다.
+    - **눈 마스크(슬로프·리프트 눈, 가장자리):** `Terrain3D.snowMask(map:)`이 `SnowMask`(RGBA 8비트 텍스처 하나)를 만든다. 크기는 격자의 4배, 한 변 최대 2048(하이원 1408×1316, 한 칸 약 7m, 약 7.4MB). 첫 행이 북쪽이고 메시 UV로 입힌다. 밝게·어둡게가 같은 텍스처를 쓴다.
+        - R 슬로프 눈 = 1 − smoothstep(25, 55, d). d는 가장 가까운 슬로프 선까지 수평 거리(m). 면 슬로프는 안쪽이면 d = 0(홀짝 교차), 바깥이면 테두리까지 거리 + 25.
+        - G 리프트 길 눈 = 1 − smoothstep(15, 45, 가장 가까운 리프트 선까지 거리).
+        - B 가장자리 = `edge`(1 안쪽 … 0 격자 경계, 바깥 10%).
+        - 거리는 텍셀마다 모든 선을 보지 않고, 선 조각을 감싸는 범위(60m 넓힘) 안의 텍셀만 재서 최솟값을 남긴다. 장면 x·z(m)로 잰다.
+        - 이미지 색 공간은 linearSRGB로 둬서 SceneKit이 값을 바꾸지 않고 읽게 한다.
+    - **셰이더 수정자:** 마스크를 재질의 `multiply` 칸에 실어 surface 수정자에서 읽고 `multiply`는 1로 되돌린다. 정점 색(선형)을 감마 2.2 근사로 sRGB 쪽으로 옮겨, 리프트 길 눈(높은 곳 눈 색, G × 0.6)과 슬로프 눈(`#FFFFFF`/`#9DB2BE`, R)을 차례로 섞고 다시 선형으로 돌린다. 눈 색과 안개 색은 수정자 인자(`slopeSnow`, `liftSnow`, `edgeFog`)로 넘기고 모드가 바뀌면 값만 바꾼다.
+    - **가장자리:** 정점 알파를 쓰지 않는다(지형은 불투명). 수정자에서 diffuse × e + emission(안개 색 × (1 − e))로 둬서, 조명을 받은 뒤 바깥 10%가 안개 색이 된다(e = 마스크 B).
+    - **밝게·어둡게:** 준비 단계에서 지오메트리 둘(위치·법선·UV·삼각형은 같이 쓰고 색 소스만 다름)을 만들고, 모드가 바뀌면 지형 노드의 지오메트리와 수정자 인자·조명·배경만 바꾼다.
+    - **조명:** 주변광 `#A6B1C2`/`#8C97AA`(하늘빛 그늘), 방향광 = 1 − 주변광(선형, 약 `#CEC5B5`/`#DFD9CB`), 세기 기본값, 그림자 없음, 방향은 그대로. 정면으로 빛을 받는 면은 정점 색 그대로, 등진 면은 정점 색 × 그늘 색이다.
+    - **배경·안개:** 배경은 세로 그라데이션 이미지(화면 맨 위 `#BFD9EA`/`#070F16` → 위에서 45% 지점 `#D5E3EC`/`#13242D`, 그 아래는 같은 색). 안개 색 `#D5E3EC`/`#13242D`, 카메라 거리(목표점까지) + 반지름 × 0.5에서 시작해 × 5에서 끝난다. 카메라가 움직일 때마다 다시 넣는다.
+    - **선:** 슬로프 리본은 1.5pt, 색은 `slope3D`(`#A9C1C8`/`#4D707C`). 눈 띠는 리본으로 만들지 않는다. 리프트 리본은 1.5pt 점선, 색은 3D용 `#34474E`/`#C4D3DA`. 하강·탄 리프트 경로 아래에 양쪽 1pt씩 넓은 테두리 리본(`Palette.dot` `#FFFFFF`/`#0B161B`, 하강 7pt, 탄 리프트 4.5pt 같은 점선)을 하나씩 더 깔고, 하강 강조 아래에도 9pt 테두리를 깐다. 그리는 순서: 슬로프 < 리프트 < 경로 테두리 < 옅은 경로 < 진한 경로 < 강조 테두리 < 강조 < 점. 테두리는 재생 중에도 전체를 그린다.
+    - **준비물:** `Map3DTerrain(space:map:)`이 메시, 밝게·어둡게 지오메트리, 눈 마스크 이미지를 한 번에 만든다. `Task.detached`에서 만들고 `Map3DScene.init(space:terrain:map:route:dark:viewport:)`에 넘긴다. 2D 팔레트(`hillLight`, `hillShadow`, `bg`)는 3D에서 쓰지 않는다.
+    - **성능(하이원, Release 시뮬레이터 측정):** 눈 마스크 14~28ms(목표 50ms 이내), 정점 색 두 벌 12ms, 버튼 → 3D 표시 약 0.15초. 처음 그릴 때 셰이더 컴파일로 1.67초가 걸렸다(시뮬레이터). 실기기에서 첫 렌더 시간은 확인 필요. 앱 크기는 그대로다.
+    - **범위 밖:** 위성 사진, 나무·건물 모형, 마을·도로·논밭 색, 슬로프별 야간 운영 구분, 날짜·적설에 따라 바뀌는 색.
+- **재생·강조:** 경로 조각마다 옅은 전체(알파 0.3배)와 진한 앞부분 두 겹. 재생 시각이 없으면 전체를 진하게 그리고 점을 숨긴다. 진한 앞부분은 리본의 `cuts`(입력 점까지의 삼각형 수)로 그릴 삼각형 수만 바꾼다(`SCNGeometryElement.primitiveRange`, 실행 중에 바뀌는지 확인 필요. 안 되면 재생 시각이 걸친 조각 하나만 다시 만든다). 재생 점은 2D와 같은 그림(흰 원 + 테두리 + 옅은 원)을 항상 카메라를 보는 판에 그리고 지형에 가려지지 않게 맨 위에 그린다. 하강 강조는 그 하강 시간 구간의 리본을 굵게 덧그린다.
+- **카메라:** 목표점·거리·방위(yaw)·기울기(pitch) 네 값으로 둔다. 시야각은 세로 30도. 처음 시점은 yaw 0(2D와 같은 방향), pitch 45도이고 구가 아니라 슬로프·리프트 선에 맞춘다: 선을 화면에 투영해 보이는 영역(좌우 16, 위 110, 아래 시트 + 24)을 채우는 목표점과 거리를 3회 반복해 구한다. 목표점 높이는 그 자리 지형 높이. 두 번 누르기와 `resetCamera`도 이 시점으로 간다. 구에 맞춘 `Camera3D.home`은 거리 제한의 기준 거리로만 쓴다(구 기준으로는 슬로프가 화면의 40%쯤만 차지). 제한: pitch 20~80도, 거리는 `home` 거리의 0.15~1.3배, 목표점은 구 안(높이는 그 자리 지형 높이), 카메라가 지형 + 30m 아래로 내려가면 pitch를 올린다. pitch가 45도보다 낮을 때는 화면 아래 가운데·양 끝으로 나가는 광선이 닿는 땅의 `edge`가 0.2 이상이 될 때까지 pitch를 1도씩 올린다(최대 45도. 광선은 거리의 1/32씩 최대 3배 거리까지 걷고, 세로 화면 비율 0.46을 가정). 작은 격자(지산)에서 격자 경계가 화면 아래에 보이지 않게 하는 제한이고, 처음 시점 맞춤은 pitch 45도로 고정해 이 제한의 영향을 받지 않는다. 시트 높이가 바뀌면 방향·거리는 그대로 두고 카메라를 화면 세로 방향으로 평행 이동해 목표점이 시트 위 보이는 영역 가운데에 오게 한다.
+- **손짓:** 한 손가락 끌기 = 돌리기·기울이기(화면 너비만큼 끌면 180도, 높이만큼 끌면 90도), 두 손가락 벌리기 = 확대, 두 손가락 끌기 = 목표점 이동, 두 번 누르기 = 처음 시점. 관성은 없다. `SCNView.allowsCameraControl`은 쓰지 않는다.
+- **재생 중 따라가기:** 2D와 같은 규칙. 재생 점이 시트 위 보이는 영역(안쪽 16pt) 밖으로 나가면 목표점을 점으로 옮긴다. 방위·기울기·거리는 바꾸지 않는다.
+- **공유:** 3D에서도 공유 메뉴는 같고 동영상은 2D로 만든다. 3D일 때만 동영상 항목 설명을 "오늘 경로 재생(2D 지도), 12초"로 바꾼다. 알림 창은 더하지 않는다.
+- **렌더·배터리:** `rendersContinuously`를 끄고 `isPlaying`을 켜지 않는다. 장면이 바뀔 때(손짓, 재생 시각, 색)만 그린다. 2D로 돌아가면 `SCNView`를 화면에서 뺀다(장면 객체는 S6가 열려 있는 동안 두어 다시 켤 때 바로 보임). S6를 닫으면 장면을 버린다. 계단 현상은 4배 다중 샘플링으로 줄인다.
+- **준비:** 전환 버튼을 처음 누를 때 만든다(S6가 바로 열리는 조건을 지킴). `Terrain3D`와 `Map3DTerrain`(메시, 밝게·어둡게 지오메트리, 눈 마스크 이미지)은 메인 스레드 밖(`Task.detached`)에서 만들고, 그동안 2D를 그대로 보여 준다.
+- **성능 목표(하이원):** 시뮬레이터(Release)에서 버튼을 누른 뒤 3D가 보이기까지 0.5초 이내, `setPlayback` 한 번 1ms 이내, 3D를 켠 뒤 메모리 증가 60MB 이하(메시 약 12MB + 눈 마스크 약 7.4MB + 프레임 버퍼, 시뮬레이터 수치는 참고). 실기기(M3 실기기 확인 묶음)에서는 지원하는 가장 오래된 기종과 최신 기종에서 돌리기·확대·재생 중 프레임, 5분 조작 뒤 발열·배터리, 메모리 증가, 손을 뗀 뒤 렌더가 멈추는지를 잰다. 프레임이 모자라면 큰 격자만 한 칸 건너 정점을 둔다.
+- **접근성:** 3D 장면은 2D 지도와 같이 요소 하나("하이원 3D 지형 지도 위 오늘 경로")로 읽히고, 정보는 시트의 합계·목록이 그대로 준다. 전환 버튼 이름은 "3D로 보기"·"2D로 보기". 동작 줄이기를 켜면 전환·시트 맞춤·따라가기·처음 시점의 카메라 애니메이션을 끄고 바로 옮긴다.
+- **개인정보:** 타일이나 고도 데이터를 실행 중에 받지 않는다. 장면은 기기 안에서만 그리고 저장하거나 보내지 않는다(6장).
+- **범위 밖:** 3D 공유 동영상, 건물·나무, 위성 사진, 봉우리 이름, 슬로프 이름 상시 라벨(눌러서 보는 이름은 "지도 표시·난이도 색·슬로프 누르기"), 등고선, 관성, 2D·3D 선택 기억. 면 슬로프는 v2에서 눈으로 채운다.
+- **자르는 순서:** 1단계(지형 메시 + 슬로프·리프트 + 경로 전체, 카메라·손짓, 전환 버튼, 시트 맞춤)와 2단계(재생 점·진한 앞부분·하강 강조·따라가기)를 모두 넣었다. 제출 전 실기기 성능 확인을 못 마치면 전환 버튼을 빼고 3D 전체를 2.1로 넘긴다(03-requirements R50 문장도 되돌림).
+
+**파일 분할과 경계 API (동시에 구현)**
+
+네 묶음이 서로 다른 파일만 고친다. `DayMap.swift`, `Terrain.swift`, `ShareVideo.swift`는 고치지 않는다. 프로젝트가 폴더를 그대로 읽으므로 새 파일은 `SlopeMate/`와 `SlopeMateTests/`에 두면 된다(`project.pbxproj` 수정 없음). 프로젝트 기본 격리가 MainActor라서 순수 계산 타입에는 `nonisolated`를 직접 적는다.
+
+| 묶음 | 파일 | 맡는 일 | 기대는 것 |
+| --- | --- | --- | --- |
+| 3D-A | `SlopeMate/Terrain3D.swift` (새 파일) | 좌표 변환, 지형 높이, 메시 배열, 리본 배열, 배열 → `SCNGeometry` | `Terrain`, `SlopeMap`, `MapProjection.angle` |
+| 3D-B | `SlopeMate/Map3DScene.swift` (새 파일) | `Camera3D`(순수 계산), 장면: 지형·선·점 노드, 재질·조명·안개, 재생·강조 갱신, 카메라 놓기 | 3D-A API, `DayMapDrawing.Palette`, `RouteSegment`, `RunDetector.Run` |
+| 3D-C | `SlopeMate/Map3DView.swift` (새 파일), `SlopeMate/DayMapView.swift` | `SCNView` 감싸기·손짓·따라가기, 전환 버튼, 장면 준비, 시트·재생·강조 연결, 공유 설명, 접근성 | 3D-A·3D-B API |
+| 3D-D | `SlopeMateTests/Terrain3DTests.swift` (새 파일) | 3D-A와 `Camera3D` 단위 테스트(06-verification R50) | 3D-A API, `Camera3D` |
+
+3D-A (`Terrain3D.swift`)
+
+```swift
+import Foundation
+import simd
+import SceneKit
+
+/// 장면 좌표계와 지형. 값 타입, 순수 계산. 어느 스레드에서나 만든다
+nonisolated struct Terrain3D: Sendable {
+    /// 고도 과장. 1.5 × clamp(750 / 슬로프·리프트 높이 차(1.5배 기준 m), 1, 2.5). 메시·리본·높이·카메라가 같이 쓴다
+    let exaggeration: Float
+    let terrain: Terrain
+    /// 원점 위경도(MapProjection과 같은 계산), 회전각(MapProjection.angle), y = 0인 고도(격자 최저, m)
+    let lat0, lon0, angle, baseHeight: Double
+    /// 슬로프·리프트 전체를 감싸는 구 (지형 위 점들 기준). 카메라 거리·목표점 제한용
+    let center: SIMD3<Float>
+    let radius: Float
+
+    init(terrain: Terrain, map: SlopeMap)
+
+    /// 위경도 → 장면 (x, z), m
+    func xz(lat: Double, lon: Double) -> SIMD2<Float>
+    /// 장면 (x, z) → 위경도 (xz의 역)
+    func coordinate(_ xz: SIMD2<Float>) -> (lat: Double, lon: Double)
+    /// 지형 높이 y (과장 적용, 최저 고도 기준). 메시와 같은 삼각형 보간, 격자 밖은 가장자리 값
+    func height(lat: Double, lon: Double) -> Float
+    func height(_ xz: SIMD2<Float>) -> Float
+    /// 지형 위 점. lift: 지형 위로 띄우는 높이(m)
+    func point(lat: Double, lon: Double, lift: Float = 0) -> SIMD3<Float>
+
+    struct Mesh: Sendable {
+        var positions: [SIMD3<Float>]   // rows × cols, 행 우선(북쪽 행부터)
+        var normals: [SIMD3<Float>]     // 단위 벡터, y > 0
+        var uv: [SIMD2<Float>]          // (열 / (cols − 1), 행 / (rows − 1)). 눈 마스크 텍스처용
+        var indices: [UInt32]           // 삼각형, (rows − 1)(cols − 1) × 6
+    }
+    func mesh() -> Mesh
+
+    /// 장면 (x, z)의 가장자리 값: 1 안쪽 … 0 격자 경계(바깥 10%), 격자 밖은 음수
+    func edge(_ xz: SIMD2<Float>) -> Float
+    /// 정점 색(선형, 알파 1): 숲 + 높은 곳 눈
+    func colors(_ mesh: Mesh, dark: Bool) -> [SIMD4<Float>]
+    /// 눈 마스크: R 슬로프 눈, G 리프트 길 눈, B 가장자리. 격자의 scale배(한 변 최대 2048), 첫 행이 북쪽
+    struct SnowMask: Sendable {
+        let width, height: Int
+        let bytes: [UInt8]              // RGBA 8비트
+        var image: CGImage? { get }     // linearSRGB
+    }
+    func snowMask(map: SlopeMap, scale: Int = 4) -> SnowMask
+
+    struct Ribbon: Sendable {
+        var positions: [SIMD3<Float>]
+        var indices: [UInt32]           // 삼각형, 입력 순서대로
+        var cuts: [Int]                 // cuts[i] = 입력 점 i까지 그릴 때의 삼각형 수. 개수는 입력 점 수, 마지막 = indices.count / 3
+    }
+    /// 위경도 선 → 지형 위 리본. width·lift·dash·maxStep은 m. dash가 있으면 on만큼 그리고 off만큼 비운다. 점이 2개 미만이면 빈 리본
+    func ribbon(_ line: [(lat: Double, lon: Double)], width: Float, lift: Float,
+                dash: (on: Float, off: Float)? = nil, maxStep: Float = 15) -> Ribbon
+}
+
+nonisolated extension Terrain3D.Mesh {
+    /// 위치·법선·UV·색(선형) 소스와 삼각형 요소 하나. 재질은 붙이지 않는다
+    func geometry(colors: [SIMD4<Float>]) -> SCNGeometry
+}
+nonisolated extension Terrain3D.Ribbon {
+    /// 위치 소스와 삼각형 요소 하나(법선 없음: 단색 재질용)
+    func geometry() -> SCNGeometry
+    /// 여러 리본을 한 지오메트리로(슬로프 전체, 리프트 전체). cuts는 버린다
+    static func geometry(_ ribbons: [Terrain3D.Ribbon]) -> SCNGeometry
+}
+```
+
+- `SCNGeometry`는 Sendable이 아니다. 리본의 `geometry()`는 3D-B가 MainActor에서 부른다. 지형 지오메트리는 `Map3DTerrain`이 메인 스레드 밖에서 만들어 장면에 붙이기 전에 넘긴다(`@unchecked Sendable`).
+- `SIMD3<Float>`의 stride는 16바이트다. `SCNGeometrySource(data:…)`의 `dataStride`에 그 값을 넘긴다.
+
+3D-B (`Map3DScene.swift`)
+
+```swift
+import SceneKit
+import simd
+
+/// 카메라 값. 순수 계산이라 테스트한다
+nonisolated struct Camera3D: Equatable, Sendable {
+    var target: SIMD3<Float>    // 바라보는 점
+    var distance: Float         // target까지 m
+    var yaw: Float              // 라디안. 0 = 처음 방향(카메라가 +z 쪽). 커지면 카메라가 +x 쪽으로 돈다
+    var pitch: Float            // 라디안. 수평에서 내려다보는 각
+
+    static let fovY: Float = 30 * .pi / 180
+    static let pitchRange: ClosedRange<Float> = (20 * .pi / 180)...(80 * .pi / 180)
+    /// 거리 제한: 처음 거리의 0.15~1.3배
+    static let zoomRange: ClosedRange<Float> = 0.15...1.3
+
+    /// 구가 들어오는 시점. 거리 제한의 기준 거리로만 쓴다(화면의 처음 시점은 Map3DScene이 선에 맞춰 정함). viewport는 화면 전체 크기(pt)
+    static func home(_ space: Terrain3D, viewport: CGSize) -> Camera3D
+    /// 제한을 적용한 값 (pitch, 거리는 home의 0.15~1.3배, 목표점 위치·높이, 지형 아래로 내려가지 않기)
+    func clamped(_ space: Terrain3D, home: Camera3D) -> Camera3D
+    /// target + distance × (sin yaw · cos pitch, sin pitch, cos yaw · cos pitch)
+    var position: SIMD3<Float> { get }
+    /// 목표점 거리에서 화면 1pt의 길이(m) = 2 · distance · tan(fovY / 2) / viewportHeight
+    func metersPerPoint(viewportHeight: CGFloat) -> Float
+}
+
+/// 3D 지형 준비물: 밝게·어둡게 지오메트리(색 소스만 다름)와 눈 마스크 이미지. Task.detached에서 만든다
+nonisolated struct Map3DTerrain: @unchecked Sendable {
+    let light, dark: SCNGeometry
+    let snow: CGImage?
+    init(space: Terrain3D, map: SlopeMap)
+}
+
+/// S6 3D 장면. 노드·재질·카메라를 가진다. MainActor(프로젝트 기본)
+final class Map3DScene {
+    let scene: SCNScene
+    let cameraNode: SCNNode
+    private(set) var camera: Camera3D
+    /// 재생 점의 장면 좌표. 점이 없으면 nil (따라가기용)
+    private(set) var dot: SIMD3<Float>?
+
+    /// route: 하강 0회면 빈 배열. viewport: 화면 전체 크기(pt). 카메라는 처음 시점
+    init(space: Terrain3D, terrain: Map3DTerrain, map: SlopeMap, route: [RouteSegment], dark: Bool, viewport: CGSize)
+
+    // 모양
+    func setDark(_ dark: Bool)
+    /// nil: 경로 전체를 진하게, 점 숨김. 값이 같으면 아무것도 하지 않는다
+    func setPlayback(_ now: Date?)
+    func setHighlight(_ run: RunDetector.Run?)
+
+    // 카메라. 모두 제한을 적용하고 cameraNode를 옮긴다. dx·dy는 pt
+    /// 화면 크기와 가려지는 높이(위 110, 아래 시트 높이 + 24)가 바뀔 때
+    func setViewport(_ size: CGSize, topInset: CGFloat, bottomInset: CGFloat, animated: Bool)
+    func orbit(dx: CGFloat, dy: CGFloat)
+    func zoom(by factor: CGFloat)
+    func pan(dx: CGFloat, dy: CGFloat)
+    /// 손짓이 끝남: 화면 1pt 길이가 15% 넘게 바뀌었으면 리본을 다시 만든다
+    func gestureEnded()
+    /// 슬로프·리프트 선에 맞춘 처음 시점으로
+    func resetCamera(animated: Bool)
+    /// 목표점을 p로 (따라가기)
+    func center(on p: SIMD3<Float>, animated: Bool)
+}
+```
+
+- `animated`가 true면 0.25초 `SCNTransaction`, false면 바로. 동작 줄이기 판단은 부르는 쪽(3D-C)이 한다.
+- 리본 만들기는 3D-A의 `ribbon`을 MainActor에서 그대로 부른다(하루 경로와 리조트 선 전체가 몇 ms).
+
+3D-C (`Map3DView.swift`, `DayMapView.swift`)
+
+```swift
+/// SCNView 감싸기. 손짓(끌기·벌리기·두 손가락 끌기·두 번 누르기)을 장면 카메라 함수로 넘긴다
+struct Map3DView: UIViewRepresentable {
+    let scene: Map3DScene
+    var now: Date?
+    var highlight: RunDetector.Run?
+    var dark: Bool
+    /// 시트 높이 + 24
+    var bottomInset: CGFloat
+    var reduceMotion: Bool
+}
+```
+
+- `updateUIView`에서 `setDark`, `setPlayback`, `setHighlight`, `setViewport`를 부르고, 재생 점이 보이는 영역 밖이면(`SCNView.projectPoint`) `center(on:)`.
+- `DayMapView`: `@State is3D`(기본 false, 저장하지 않음), `@State scene3D: Map3DScene?`. 버튼을 처음 누르면 `Task.detached`로 `Terrain3D(terrain:map:)`과 `Map3DTerrain(space:map:)`을 만들고 MainActor에서 `Map3DScene`을 만든 뒤 `is3D`를 켠다. 고도 격자는 `Terrain.layer(…)?.terrain`에서 꺼낸다(다시 읽지 않음). `is3D`면 `Canvas` 대신 `Map3DView`. 툴바 버튼, 공유 동영상 설명, 접근성 이름, 동작 줄이기(`accessibilityReduceMotion`)를 잇는다.
+
+3D-D (`Terrain3DTests.swift`)
+
+Swift Testing. 고도는 기운 평면 격자(`TerrainTests`와 같은 방식), 지도는 JSON으로 만든 작은 `SlopeMap`. 확인 항목은 06-verification R50 "3D 보기" 단위 테스트 줄.
+
+### 지도 표시·난이도 색·슬로프 누르기 (R50, R9, K)
+
+2D와 3D 지도가 같이 쓰는 규칙이다. 결정은 decisions 2026-11-14 "지도 슬로프는 난이도 색 실선", "지도에서 누른 슬로프의 이름", "공유 동영상에는 슬로프·리프트 선을 그리지 않는다". 모양은 07-visual-design 6장 "S6 지도 난이도 색 v1"·"S6 지도 표시 메뉴 v1"·"슬로프 이름 말풍선 v1"·"공유 동영상 v2".
+
+- **난이도 단계:** `SlopeMap.Slope.difficulty`(OSM `piste:difficulty`)를 다섯 단계로 묶는다. novice·easy → 초급, intermediate → 중급, advanced → 상급, expert·freeride·extreme → 최상급, 그 밖과 nil → 정보 없음. 내장 12곳의 슬로프 205개 중 34개가 정보 없음이다.
+- **색:** 밝게/어둡게 순서로 초급 `#2E9E4F`/`#4CC46F`, 중급 `#3A4FB8`/`#7C8FF0`, 상급 `#D93A3A`/`#FF6B6B`, 최상급 `#111418`/`#111418`, 정보 없음 `#7C8A90`/`#7C8A90`. 2D 어둡게의 최상급만 선 아래에 양쪽 0.5pt 넓은 테두리 `#C4D3DA`를 깐다. 3D는 눈 띠 위에 그리므로 어둡게에서도 밝게 값을 쓴다(`dark: false`로 부름).
+- **2D 그리기:** `DayMapDrawing`이 슬로프를 단계 색 2.5pt 실선으로 긋는다(회색 3pt를 바꿈). 면 슬로프는 같은 색 알파 0.2로 채우고 테두리를 긋는다. 지형 바탕이 있든 없든 같은 색이다(`Palette.slope`·`slopeOnTerrain`은 슬로프 선에 더 쓰지 않는다). 리프트 점선은 그대로다.
+- **표시 설정:** `MapLayers`(슬로프·리프트 켬·끔). `DayMapView`가 `@AppStorage("mapShowSlopes")`·`@AppStorage("mapShowLifts")`(Bool, 기본 true)로 기기에 기억한다. 리조트·날짜와 상관없는 한 값이고 서버로 보내지 않는다. 2D는 `DayMapDrawing.layers`, 3D는 `Map3DScene.setLayers`로 넘긴다.
+    - 슬로프 끔: 2D는 슬로프 선·면 채우기를 그리지 않는다. 3D는 색 선 노드만 숨기고 눈 띠(마스크 텍스처)는 그대로 둔다. 누르기 판정을 하지 않고 떠 있던 말풍선을 닫는다.
+    - 리프트 끔: 2D·3D의 리프트 점선과 3D 승·하차장 점을 숨긴다. 3D 리프트 길 눈은 그대로다. 내 경로(탄 리프트 점선 포함)는 표시 설정과 상관없이 그린다.
+    - R9 통과 리조트의 2D 이름 라벨(`showNames`)은 슬로프를 끄면 같이 꺼진다.
+- **메뉴:** 툴바의 3D 전환 버튼 왼쪽에 `Menu`(아이콘 `map`, 접근성 이름 "지도 표시"). `Toggle` 둘("슬로프", "리프트")과 `Section("난이도")` 아래 범례 5줄(색 점 + 초급·중급·상급·최상급·정보 없음, 누를 수 없음). 지도형 S6에만 있고 고도 파일·이용권과 상관없다. 메뉴가 색 점 이미지를 제 색으로 그리는지는 확인 필요(안 되면 작은 팝오버).
+- **누르기 판정:** 2D와 3D가 같은 함수 `SlopePick.nearest`를 쓰고 투영만 다르게 넘긴다. 슬로프 선의 점을 화면 좌표로 옮긴 뒤 누른 점에서 선분까지의 화면 거리를 재서, 허용 거리 22pt 안에서 가장 가까운 슬로프를 고른다. 면 슬로프는 안쪽이면 거리 0(홀짝 교차). 투영이 nil인 점에 걸친 선분은 건너뛴다. 거리가 같으면 `map.slopes`에서 앞선 것.
+    - 2D 투영: `proj.point(lat, lon).applying(확대·이동 변환)`. `Canvas`에 `SpatialTapGesture`.
+    - 3D 투영: `SCNView.projectPoint(scene.space.point(lat:lon:))`의 x·y. 카메라 뒤(z ≥ 1)면 nil. `Map3DView`의 한 번 누르기 인식기(두 번 누르기가 실패한 뒤 인식)가 판정해 `onTap`으로 넘긴다. 능선 뒤에 가려진 슬로프도 잡힐 수 있다(확인 필요: 거슬리면 누른 점의 지형 `hitTest` 깊이보다 먼 점을 뺀다).
+- **말풍선:** `DayMapView`가 `@State picked: SlopePick.Hit?`를 두고 지도 위에 SwiftUI 뷰 `SlopeBalloon`을 겹친다. 위치는 `Hit.anchor`(화면 좌표) 위 12pt, 좌우 16pt 안으로 밀어 넣는다. 글: 이름 또는 "이름 정보 없음", 단계 낱말이 있으면 " · 상급". 지도 손짓이 시작되거나, 빈 곳을 누르거나, 2D ↔ 3D를 바꾸거나, 슬로프를 끄면 `picked = nil`. 화면 좌표에 고정이라 지도가 움직이면 닫는다(따라 움직이지 않음).
+- **R9와의 관계:** `SlopeNames.isShown`(하강에 붙이는 이름, 2D 이름 라벨)은 그대로 R9 통과 리조트만이다. 누르기는 이 값을 보지 않는다.
+- **동영상:** `ShareVideo`는 `DayMapDrawing`을 받아 `layers = .none`, `showNames = false`로 바꿔 그린다. 지형 바탕·내 경로·출처 표기는 그대로다.
+- **접근성:** 지도는 요소 하나로 읽히므로 VoiceOver로는 슬로프를 누를 수 없다. 메뉴의 체크 항목과 범례는 읽힌다. 색만으로 구분하지 않도록 범례와 말풍선에 단계 낱말을 함께 적는다.
+- **범위 밖:** 이름 상시 라벨(2D·3D 모두, decisions 2026-11-14), 슬로프 번호, 리프트 이름 누르기, 하강 카드, 말풍선이 지도를 따라 움직이기.
+
+### 3D v4 (R50, K)
+
+"화면용 3D 보기"의 값과 규칙 가운데 아래를 바꾼다. 결정은 decisions 2026-11-14 "3D v4", 모양은 07-visual-design 6장 "S6 3D 보기 v4". 지형 색·눈 띠·질감은 아래 "3D v5"가 바꾼다. 색은 밝게/어둡게 순서이고 스냅샷으로 조정할 출발점이다. 적지 않은 것(좌표, 메시, 지형 높이 조회, 재생·강조, 손짓, 따라가기, 렌더·배터리, 공유, 개인정보)은 그대로다.
+
+- **고도 과장:** 1.5 × clamp(550 ÷ 슬로프·리프트 높이 차(1.5배 기준 m), 1, 1.7). 하이원·용평 1.5배, 지산 2.55배.
+- **가장자리(`edge`):** 네모가 아니라 원형. 격자 중심에서의 수평 거리 ÷ (격자 짧은 변 길이의 절반)이 0.8 → 1.0일 때 1 → 0, 그 밖은 음수. 눈 마스크 B와 카메라의 낮은 기울기 제한이 같은 값을 쓴다.
+- **팔레트(`WinterPalette`):** 활엽수 `#8F989F`/`#2B3A52`, 침엽수 `#3E5650`/`#16243A`, 높은 곳 눈 `#E9EFF2`/`#768C9B`, 바닥 눈 `#DDE6EC`/`#6F86A8`, 슬로프 눈 `#F6F9FC`/`#EAF1FB`, 그늘(주변광) `#93A6C6`/`#6E7FA6`, 하늘 맨 위 `#8FBDE4`/`#1C2A44`, 하늘 45% 지점 `#C9DFF0`/`#5C7396`, 안개 `#DCE8F0`/`#3A4E6E`, 눈 띠 발광 0/0.3, 조명 번짐 색 `#BFD4FF`(어둡게만), 그림자 밝기 0.62/0.8, 골 음영 세기 0.12/0.2. 3D의 색은 모두 이 타입 하나에 둔다.
+- **정점 색(`colors`):** 빛 방향 `L` = normalize(−0.58, 0.57, −0.58)(해 높이 35도). 얼룩은 굵은 얼룩만 쓴다(잔 얼룩 `hash(r, c)` 항 삭제, `noise` = 굵은 얼룩). 순서:
+    1. 숲 색: 침엽수 비율 규칙은 v3 그대로.
+    2. 바닥 눈: smoothstep(0.80, 0.97, 법선 y) × (0.25 + 0.35 × `ndl`)만큼 바닥 눈 색을 섞는다(최대 60%).
+    3. 높은 곳 눈: 0.6 × smoothstep(0.45, 1.0, 상대 고도).
+    4. 드리운 그림자: 칸에서 `L`의 수평 방향으로 한 칸씩 최대 48칸 걸으며 (그 칸 높이 − 내 높이) ÷ 수평 거리의 최댓값 t를 구한다(높이는 과장 적용 값). `shade` = smoothstep(0, 0.07, t − 0.70)(0.70 = tan 35도). 색 × mix(1, 그림자 밝기, `shade`).
+    5. 골 음영: `ao` = clamp((내 높이 − 7×7칸 평균 높이) ÷ 60m, −1, 1)(과장 적용 값). 색 × (1 + 골 음영 세기 × `ao`).
+- **눈 마스크(`snowMask`):** 덮임 값 대신 거리를 넣는다. R = 가장 가까운 슬로프 선까지 수평 거리, G = 리프트 선까지 거리, 둘 다 `255 × min(d, 64) ÷ 64`(선 위 0, 64m 이상 255, 한 단계 0.25m). 면 슬로프 안쪽은 0, 바깥은 테두리까지 거리(v3의 +25 삭제). B = `edge`(원형). 거리를 재는 범위는 선 조각 둘레 70m. 크기와 색 공간은 v3 그대로.
+- **셰이더 수정자:** 인자 `slopeW`(슬로프 반폭 m), `liftW`(8), `glow`, `rimColor`를 더한다. `d = R × 64`, `a = fwidth(d)`(안 되면 화면 1pt 길이 인자), `snow = 1 − smoothstep(slopeW − a, slopeW + a, d)`. 밝게는 띠 바깥 0~6m를 색 × 0.82(나무 그늘 테두리), 어둡게는 띠 바깥 0~14m에 `rimColor`를 20%까지 섞는다(조명 번짐). 리프트 길 눈은 같은 식에 반폭 `liftW`, 세기 0.5, 높은 곳 눈 색. 슬로프 눈을 섞은 뒤 `emission += 슬로프 눈 색 × snow × glow`. `slopeW` = max(16, 2.5 × 화면 1pt 길이)를 카메라가 바뀔 때마다 넣는다(보이는 폭 32m, 멀리서도 최소 5pt).
+- **숲 질감:** `Terrain3D.forestTexture()`가 256×256 회색 이미지를 만든다. 밝기 0.82 바탕에 지름 2~3px의 밝은 점(1.0)을 면적의 약 35%로 흩는다. 위치는 `hash`로 정해 매번 같다. 지형 재질의 `diffuse.contents`에 넣고 `wrapS`·`wrapT` = repeat, 밉맵 켬, `contentsTransform` 배율 = `space.forestRepeat`(격자 가로·세로 길이 m ÷ 180). 눈 띠와 가장자리는 수정자가 그 위에 섞는다.
+- **조명·하늘:** 방향광은 (−0.58, 0.57, −0.58)에서 온다. 주변광은 팔레트의 그늘 색, 방향광 = 1 − 주변광(선형). 실시간 그림자는 쓰지 않는다. 배경 그라데이션은 맨 위 → 45% 지점 → 60% 지점부터 안개 색.
+- **카메라:** 처음 pitch 34도. 처음 시점 맞춤의 위 여백 150. 낮게 기울일 때 격자 경계를 가리는 제한의 기준도 34도(34도보다 낮을 때만 세우고 최대 34도까지). 그 밖의 제한은 그대로.
+- **슬로프 선:** 난이도 단계별로 리본을 묶어 지오메트리 5개(단계마다 단색 재질). 1.5pt, 색은 `SlopeStyle.color(difficulty:dark: false)`. 면 슬로프는 테두리 선. `setLayers`로 숨긴다.
+- **리프트:** 점선은 그대로(1.5pt, `#34474E`/`#C4D3DA`). 리프트마다 양 끝에 승·하차장 점: 재생 점과 같은 방식(카메라를 보는 판 + 이미지 + 화면 1pt 길이 배율)으로 6pt 원, 점선과 같은 색, 테두리 1pt `#FFFFFF`/`#0B161B`. 지형에 가려진다(깊이 읽기 켬). 그리는 순서는 리프트 다음.
+- **경로:** ① 리본 폭 고정: 두 가장자리 정점 l·r을 구한 뒤 m = (l + r) ÷ 2, l = m + normalize(l − m) × 폭 ÷ 2(r도 같게). ② 표시용 스무딩: 경로 리본만 Chaikin 2회(`smooth: 2`). `cuts`는 입력 점 기준 그대로 돌려준다(개수 = 입력 점 수, 늘기만 함, 마지막 = 삼각형 수). ③ 하강 4.5pt, 테두리는 양쪽 1.25pt(하강 7pt, 탄 리프트 5pt, 강조 9.5pt). ④ 번짐 리본: 하강 경로 아래 12pt, 같은 색 알파 0.22, 어둡게는 더하기 섞기(`blendMode = .add`). 그리는 순서: 슬로프 색 선 < 리프트 < 승·하차장 점 < 경로 번짐 < 경로 테두리 < 옅은 경로 < 진한 경로 < 강조 테두리 < 강조 < 재생 점.
+- **처음 열 때:** `Map3DView`가 `SCNView.prepare(_:completionHandler:)`로 장면을 미리 그려 셰이더를 데운 뒤 `onReady`를 부르고, `DayMapView`가 그때 0.2초 겹쳐 바꾼다(그 전까지 2D). `flyIn`이 true면 `onReady`와 함께 날아 들어온다: (yaw + 0.38rad, pitch 62도, 거리 × 1.35) → 처음 시점, 1.1초, 진행 = 1 − (1 − t)³. 프레임마다 `Camera3D` 값을 보간해 제한·안개·눈 띠 폭이 같이 간다(제한에 걸리면 제한 값). 그동안만 계속 그린다. 손짓이 시작되면 그 자리에서 멈춘다. `DayMapView`는 장면을 만든 뒤 첫 표시이고 동작 줄이기가 꺼져 있을 때만 `flyIn`을 켠다.
+- **성능:** 그림자 굽기는 하이원 11.6만 칸 × 48칸으로 10~25ms 추정(확인 필요), 질감 텍스처 약 5ms. 버튼 → 3D 표시 0.5초, 메모리 증가 60MB 목표는 그대로다. 첫 표시는 셰이더 데우기만큼 늦어질 수 있다(실기기 확인).
+- **범위 밖:** 고도 배지, 3D 등고선, 재생 점 3D 마커·꼬리, 부드러운 따라가기, 손짓 관성, S18 3D 미리보기, 하강 카드, 속도색 경로, 공중 케이블 리프트, 3D 공유 동영상.
+
+**v4 파일 분할과 경계 API (동시에 구현)**
+
+(0)을 먼저 넣으면 (b)(c)(d)는 서로 기다리지 않는다. 각 묶음은 자기 파일만 고친다.
+
+| 묶음 | 파일 | 맡는 일 | 기대는 것 |
+| --- | --- | --- | --- |
+| (0) | `SlopeMate/MapStyle.swift` (새 파일), `SlopeMateTests/MapStyleTests.swift` (새 파일) | `MapLayers`, `SlopeStyle`, `SlopePick`과 단위 테스트 | `SlopeMap` |
+| (a) | `tools/dem/build.py`, `Resources/maps/dem-*.json` | 여백 최소 1,500m·한 변 400칸 상한으로 12곳 다시 만들기 | 없음 |
+| (b) | `SlopeMate/Terrain3D.swift`, `SlopeMateTests/Terrain3DTests.swift` | 과장, 원형 `edge`, `WinterPalette`, `colors`(바닥 눈·그림자·골 음영), 거리 마스크, `forestTexture`, `ribbon`(폭 고정·`smooth`). 이 테스트 파일의 `Camera3D` 기대값(34도)도 함께 고침 | (a) 파일 |
+| (c) | `SlopeMate/Map3DScene.swift`, `SlopeMate/Map3DView.swift`, `SlopeMateTests/Map3DSceneTests.swift` (새 파일) | 조명·하늘·질감 입히기, 셰이더, 카메라 34도, 난이도 색 선, 승·하차장 점, 경로 번짐·테두리, `setLayers`, 미리 데우기·`flyIn`, 3D 누르기 | (0), (b) API |
+| (d) | `SlopeMate/DayMap.swift`, `SlopeMate/DayMapView.swift`, `SlopeMate/ShareVideo.swift`, `SlopeMate/SlopeBalloon.swift` (새 파일) | 2D 난이도 색·`layers`, 2D 누르기, 지도 표시 메뉴, 말풍선, `Map3DView` 새 인자 연결, 동영상에서 선 빼기 | (0), (c)의 `Map3DView` 인자 |
+
+(0) `MapStyle.swift`
+
+```swift
+import UIKit
+
+/// 지도 표시 설정. DayMapView가 @AppStorage("mapShowSlopes")·("mapShowLifts")로 기억한다
+nonisolated struct MapLayers: Equatable, Sendable {
+    var slopes = true
+    var lifts = true
+    /// 공유 동영상: 슬로프·리프트 선 없음
+    static let none = MapLayers(slopes: false, lifts: false)
+}
+
+/// 슬로프 난이도 단계와 색 (07-visual-design "S6 지도 난이도 색 v1")
+nonisolated enum SlopeStyle {
+    enum Level: CaseIterable, Sendable { case beginner, intermediate, advanced, expert, unknown }
+    /// OSM piste:difficulty → 단계. novice·easy / intermediate / advanced / expert·freeride·extreme / 그 밖·nil
+    static func level(_ difficulty: String?) -> Level
+    /// sRGB hex. 3D 눈 띠 위 선은 dark: false로 부른다
+    static func hex(_ level: Level, dark: Bool) -> UInt32
+    static func color(difficulty: String?, dark: Bool) -> UIColor
+    /// 2D 어둡게의 최상급만 0xC4D3DA(선 아래 양쪽 0.5pt), 나머지는 nil
+    static func casing(_ level: Level, dark: Bool) -> UInt32?
+    /// "초급"·"중급"·"상급"·"최상급". unknown은 nil(범례에서는 "정보 없음")
+    static func label(_ level: Level) -> String?
+}
+
+/// 지도에서 누른 슬로프 찾기. 2D·3D가 투영만 다르게 넘긴다
+nonisolated enum SlopePick {
+    struct Hit: Equatable, Sendable {
+        let slopeId: String
+        let name: String?           // OSM 이름. nil이면 "이름 정보 없음"
+        let difficulty: String?
+        let anchor: CGPoint         // 선 위에서 누른 점과 가장 가까운 점(화면 좌표). 말풍선 자리
+    }
+    /// 허용 거리(pt)
+    static let tolerance: CGFloat = 22
+    /// project: [위도, 경도] → 화면 좌표. 보이지 않으면 nil(그 점에 걸친 선분은 건너뜀)
+    static func nearest(to point: CGPoint, in map: SlopeMap, tolerance: CGFloat = tolerance,
+                        project: ([Double]) -> CGPoint?) -> Hit?
+}
+```
+
+(b) `Terrain3D.swift`에서 바뀌는 것(나머지 시그니처는 그대로)
+
+```swift
+nonisolated extension Terrain3D {
+    /// 눈 마스크 R·G의 255가 뜻하는 거리(m)
+    static let maskRange: Float = 64
+    /// 숲 질감 타일 한 변(m)
+    static let forestTile: Float = 180
+    /// 침엽수 점묘 질감(256², 회색, 밝기 0.82~1.0). 매번 같은 그림
+    static func forestTexture(size: Int = 256) -> CGImage?
+    /// 질감 반복 횟수 = 격자 가로·세로 길이(m) ÷ forestTile. contentsTransform 배율
+    var forestRepeat: SIMD2<Float> { get }
+
+    /// 3D 색 전부. sRGB 0~1
+    struct WinterPalette {
+        let broadleaf, conifer, highSnow, groundSnow, slopeSnow: SIMD3<Float>
+        let shade, skyTop, skyMid, fog, rimColor: SIMD3<Float>
+        let glow, shadow, ao: Float     // 0/0.3, 0.62/0.8, 0.12/0.2
+        init(dark: Bool)
+    }
+
+    /// smooth: Chaikin 횟수(경로만 2). cuts는 입력 점 기준 그대로. 리본 3D 폭은 어디서나 width
+    func ribbon(_ line: [(lat: Double, lon: Double)], width: Float, lift: Float,
+                dash: (on: Float, off: Float)? = nil, maxStep: Float = 15, smooth: Int = 0) -> Ribbon
+}
+```
+
+- `exaggeration`, `edge(_:)`, `colors(_:dark:)`, `snowMask(map:scale:)`은 시그니처 그대로 뜻만 바뀐다(위 규칙). `SnowMask`의 R·G는 거리, B는 원형 가장자리.
+
+(c) `Map3DScene.swift`·`Map3DView.swift`에서 더하는 것
+
+```swift
+extension Map3DScene {
+    /// 누르기 투영과 카메라 계산에 쓰는 값을 밖에서 읽게 연다
+    var space: Terrain3D { get }
+    var map: SlopeMap { get }
+    /// 슬로프 색 선, 리프트 점선·승하차장 점 보이기·숨기기. 눈 띠와 내 경로는 그대로. 기본은 둘 다 켬
+    func setLayers(_ layers: MapLayers)
+    /// 날아 들어오기의 진행 0…1. 1이면 처음 시점
+    func setFlyIn(progress: Float)
+}
+
+struct Map3DView: UIViewRepresentable {
+    // 기존: scene, now, highlight, dark, bottomInset, reduceMotion
+    var layers: MapLayers
+    /// 첫 표시에 날아 들어올지(DayMapView가 동작 줄이기까지 판단해 넘김)
+    var flyIn: Bool
+    /// 미리 그리기가 끝남. DayMapView가 이때 겹쳐 바꾼다
+    var onReady: () -> Void
+    /// 한 번 누르기 결과. 슬로프가 없거나 layers.slopes가 꺼져 있으면 nil. 지도 손짓이 시작될 때도 nil로 부른다
+    var onTap: (SlopePick.Hit?) -> Void
+}
+```
+
+- `Map3DScene.init`의 인자는 그대로다. `Camera3D`의 타입·함수도 그대로이고 처음 pitch와 낮은 기울기 기준만 34도로 바뀐다.
+- `Hit.anchor`는 `SCNView` 좌표다. `Map3DView`가 지도 영역을 꽉 채우므로 `DayMapView`의 지도 좌표와 같다.
+
+(d) `DayMap.swift`·`DayMapView.swift`·`ShareVideo.swift`
+
+```swift
+nonisolated struct DayMapDrawing {
+    // 기존: map, route, showNames, dark, terrain
+    /// 슬로프·리프트 선을 그릴지. 내 경로는 늘 그린다
+    var layers = MapLayers()
+}
+
+/// 슬로프 이름 말풍선 (SlopeBalloon.swift)
+struct SlopeBalloon: View {
+    let hit: SlopePick.Hit
+}
+```
+
+- `DayMapView`: `@AppStorage("mapShowSlopes") showSlopes = true`, `@AppStorage("mapShowLifts") showLifts = true`, `@State picked: SlopePick.Hit?`, `@State flownIn = false`. 2D는 `SlopePick.nearest(to:in:project:)`를 `proj.point`로 부른다.
+- `ShareVideo.Content`를 만들 때 `drawing.layers = .none`, `drawing.showNames = false`.
+
+### 3D v5 (R50, R54, K)
+
+"3D v4"의 지형 표면을 고해상도 지형 질감으로 바꾼다. 2026-11-15 확정(`textureVersion` 10). 결정은 decisions 2026-11-14 "3D v5"와 2026-11-15 다섯 항목, 모양은 07-visual-design 6장 "S6 3D 보기 v5". 적지 않은 것(좌표, 과장, 원형 `edge`, 난이도 색 선, 리프트, 경로, 날아 들어오기, 누르기, 표시 설정)은 v4 그대로다.
+
+- **파이프라인:**
+
+    | 단계 | 입력 | 출력 |
+    | --- | --- | --- |
+    | 1. 고도 올리기 | `Terrain`(내장 고도 격자, 약 30m) | 질감 해상도의 매끈한 고도(부드러운 보간) |
+    | 2. 음영 | 1의 고도, 고정 태양 방향(v4와 같은 방향·높이 35도) | 텍셀마다 빛 받는 정도, 드리운 그림자, 약한 골 음영 |
+    | 3. 슬로프 눈 | `SlopeMap`(OSM 슬로프 면·선, 리프트 선) | 텍셀마다 눈 자리 0~1. 선 슬로프 띠, 면 슬로프 채움, 리프트 길, 베이스·정상 눈밭 |
+    | 4. 스키장 구역 | 슬로프·리프트 선까지 거리 | 구역 값 0(밖)~1(안). 25m 격자 |
+    | 5. 땅 덮개 | 1의 고도·기울기, 상대 고도, 3·4 | 텍셀마다 숲 밀도, 침엽수·활엽수 나무, 눈(구역 밖의 높은 능선·급사면·낮은 평지·개활지) |
+    | 6. 합치기 | 2~5 | sRGB RGBA 질감 한 장. 모드 색은 셰이더 |
+
+- **질감 크기:** 긴 변 = min(2048, 16 × 격자 긴 변 칸 수), 짧은 변은 격자 가로·세로 길이(m) 비율(하이원 한 텍셀 약 5m, 지산 약 2m). 고도는 Catmull-Rom으로 올리고 법선은 텍셀마다 구한다. 첫 행이 북쪽이고 메시 UV(격자)로 입힌다. 밉맵을 켠다.
+- **숲 점묘:** 나무 위치는 `hash`로 정해 같은 입력이면 같은 그림이 나온다. 리조트 전체에 한 번 그리므로 v4의 `forestTexture`(180m 반복)와 `forestRepeat`는 쓰지 않는다.
+- **입히기:** 지형 재질의 `diffuse.contents`에 질감을 넣는다. 재질은 조명 없음(`.constant`)이고 메시에 법선·정점 색을 넣지 않으며 장면에 빛을 두지 않는다. 가장자리 clamp, 밉맵 선형, 비등방 8. v4의 `colors`(정점 색 숲·눈·그림자), 눈 마스크의 슬로프·리프트 거리(R·G), 셰이더 수정자의 눈 띠·그늘 테두리·발광·번짐, 인자 `slopeW`는 쓰지 않는다. 원형 가장자리를 안개 색으로 물들이는 처리는 남긴다.
+- **밝게·어둡게:** 질감은 한 장이다. 셰이더가 질감 밝기(0.03 → 0.8)에 따라 `tintLow` → `tintHigh`를 곱한다. 밝게는 둘 다 1, 어둡게는 (0.34, 0.42, 0.66) → (0.50, 0.60, 0.86). 모드가 바뀌면 셰이더 인자와 하늘만 바꾼다. 두 장을 만드는 방식은 대체됨.
+- **실행 위치:** `Map3DTerrain`을 만드는 `Task.detached` 안에서 메시와 함께 만든다. 그동안 2D를 그대로 보여 주는 규칙은 같다. 네트워크를 쓰지 않는다.
+- **캐시:** 항상 쓴다. 리조트마다 파일 하나 `Caches/terrain3d/<resortId>.rgba`(RGBA 다음 끝 16바이트에 키·너비·높이). 읽을 때 키가 다르면 다시 만들어 덮어쓰므로 옛 파일이 쌓이지 않는다. 너비·높이는 4096 이하인지 먼저 본다. 적중하면 파일을 메모리 매핑해 복사 없이 이미지로 쓴다. 키는 입력의 FNV-1a 64비트 해시다: `textureVersion`(10), 질감 긴 변, 격자 크기·위치·고도 값, 과장값·바닥 높이, 회전각, 슬로프(면 여부 포함)·리프트 좌표. 생성 규칙을 바꾸면 `textureVersion`을 올린다. 질감에는 리조트 데이터만 들어가고 내 경로는 들어가지 않는다. 첫 생성 중에는 3D 버튼이 진행 표시로 바뀌고, 준비 중 경로가 바뀌면 결과를 버린다.
+- **메모리:** 2048 × 2048 RGBA 한 장이 약 16MB, 밉맵을 더하면 약 21MB다. 한 장만 올린다. 3D를 켠 뒤 메모리 증가는 실기기에서 재서 적는다(목표 60MB 이하).
+- **지도 방향:** `MapProjection.angle` = 리프트 방위의 원형 중위(다른 방위들과의 각거리 합이 가장 작은 리프트 방위, 합이 같으면 벡터 합에 가까운 쪽). 리프트 2개 이하는 벡터 합, 없으면 0. 2D·3D·질감 음영이 같이 쓴다.
+- **음영:** 해 방향 (−0.58, 0.57, −0.58)(높이 35도, 처음 시점의 화면 왼쪽 위). 빛 = 하늘 (0.55, 0.62, 0.78) × (0.8 + 0.25 × 골 음영 + 0.15 × 잔 골) + 해 (0.95, 0.90, 0.84) × 법선·해 × (1 − 0.75 × 그림자). 그림자는 해 쪽으로 최대 48칸을 걸어 smoothstep(0, 0.3, 기울기 − 0.70). 골 음영은 (내 높이 − 7 × 7칸 평균) ÷ 60m. 잔 골은 5텍셀 떨어진 네 점 평균과의 차 ÷ 6m.
+- **슬로프 눈:** 선 슬로프 반폭 20m, 가장자리 ±6m(중심에서 14m까지 가득, 26m에서 0). 면 슬로프는 안쪽 가득, 테두리 밖 12m까지 옅어짐. 리프트 길 반폭 6m ± 3m, 농도 0.9.
+- **베이스·정상 눈밭:** 끝점 = 리프트 양 끝과 선 슬로프 양 끝(면 제외), 바깥 방향 = 끝점 − 직전 점. 고도는 장면 높이.
+    - 후보: 끝점 고도 범위의 아래 15%(베이스)나 위 15%(정상) 안(`baseLevel` 0.15). 나머지는 덩어리도 없고 묶이지도 않는다.
+    - 묶음: 후보 리프트 끝과, 거리 250m 미만(`baseJoin`)·같은 종류·고도 차가 범위의 7% 이하(`baseRise` 0.07)인 후보 끝점. 슬로프 끝끼리는 묶지 않는다. 끝점 둘 이상인 묶음만 칠한다.
+    - 모양: 끝점에서 바깥으로 30m(`basePush`) 민 중심에 반지름 50m(`baseRadius`) 덩어리, 중심끼리 최소 신장 트리로 이은 반폭 34m(`baseBand`) 띠. smooth min 폭 13m(`baseBlend`).
+    - 방향 페이드: 끝점 기준 바깥쪽 거리 −5m(`baseBack`) 이하는 0, +15m(`baseFront`) 이상은 1. 띠는 양 끝 값을 보간한다.
+    - 가장자리: 잡음 ±12m(`baseWobble`, 45m 65% + 17m 35%)로 경계와 방향 페이드를 흔들고 14m(`baseFade`)에 걸쳐 0이 된다.
+- **스키장 구역:** 슬로프 선·면 테두리·리프트 선까지 거리 150m(`zoneNear`) 안은 1, 250m(`zoneFar`) 밖은 0, 사이는 smoothstep. 25m(`zoneCell`) 격자에서 구해 겹선형으로 읽는다. 구역 값 z만큼 낮은 평지·높은 능선·급사면·잡음 개활지를 끈다.
+- **숲:** 밀도 = 0.8 × (z + (1 − z) × 잡음 개활지) × (1 − 0.85 × 평지)(1 − 0.9 × 능선)(1 − 0.7 × 급사면)(1 − 눈 자리). 잡음은 110m 55% + 420m 45%를 0.08 → 0.3으로. 평지는 법선 y 0.985 → 0.997이고 상대 고도 0.15 → 0.3 아래, 능선은 상대 고도 0.86 → 0.97, 급사면은 법선 y 0.62 → 0.5. 숲 바닥 색은 눈에 밀도 × 0.7만큼 섞는다. 나무는 3텍셀 칸마다 하나(지름 2.8~4.3텍셀), 밀도가 있을 확률이다. 나무 그림자 0.5, 활엽 12~42%(낮은 곳에 많음).
+- **카메라:** 처음 시점 거리는 선에 맞춘 값 그대로 쓴다(0.6배 당기기 삭제).
+- **처음 시점 맞춤 (decisions 2026-11-14 "3D 처음 시점: 공통 맞춤 + 리조트별 값"):**
+    - 안전 영역(pt): x 16 ~ W − 16, y 150 + 24 ~ H − (0.25H + 24). 시트 높이는 늘 25% 기준이다.
+    - 점: 모든 슬로프·리프트 점(솎지 않음, 먼 점 제외 없음). `view3D.excludeLifts`의 리프트만 뺀다.
+    - 풀기: yaw·pitch를 고정하고 최대 8번 반복한다. ① 점을 화면에 투영(실제 그릴 때와 같이 카메라를 보이는 영역 가운데로 내린 상태)해 상자를 구한다 ② 거리 × max(상자 폭 ÷ 영역 폭, 상자 높이 ÷ 영역 높이) ③ 상자 가운데가 영역 가운데에 오게 목표점 이동. 배율이 1 ± 0.002, 가운데 차이가 0.5pt 안이면 끝낸다. 여유 배수(1.05)는 쓰지 않는다.
+    - pitch 42도 고정(자동으로 올리지 않음), yaw 0. `view3D.pitch`(30~60도로 제한)·`view3D.yaw`가 있으면 그 값. 맞춘 뒤 `view3D.zoom`(기본 1, 0.4~1.5로 제한)을 거리에 곱하고 다시 가운데로 옮긴다. yaw는 `Camera3D.yaw`와 같은 부호(양수 = 카메라가 오른쪽으로)이고 2D 방향과 질감 음영은 바꾸지 않는다.
+    - 고도 원 밖: 시트 뒤(화면 아래 25%)는 허용. 시트 위 선(y = 0.75H)의 가운데·양 끝이 보는 땅은 `edge` 0.5 이상.
+    - `resorts.json` 선택 항목: `"view3D": {"yaw": 도, "pitch": 도, "zoom": 배수, "excludeLifts": [리프트 id]}`. 항목과 각 값 모두 없어도 된다(`Resort.view3D: View3D?`, 값도 옵셔널).
+    - 지금 값(2026-11-15): yaw만 쓴다. 하이원 30, 무주 20, 비발디 15, 엘리시안 15, 휘닉스 −15, 웰리힐리 −15, 곤지암 −15. 용평·알펜시아·오투·지산·에덴밸리는 항목이 없다.
+    - 12곳 여백을 같게 맞추는 목표는 대체됨(decisions 2026-11-15 "3D 처음 시점: 리조트별 `view3D`로 특화").
+- **데이터 제외:** `tools/osm/build.py` `NOT_SLOPES`의 OSM id는 슬로프에서 뺀다(비발디 스노위하우스 `way/545967313`, 웰리힐리 하프파이프 선 `way/1037974232`).
+- **면 슬로프:** 3D는 질감의 눈 + 테두리 리본만(채움 지오메트리 없음). 2D는 난이도 색 20% 채움 + 테두리. `SlopePick.Hit.area`로 이름 없는 면의 말풍선을 "슬로프 구역"으로 한다(난이도가 있으면 뒤에 붙음).
+- **화면 아래·하늘:** 지형이 끝나는 화면 아래쪽은 안개 색을 지형 색 쪽으로 이어 빈 화면이 생기지 않게 한다. 배경 그라데이션과 원형 가장자리 사이에 흰 띠가 남지 않게 가장자리 색과 배경 안개 색을 맞춘다.
+- **성능 목표(하이원, Release):** 질감 한 장 생성 300ms 이하, 버튼 → 3D 표시 0.5초 이내는 그대로. 측정: 시뮬레이터 Debug 테스트에서 하이원 생성 5.7~8.0초(참고값), Release·실기기는 아직 재지 않았다. 두 번째부터는 캐시를 읽는다. 2D 지도와 공유 동영상에는 영향이 없다.
+- **범위 밖:** 위성 사진, 나무·건물 3D 모형, 계절·적설량에 따른 질감, 리조트별 미리 만든 질감 내장, 질감 해상도 선택.
+
+**v5 파일 경계**
+
+| 파일 | 맡는 일 | 기대는 것 |
+| --- | --- | --- |
+| `SlopeMate/Terrain3D.swift` | 질감 생성(위 1~5, 순수 계산, SceneKit 없음), `WinterPalette`의 v5 색. `colors`·거리 마스크·`forestTexture` 정리 | `Terrain`, `SlopeMap` |
+| `SlopeMate/Map3DScene.swift` | `Map3DTerrain`이 질감 한 장을 들고 있음(`Terrain3D.cachedGroundTexture`로 받음), 재질에 입히기, 모드 전환(셰이더 색조), 셰이더 수정자에서 눈 띠 삭제, 처음 시점 거리, 아래 안개·하늘 흰 띠 | 질감 생성 API |
+| `SlopeMate/Map3DView.swift`·`SlopeMate/DayMapView.swift` | 바뀌지 않는다(준비는 `Map3DTerrain` 안). 캐시를 쓰면 읽기·쓰기도 `Map3DTerrain` 쪽 | 없음 |
+| `SlopeMateTests/Terrain3DTests.swift`·`Map3DSceneTests.swift` | 06-verification R50 "3D v5" 단위 테스트 줄, v4 눈 띠·정점 색 기대값 정리(`homePitch34` 포함) | 위 API |
+
+**S19 고해상 패치 (R50, R54, K)**
+
+S19는 하강 하나에 맞춰 가까이 보므로 리조트 질감(텍셀 2~4m)의 나무가 점으로 보인다. S19를 열면 처음 시점에 보이는 땅만 같은 규칙으로 다시 그려 덮는다. 결정은 decisions 2026-11-15 "S19 고해상 패치".
+
+- **범위:** `Map3DScene.detailWindow()`가 처음 시점(날아 들어오기가 끝난 자리, 화면 크기가 정해진 뒤)에서 화면 전체(시트 뒤 포함) 7×9 점의 광선을 지형까지 걷고(`Camera3D.ground`, 거리의 1/32씩 3배까지), 닿은 곳을 감싸는 격자 범위 + 2칸을 고른다. 하늘에 닿는 광선은 뺀다.
+- **질감:** `Terrain3D.groundTexture(window:)`가 그 범위만 긴 변 2048로 그린다. 높이·눈 띠·베이스 눈밭·스키장 구역·음영 규칙은 리조트 질감과 같다. 나무만 다르다. 7m 칸마다 하나, 별 모양 수관(9갈래 ±14%, 5갈래 ±6%), 꼭대기가 밝고 층마다 결, 그림자는 해 반대쪽으로 반지름의 2.6배 길이(두 칸 떨어진 나무까지 본다).
+- **덮기:** 셰이더가 UV 사각형(`detailRect`) 안에서 패치를 샘플해 섞는다. 가장자리 6%에서 리조트 질감으로 넘어간다. 패치가 오기 전에는 리조트 질감만 보이고, 오면 `detailMix`를 0.6초에 0 → 1로 올린다.
+- **시점:** 3D가 처음 보일 때(`onReady`) `loadDetail()`을 한 번 부른다. 메인 스레드 밖에서 만들고 준비되면 덮는다. 캐시는 없다(열 때마다 만든다). 화면을 닫아도 만들던 것은 끝까지 돌고 결과만 버린다.
+- **측정:** 시뮬레이터 Debug에서 3D가 보인 뒤 덮일 때까지 약 20~40초(참고값, 용평 하강 1). 실기기 Release 시간·메모리는 아직 재지 않았다.
+- **범위 밖:** S6 확대, 공유 영상 따라가기 카메라(결정 대기).
 
 ### 서버 (Firestore)
 
@@ -171,6 +659,7 @@ erDiagram
 | Firebase Hosting | 시간표, 초대 페이지, 지도 갱신 | 무료 할당량 있음 | 전송량 | 할당량 수치는 출처마다 다름 |
 | WeatherKit (2.0) | 날씨, 예상 설질 | 월 50만 회 | | Apple 공식 (2026-11-07 확인) |
 | OpenStreetMap | 슬로프 지도 | 무료 (ODbL) | | 출처 표시, 가공본 공개 의무 |
+| Copernicus DEM GLO-30 | 하루 기록 지도의 지형 바탕 (R50) | 무료 | | 복제·배포·가공 허용, 출처 문구와 면책 문장 표시 ([라이선스](https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Data/DEM/resources/license/License-COPDEM-30.pdf), 2026-11-13 확인). 받는 곳은 AWS 공개 버킷 `copernicus-dem-30m`(익명, 경로는 decisions 2026-11-13, 가공 때만 받고 앱은 받지 않음) |
 
 **사용량 계산식 (하루 기준)**
 - 크루 화면 읽기 = 크루 사용자 수 × 하루 조회 수 × 크루원 수
@@ -201,6 +690,10 @@ erDiagram
 | 개인정보처리방침 | 수집 항목: 표시 이름, Apple 로그인 식별자, 시즌 합계, 리조트별 방문일 수, 크루 소속, 신고 내용(신고 대상 이름, 접수 후 90일 보관). Firestore는 서울, **Firebase Authentication(로그인 정보, 접속 IP 수 주간 보관)은 미국**, Firebase Hosting(웹페이지·설정 파일 방문 IP, 수개월, 가입하지 않아도 처리), WeatherKit(리조트 좌표, 접속 IP, 가입과 무관)과 함수 접속 기록(IP, 30일), 문의 메일(답변 뒤 1년) → 국외 이전 항목(이전 국가, 받는 자, 항목, 보유 기간) 고지. 익명 표본은 개별로 저장하지 않고 집계값만 남긴다고 고지. 익명성에 대한 최종 판단은 위치정보지원센터·개인정보 상담과 함께 확인. 초안은 `/privacy`(hosting/public/privacy.html)에 공개하고 M3에서 최종 점검 |
 | R22 테스트 빌드 | 테스트 기록 내보내기는 별도 빌드 설정(TestFlight 전용 플래그)에서만 컴파일된다. 앱스토어 제출 전 체크리스트에서 이 기능이 빠졌는지 확인한다 |
 | OSM 라이선스 | 앱 안에 "© OpenStreetMap contributors"와 라이선스 링크. 가공한 슬로프·리프트 데이터 묶음은 앱 코드와 분리해 ODbL로 공개한다(예: 공개 저장소). 앱 코드 공개 의무는 없다 |
+| 고도 데이터 라이선스 (R50) | Copernicus DEM GLO-30 라이선스는 복제·배포·공중 전달·가공을 무료로 허용하고 상업 이용을 막지 않는다. 의무: 가공본에는 "produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved" 문구, 배포 고지에 면책 문장(라이선스 6조 (c) 영문 원문 + 한국어 번역, 07-visual-design 참고), 공식 후원처럼 보이지 않게 할 것. 설정의 지도 데이터 출처 화면에 영문 원문 전체와 한국어 번역을, 지도 모서리에 짧은 표기를, 공유 동영상에 영문 전체를 넣는다. 가공한 격자를 따로 공개할 의무는 없다 |
+| 지형 바탕 (R50) | 고도 격자는 앱에 들어 있고 음영·등고선은 기기 안에서 계산한다. 지도 타일이나 고도 데이터를 실행 중에 받지 않으므로 사용자가 어느 리조트의 어느 곳을 보는지 밖으로 나가지 않는다. 인터넷 없이 동작한다. 고도 격자는 지도 바탕에만 쓰고 기록과 섞어 저장하거나 서버로 보내지 않는다 |
+| 3D 보기 (R50) | 3D 장면은 앱에 든 고도 격자와 OSM 선, 기기 안 경로로 SceneKit이 기기에서 그린다. 지도·지형 타일을 받지 않고 네트워크 요청이 없다. 장면과 카메라 위치는 저장하거나 보내지 않는다. 지형 질감을 캐시에 둘 때도 리조트 데이터로 만든 그림뿐이고 경로는 들어가지 않는다. 공유 동영상에는 3D가 들어가지 않는다 |
+| 시즌 이용권 (R54) | 결제와 환불은 Apple이 처리하고 우리는 결제 정보를 받지 않는다. 이용권 여부는 기기에서 StoreKit 거래(`Transaction.all`에서 환불 거래를 뺀 상품 구입일 중 가장 늦은 끝. `currentEntitlements`는 상품별 최신 거래 하나뿐이라 그것만 환불되면 앞 거래까지 잠김)로 계산한다: 구입일이 속한 시즌의 4월 30일 23:59(한국 시간)까지, 5~10월 구입은 다음 해 4월 30일까지. 거래 내용과 이용권 여부를 서버·크루 계정으로 보내지 않는다(앱스토어 개인정보 항목에 "구입 내역" 수집 없음). 환불되면(`revocationDate`) 바로 잠근다. 홍보용 일회용 오퍼 코드로 받은 이용권도 같은 상품의 거래로 들어오므로 같은 계산을 쓴다(코드 입력은 StoreKit `offerCodeRedemption`. 기간 고정 구독 오퍼 코드는 iOS 16.3 이상이라 지원 기기 iOS 17 이상에서 모두 됨. 앱당 분기 100만 개(모든 인앱 상품 합산), 코드 유효 기간 최대 6개월, 고객 1명은 오퍼 하나에 코드 1개. 2026-11-14 Apple 문서 확인). 개인정보처리방침에 "결제는 Apple이 처리" 한 줄을 넣는다 |
 
 ## 7. 가장 위험한 흐름: 기록 중 앱 종료와 복구
 
@@ -250,12 +743,13 @@ sequenceDiagram
 | B. 상승·하강 판정, 테스트 기록 재생 | R3, R22 | 2주 |
 | C. OSM 가공 도구, 슬로프·리프트 식별, ODbL 공개 | R9, R10 일부 | 1.5주 |
 | D. 화면: 홈 리조트, 기록 시작·중, 하루·시즌, 목록 | R1, R5, R6 | 1.5주 |
-| K. 하루 기록 지도·움직임 재생·동영상 공유: OSM 선을 기기 안에서 그리기, 기록 종료 때 경로 단순화·저장(판정 기준 버전과 함께), 재생·시간 막대, 아래 시트, 공유 동영상 만들기(AVAssetWriter) | R50 | 1.5주 |
+| K. 하루 기록 지도·움직임 재생·동영상 공유: OSM 선을 기기 안에서 그리기, 기록 종료 때 경로 단순화·저장(판정 기준 버전과 함께), 재생·시간 막대, 아래 시트, 공유 동영상 만들기(AVAssetWriter). 지형 바탕(내장 고도 격자로 음영·등고선 계산, 4장)은 이틀. 화면용 3D 보기(SceneKit, 4장)는 2~3일 | R50 | 1.5주 + 2일 + 2~3일 |
 | E. 세션 구분, 시간표 입력 12곳, 시즌권 여러 장 | R7, R8 | 1주 |
 | F. Live Activity | R23 | 0.5주 |
 | G. 설질 칸, 표본 집계 함수, 리프트 대기 | R10~R12 | 1주 |
 | H. Firebase: 로그인, 크루 함수, 동기화, 보안 규칙, 신고, 계정 삭제 | R13~R16 | 3주 |
 | I. 권한·고지·연령·접근성·개인정보처리방침 | R17~R21 | 1주 |
+| L. 시즌 이용권과 유료 기능: StoreKit 2 구입·복원·이용권 계산, S18, 잠금 표시, 동영상 화질 두 단계, 하강 상세(S19), 시즌 결산(S20)·카드 이미지, 시즌 목표(무료), 내 리프트 대기 표시(서버 설정으로 켬) (2026-11-14 추가, 합계 밖) | R32, R36, R50 일부, R52~R54 | 1.5주 |
 | J. 출시마다: TestFlight 점검 대응, 심사, 수정 여유 | | 출시당 1.5주 |
 | **합계 (출시 1번)** | | **약 15.5주** |
 
@@ -274,6 +768,7 @@ M0·M1(A·B) 코드가 하루 만에 끝나 위 추정은 보수적이었다. �
 | 12월~1월 | 현장 기준을 통과한 리조트부터 슬로프 이름 켜기(서버 설정 파일), 2.0에서 빠진 기능과 판정 수정은 업데이트 |
 | 3월~10월 | 기준값 확정, OSM 정리, P1 검토, 다음 시즌 시간표 |
 
+- 시즌 이용권(R54)의 인앱 구매 상품은 앱 버전과 함께 처음 심사받는다. App Store Connect에 상품(가격, 표시 이름, 심사용 스크린샷)을 만들어 제출 빌드에 붙이고, 이용약관(Apple 표준 EULA 링크)을 앱과 앱스토어 설명에 둔다.
 - 2.0에 로그인·크루·서버가 들어가므로 개인정보처리방침(Firebase Authentication 국외 이전 포함), 계정 삭제, 신고 기능이 심사 전에 갖춰져야 한다.
 - 테스터는 같은 앱의 TestFlight 빌드를 쓴다. 기록 파일 내보내기(R22)가 TestFlight 빌드에만 있기 때문이다.
 - 현장 검증 전에 출시하므로, 기록 정확도 문제는 업데이트로 빠르게 고친다. 핵심 약속인 기록 보존(R4)은 실기기 확인을 마친 뒤 제출한다.
