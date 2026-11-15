@@ -1,0 +1,311 @@
+--- SlopeMate/Terrain3D.swift	2026-11-15 17:15:38
++++ /private/tmp/claude-502/-Users-joe-Desktop-SlopeMate/1b4bd01e-fa5b-4518-9637-8c14e07ba7da/scratchpad/treeA/SlopeMate/Terrain3D.swift	2026-11-15 19:21:23
+@@ -389,7 +389,8 @@
+     }
+ 
+     /// 질감 만드는 방식(색·폭·나무 등)을 바꾸면 올린다. 캐시 키에 들어간다
+-    static let textureVersion: UInt64 = 10
++    static var textureVersion: UInt64 { flatForest ? 15 : 12 }
++    static let flatForest = ProcessInfo.processInfo.arguments.contains("-SMFlatForest")   // TEMP 시험: 나무 도장 없이 숲 면
+ 
+     static let textureCacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+         .appendingPathComponent("terrain3d", isDirectory: true)
+@@ -424,6 +425,49 @@
+         return g
+     }
+ 
++    // TEMP 시험: 용평 나무 높이 지도(Meta·WRI CHM v2, EPSG:3857, 1.19m, uint8 m)
++    nonisolated(unsafe) static let canopy: (Data, Int, Int)? = Bundle.main.url(forResource: "canopy-yongpyong", withExtension: "bin").flatMap { try? Data(contentsOf: $0) }.map { ($0, 4405, 5534) }
++    static func canopyHeight(lat: Double, lon: Double) -> Float? {
++        guard let (d, w, h) = canopy else { return nil }
++        let R = 6378137.0, X = R * lon * .pi / 180, Y = R * log(tan(.pi / 4 + lat * .pi / 360))
++        let x = Int((X - 14321565.282552268) / 1.194328566955879), y = Int((4530322.342862772 - Y) / 1.194328566955879)
++        guard x >= 1, y >= 1, x < w - 1, y < h - 1 else { return nil }
++        var m: UInt8 = 0
++        d.withUnsafeBytes { b in for dy in -1...1 { for dx in -1...1 { m = max(m, b[(y + dy) * w + x + dx]) } } }
++        return Float(m)
++    }
++    // TEMP 시험: 나무 높이 지도·땅 덮개(OSM 건물 1, 도로 2, 주차장 3)를 한 번 읽어 포인터로(병렬 구간에서 잠금 없이)
++    nonisolated(unsafe) static let canopyPtr = loadBin("canopy-yongpyong"), landPtr = loadBin("landcover-yongpyong")
++    static let chmW = 4405, chmH = 5534, chmPx = 1.194328566955879
++    static func loadBin(_ n: String) -> UnsafeMutableBufferPointer<UInt8>? {
++        guard let u = Bundle.main.url(forResource: n, withExtension: "bin"), let d = try? Data(contentsOf: u) else { return nil }
++        let p = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: d.count); _ = p.initialize(from: d); return p
++    }
++    /// 픽셀 좌표(가운데 +0.5)에서 겹선형 높이(m). 지도 밖이면 nil
++    static func chAt(_ x: Double, _ y: Double) -> Float? {
++        guard let b = canopyPtr else { return nil }
++        let fx = x - 0.5, fy = y - 0.5, x0 = Int(fx.rounded(.down)), y0 = Int(fy.rounded(.down))
++        guard x0 >= 0, y0 >= 0, x0 < chmW - 1, y0 < chmH - 1 else { return nil }
++        let u = Float(fx - Double(x0)), v = Float(fy - Double(y0)), k = y0 * chmW + x0
++        return (Float(b[k]) * (1 - u) + Float(b[k + 1]) * u) * (1 - v) + (Float(b[k + chmW]) * (1 - u) + Float(b[k + chmW + 1]) * u) * v
++    }
++    static func lcAt(_ x: Double, _ y: Double) -> UInt8 {
++        guard let b = landPtr, x >= 0, y >= 0, Int(x) < chmW, Int(y) < chmH else { return 0 }
++        return b[Int(y) * chmW + Int(x)]
++    }
++    /// TEMP 시험: 겹선형(숲 면 경계를 부드럽게)
++    static func canopySoft(lat: Double, lon: Double) -> Float? {
++        guard let (d, w, h) = canopy else { return nil }
++        let R = 6378137.0, X = R * lon * .pi / 180, Y = R * log(tan(.pi / 4 + lat * .pi / 360))
++        let fx = (X - 14321565.282552268) / 1.194328566955879 - 0.5, fy = (4530322.342862772 - Y) / 1.194328566955879 - 0.5
++        let x = Int(fx.rounded(.down)), y = Int(fy.rounded(.down)), u = Float(fx - Double(x)), v = Float(fy - Double(y))
++        guard x >= 0, y >= 0, x < w - 1, y < h - 1 else { return nil }
++        return d.withUnsafeBytes { b in
++            let a = Float(b[y * w + x]), c = Float(b[y * w + x + 1]), e = Float(b[(y + 1) * w + x]), f = Float(b[(y + 1) * w + x + 1])
++            return (a * (1 - u) + c * u) * (1 - v) + (e * (1 - u) + f * u) * v
++        }
++    }
++
+     /// window: 격자 (행0, 열0, 행1, 열1) 안만 side 해상도로 그린다(S19 고해상 패치). 이때 나무는 7m 칸에 별 모양 수관·긴 그림자. nil이면 격자 전체
+     func groundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048, window: SIMD4<Float>? = nil) -> GroundTexture {
+         let t = terrain, rows = t.rows, cols = t.cols
+@@ -623,7 +667,7 @@
+         let sunPx = simd_normalize(SIMD2((s2.x * dj.y - dj.x * s2.y) / det, (di.x * s2.y - s2.x * di.y) / det))
+         let snow = Self.linear(Self.rgb(Ground.snow)), slope = Self.linear(Self.rgb(Ground.slope)), floor = Self.linear(Self.rgb(Ground.floor))
+         let conifer = Self.linear(Self.rgb(Ground.conifer)), broadleaf = Self.linear(Self.rgb(Ground.broadleaf))
+-        let sky = SIMD3<Float>(0.55, 0.62, 0.78), sunC = SIMD3<Float>(0.95, 0.90, 0.84)
++        let sky = Self.flatForest ? SIMD3<Float>(0.55, 0.62, 0.72) : SIMD3<Float>(0.55, 0.62, 0.78), sunC = SIMD3<Float>(0.95, 0.90, 0.84)
+         // 선형 → sRGB 표(4096칸)
+         let lut: [UInt8] = (0..<4096).map { k in
+             let x = Float(k) / 4095
+@@ -632,12 +676,29 @@
+         // 나무: 3텍셀(패치는 7m) 칸마다 하나. 칸마다 가운데(텍셀)·반지름과 있을 확률·활엽 문턱을 미리 구한다
+         let detail = window != nil, cs: Float = detail ? max(3, 7 / min(pr, pc)) : 3, cr = Int((Float(H) / cs).rounded(.up)) + 4, cc = Int((Float(W) / cs).rounded(.up)) + 4
+         var trees = [SIMD3<Float>](repeating: .zero, count: cr * cc), treeKind = [SIMD2<Float>](repeating: .zero, count: cr * cc)
++        var cellCanopy = [Float](repeating: -1, count: cr * cc)   // TEMP 시험: 칸 나무 확률(-1 = 지도 밖)
++        func latlon(_ i: Float, _ j: Float) -> (Double, Double) { (t.north - Double(win.x + i * sr) * t.step, t.west + Double(win.y + j * sc) * t.step) }
++        // TEMP 시험: 텍셀 → 나무 높이 지도 픽셀. 경도는 열에만, 위도는 행에만 달려 행·열 표로 정확히
++        let cxs = (0..<W).map { j in (6378137.0 * latlon(0, Float(j) + 0.5).1 * .pi / 180 - 14321565.282552268) / Self.chmPx }
++        let cys = (0..<H).map { i in (4530322.342862772 - 6378137.0 * log(tan(.pi / 4 + latlon(Float(i) + 0.5, 0).0 * .pi / 360))) / Self.chmPx }
++        let dxj = (cxs[W - 1] - cxs[0]) / Double(max(W - 1, 1)), dyi = (cys[H - 1] - cys[0]) / Double(max(H - 1, 1))
++        let sunPix = simd_normalize(SIMD2<Double>(Double(sunPx.y) * dxj, Double(sunPx.x) * dyi))   // 픽셀 단위 해 쪽(x 동, y 남)
++        let m2p = 1 / (Self.chmPx * cos(latlon(Float(H) / 2, 0).0 * .pi / 180))   // 지상 1m = 픽셀 몇 개(3857은 적도 기준)
++        let texPx = Double(min(pr, pc)) * m2p   // 텍셀 하나 = 지도 픽셀 몇 개
++        let forestShadowD: [Double] = [4, 8, 13, 19, 26, 34], buildingShadowD: [Double] = [3, 7, 11, 16]
++        let flat = Self.flatForest
++        let tanSun = Double(Self.sun.y / simd_length(SIMD2(Self.sun.x, Self.sun.z)))
+         for ci in 0..<cr {
+             for cj in 0..<cc {
+                 let a = ci - 2, b = cj - 2
+                 let center = (SIMD2(Float(a), Float(b)) + 0.15 + 0.7 * SIMD2(Self.hash(a &+ 17, b), Self.hash(a, b &+ 31))) * cs
+                 trees[ci * cc + cj] = SIMD3(center.x, center.y, cs * (0.46 + 0.26 * Self.hash(a &+ 5, b &+ 9)))
+                 treeKind[ci * cc + cj] = SIMD2(Self.hash(a, b &+ 50_021), Self.hash(a &+ 3, b &+ 77))
++                let (la, lo) = latlon(center.x, center.y)
++                if let hc = Self.canopyHeight(lat: la, lon: lo) {
++                    cellCanopy[ci * cc + cj] = 0.97 * Self.smooth(2.5, 6, hc)
++                    trees[ci * cc + cj].z *= 0.8 + 0.4 * Self.smooth(6, 20, hc)
++                }
+             }
+         }
+         let meters = SIMD2(pr, pc)
+@@ -645,10 +706,10 @@
+         var bytes = [UInt8](repeating: 255, count: W * H * 4)
+         // 병렬 구간은 포인터로만 읽는다(여러 스레드가 같은 배열을 붙잡으면 참조 계수 경합으로 몇 배 느려진다)
+         hgt.withUnsafeBufferPointer { heights in clear.withUnsafeBufferPointer { cleared in zone.withUnsafeBufferPointer { zone in
+-        trees.withUnsafeBufferPointer { cells in treeKind.withUnsafeBufferPointer { kinds in
++        trees.withUnsafeBufferPointer { cells in treeKind.withUnsafeBufferPointer { kinds in cellCanopy.withUnsafeBufferPointer { canopyCells in
+         shade.withUnsafeBufferPointer { shade in lut.withUnsafeBufferPointer { lut in
+         bytes.withUnsafeMutableBufferPointer { out in
+-            nonisolated(unsafe) let (heights, cleared, zone, cells, kinds, shade, lut, out) = (heights, cleared, zone, cells, kinds, shade, lut, out)
++            nonisolated(unsafe) let (heights, cleared, zone, cells, kinds, shade, lut, out, canopyCells) = (heights, cleared, zone, cells, kinds, shade, lut, out, canopyCells)
+             func grid(_ r: Float, _ c: Float) -> SIMD2<Float> {
+                 guard shade.count == rows * cols else { return .zero }
+                 let r0 = min(Int(r), rows - 2), c0 = min(Int(c), cols - 2), u = r - Float(r0), v = c - Float(c0), k = r0 * cols + c0
+@@ -680,6 +741,51 @@
+                     // 최대 0.8: 빽빽한 숲(하이원)도 나무 사이로 눈이 비친다
+                     var density = 0.8 * (z + (1 - z) * Self.smooth(0.08, 0.3, 0.55 * nm + 0.45 * nl))
+                     density *= (1 - 0.85 * field) * (1 - 0.9 * ridge) * (1 - 0.7 * steep) * (1 - c)
++                    // TEMP 시험: 지도 안은 나무 높이로만(OSM 선으로 비우지 않음)
++                    let (la, lo) = latlon(Float(i) + 0.5, Float(j) + 0.5), hc = flat ? nil : Self.canopyHeight(lat: la, lon: lo)
++                    if let hc { density = 0.95 * Self.smooth(2.5, 6, hc) }
++                    if flat {
++                        let px = cxs[j], py = cys[i]
++                        let forest = SIMD3<Float>(0.147, 0.214, 0.234)
++                        var albedo = snow
++                        // 텍셀이 지도 픽셀보다 크면(전체 보기) 텍셀 넓이 평균으로 읽어 먼 능선의 점 얼룩을 없앤다
++                        func avg(_ x: Double, _ y: Double) -> Float? {
++                            guard texPx > 1.5 else { return Self.chAt(x, y) }
++                            let o = texPx / 4
++                            guard let a = Self.chAt(x - o, y - o), let b = Self.chAt(x + o, y - o), let c = Self.chAt(x - o, y + o), let d = Self.chAt(x + o, y + o) else { return nil }
++                            return (a + b + c + d) / 4
++                        }
++                        if let h = avg(px, py) {
++                            // 숲 면. 수관 결은 해 쪽 앞뒤 1.3m 높이 차(실제 나무 한 그루씩의 굴곡), 키 큰 숲은 어둡게
++                            let f = Self.smooth(3, 5, h)
++                            let a = Self.chAt(px + sunPix.x * 1.3, py + sunPix.y * 1.3) ?? h, b = Self.chAt(px - sunPix.x * 1.3, py - sunPix.y * 1.3) ?? h
++                            let tone = (1.1 - 0.3 * Self.smooth(6, 24, h)) * (1 + min(max((a - b) * 0.04, -0.3), 0.3))
++                            albedo = simd_mix(snow, forest * tone, SIMD3(repeating: f))
++                            // 숲 그림자: 해 쪽 d m에 높이 d·tan(해 고도)보다 큰 나무가 있으면 눈 위에 그림자
++                            var fsh: Float = 0
++                            for d in forestShadowD {
++                                if let hh = Self.chAt(px + sunPix.x * d * m2p, py + sunPix.y * d * m2p) { fsh = max(fsh, Self.smooth(Float(d * tanSun) - 2, Float(d * tanSun) + 2, hh)) }
++                            }
++                            albedo *= 1 - 0.55 * fsh * (1 - f)
++                            // 눈 3단: 슬로프(OSM 띠)는 정설된 눈처럼 밝게, 그 밖 트인 눈은 회청으로 한 단 낮게
++                            let open = (1 - f) * (1 - fsh * 0.5)
++                            albedo = simd_mix(albedo, albedo * SIMD3(0.80, 0.85, 0.93), SIMD3(repeating: (1 - c) * open))
++                            albedo *= 1 + 0.05 * c * open
++                        } else {
++                            let f = density / 0.8 * (1 - c)
++                            albedo = simd_mix(simd_mix(snow, forest, SIMD3(repeating: f)), slope, SIMD3(repeating: c))
++                        }
++                        // OSM 건물·도로·주차장. 건물은 해 반대쪽 그림자(높이 약 12m 가정)
++                        let lc = Self.lcAt(px, py)
++                        if lc == 1 { albedo = SIMD3(0.107, 0.120, 0.147) }
++                        else {
++                            if lc == 2 { albedo = SIMD3(0.263, 0.274, 0.296) } else if lc == 3 { albedo = SIMD3(0.448, 0.479, 0.522) }
++                            for d in buildingShadowD where Self.lcAt(px + sunPix.x * d * m2p, py + sunPix.y * d * m2p) == 1 && d * tanSun < 12 { albedo *= 0.6; break }   // 건물 높이 약 12m 가정
++                        }
++                        let col = albedo * (sky * (0.8 + 0.25 * ao + 0.15 * fine) + sunC * (ndl * (1 - 0.75 * sh)))
++                        for ch in 0..<3 { out[4 * k + ch] = lut[Int(min(max(col[ch], 0), 1) * 4095)] }
++                        continue
++                    }
+                     // 땅: 숲 바닥(그늘진 눈) ↔ 트인 눈 ↔ 슬로프
+                     var albedo = simd_mix(snow, floor, SIMD3(repeating: density * 0.7))
+                     albedo = simd_mix(albedo, slope, SIMD3(repeating: c))
+@@ -687,11 +793,12 @@
+                     let p = SIMD2(Float(i) + 0.5, Float(j) + 0.5)
+                     let bi = Int(p.x / cs) + 2, bj = Int(p.y / cs) + 2, reach = detail ? 2 : 1   // 패치의 긴 그림자는 두 칸까지
+                     var cover: Float = 0, shade: Float = 0, lit: Float = 0, leafKey: Float = 1
+-                    if density > 0.003 {
++                    if density > 0.003 || hc != nil {
+                         for ci in bi - reach...bi + reach {
+                             for cj in bj - reach...bj + reach {
+                                 let kind = kinds[ci * cc + cj]
+-                                guard kind.x < density else { continue }
++                                let cd = canopyCells[ci * cc + cj]
++                                guard kind.x < (cd >= 0 ? cd : density) else { continue }
+                                 let tr = cells[ci * cc + cj], center = SIMD2(tr.x, tr.y), radius = tr.z
+                                 let d = p - center, len = simd_length(d)
+                                 if detail, len > radius * 3.7 + 1 { continue }   // 수관·그림자(2.6r 뒤 0.75r)가 닿지 않는 나무
+@@ -720,6 +827,7 @@
+                             }
+                         }
+                     }
++                    if let hc { cover *= Self.smooth(1.5, 4, hc) }   // TEMP 시험: 수관은 나무 높이 지도에 나무가 있는 텍셀에만
+                     albedo *= 1 - 0.5 * shade * (1 - cover)
+                     // 활엽(회갈색) 비율 12~42%, 낮은 곳에 많다
+                     let leaf = cover > 0 && leafKey < 0.12 + 0.3 * Self.smooth(0.45, 0.75, Self.noise(m.y / 260, m.x / 260, 3)) * (1 - Self.smooth(0.3, 0.7, rel))
+@@ -732,7 +840,7 @@
+                     for ch in 0..<3 { out[4 * k + ch] = lut[Int(min(max(col[ch], 0), 1) * 4095)] }
+                 }
+             }
+-        }}}}}}}}
++        }}}}}}}}}
+         return GroundTexture(width: W, height: H, bytes: Data(bytes))
+     }
+ }
+--- SlopeMate/Map3DScene.swift	2026-11-15 17:05:29
++++ /private/tmp/claude-502/-Users-joe-Desktop-SlopeMate/1b4bd01e-fa5b-4518-9637-8c14e07ba7da/scratchpad/treeA/SlopeMate/Map3DScene.swift	2026-11-15 19:21:35
+@@ -155,7 +155,7 @@
+         static let casing = 3, faded = 4, solid = 5, highlightCasing = 6, highlight = 7, dot = 8
+     }
+ 
+-    private let terrainNode = SCNNode(), slopeNode = SCNNode(), liftNode = SCNNode(), stationNode = SCNNode()
++    private let terrainNode = SCNNode(), slopeNode = SCNNode(), liftNode = SCNNode(), stationNode = SCNNode(), labelNode = SCNNode()
+     private let routeNode = SCNNode(), highlightNode = SCNNode(), highlightCasingNode = SCNNode(), dotNode = SCNNode()
+     /// 난이도 단계별 슬로프 색 선(SlopeStyle.Level.allCases 순서). slopeNode 아래
+     private let levelNodes = SlopeStyle.Level.allCases.map { _ in SCNNode() }
+@@ -180,7 +180,7 @@
+          view3D: Resort.View3D? = nil, fitPoints: [(lat: Double, lon: Double)]? = nil) {
+         self.space = space
+         var view3D = view3D
+-        if fitPoints != nil { view3D?.zoom = nil }
++        if fitPoints != nil { view3D = Resort.View3D(yaw: view3D?.yaw, pitch: 55, excludeLifts: view3D?.excludeLifts, zoom: nil) } // TEMP 시험: S19 더 위에서
+         self.view3D = view3D
+         self.map = map
+         self.route = route
+@@ -243,6 +243,59 @@
+             n.renderingOrder = Order.station
+             n.constraints = [SCNBillboardConstraint()]
+             stationNode.addChildNode(n)
++        }
++
++        // TEMP 시험: 장소 이름(리프트 위 끝, 용평 베이스 건물·콘도). 화면 pt 크기로 그려 mpp만큼 키운다
++        var labels: [(String, [Double])] = map.lifts.compactMap { l in
++            guard let n = l.name, let a = l.line.first, let b = l.line.last else { return nil }
++            return (n, space.point(lat: a[0], lon: a[1]).y > space.point(lat: b[0], lon: b[1]).y ? a : b)
++        }
++        labels.sort { a, b in a.0.count > b.0.count }   // 긴 이름(곤돌라·건물)부터 자리를 잡는다
++        if map.resortId == "yongpyong" {
++            labels.insert(contentsOf: [("드래곤프라자", [37.64449, 128.6793]), ("타워프라자", [37.64541, 128.68225]), ("그린피아콘도", [37.64274, 128.6769]),
++                       ("베르데힐콘도", [37.63976, 128.67368]), ("더포레스트레지던스", [37.64882, 128.68358])], at: 0)
++        }
++        // 처음 시점에서 겹치는 이름은 뺀다(먼저 자리 잡은 것 우선, 4pt 여백)
++        var placed: [CGRect] = []
++        for (name, p) in labels {
++            let font = UIFont.systemFont(ofSize: 12, weight: .semibold)
++            let tw = (name as NSString).size(withAttributes: [.font: font]).width, size = CGSize(width: ceil(tw) + 14, height: 20)
++            let sp = start.screen(space.point(lat: p[0], lon: p[1]), viewport: viewport, top: 150, bottom: viewport.height * 0.25 + 24)
++            let rect = CGRect(x: sp.x - size.width / 2, y: sp.y - size.height - 8, width: size.width, height: size.height).insetBy(dx: -4, dy: -4)
++            guard rect.minY > 100, rect.maxY < viewport.height * 0.75, !placed.contains(where: { $0.intersects(rect) }) else { continue }
++            placed.append(rect)
++            let img = UIGraphicsImageRenderer(size: size).image { _ in
++                UIColor(white: 0.08, alpha: 0.72).setFill()
++                UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 10).fill()
++                (name as NSString).draw(at: CGPoint(x: 7, y: (20 - font.lineHeight) / 2), withAttributes: [.font: font, .foregroundColor: UIColor.white])
++            }
++            let plane = SCNPlane(width: size.width, height: size.height)
++            let m = SCNMaterial(); m.diffuse.contents = img; m.lightingModel = .constant; m.readsFromDepthBuffer = false; m.writesToDepthBuffer = false
++            plane.firstMaterial = m
++            let child = SCNNode(geometry: plane); child.simdPosition = SIMD3(0, Float(size.height) / 2 + 8, 0); child.renderingOrder = 2   // 슬로프 위, 경로·재생 점 아래
++            let n = SCNNode(); n.addChildNode(child); n.constraints = [SCNBillboardConstraint()]
++            n.simdPosition = space.point(lat: p[0], lon: p[1])
++            labelNode.addChildNode(n)
++        }
++
++        // TEMP 시험: S19 출발·도착 표식(출발 "출발" 흰 알약, 도착 "도착" 어두운 알약)
++        if let fp = fitPoints, let a = fp.first, let b = fp.last {
++            for (text, p, darkPill) in [("출발", a, false), ("도착", b, true)] {
++                let font = UIFont.systemFont(ofSize: 12, weight: .bold)
++                let size = CGSize(width: ceil((text as NSString).size(withAttributes: [.font: font]).width) + 16, height: 22)
++                let img = UIGraphicsImageRenderer(size: size).image { _ in
++                    (darkPill ? UIColor(white: 0.1, alpha: 0.9) : UIColor.white).setFill()
++                    UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 11).fill()
++                    (text as NSString).draw(at: CGPoint(x: 8, y: (22 - font.lineHeight) / 2), withAttributes: [.font: font, .foregroundColor: darkPill ? UIColor.white : UIColor.black])
++                }
++                let plane = SCNPlane(width: size.width, height: size.height)
++                let m = SCNMaterial(); m.diffuse.contents = img; m.lightingModel = .constant; m.readsFromDepthBuffer = false; m.writesToDepthBuffer = false
++                plane.firstMaterial = m
++                let child = SCNNode(geometry: plane); child.simdPosition = SIMD3(0, -Float(size.height) / 2 - 10, 0); child.renderingOrder = Order.dot - 1
++                let n = SCNNode(); n.addChildNode(child); n.constraints = [SCNBillboardConstraint()]
++                n.simdPosition = space.point(lat: p.lat, lon: p.lon)
++                labelNode.addChildNode(n)
++            }
+         }
+ 
+         // 재생 점: 항상 카메라를 보는 판, 지형에 가려지지 않게 맨 위
+@@ -252,7 +305,7 @@
+         dotNode.constraints = [SCNBillboardConstraint()]
+         dotNode.isHidden = true
+ 
+-        for n in [terrainNode, slopeNode, liftNode, stationNode, routeNode, highlightCasingNode, highlightNode, dotNode] { scene.rootNode.addChildNode(n) }
++        for n in [terrainNode, slopeNode, liftNode, stationNode, labelNode, routeNode, highlightCasingNode, highlightNode, dotNode] { scene.rootNode.addChildNode(n) }
+ 
+         applyColors()
+         buildRibbons()
+@@ -273,6 +326,7 @@
+         slopeNode.isHidden = !layers.slopes
+         liftNode.isHidden = !layers.lifts
+         stationNode.isHidden = !layers.lifts
++        labelNode.isHidden = !layers.lifts
+     }
+ 
+     /// nil: 경로 전체를 진하게, 점 숨김. 값이 같으면 아무것도 하지 않는다
+@@ -285,6 +339,7 @@
+     func setHighlight(_ run: RunDetector.Run?) {
+         guard run != highlight else { return }
+         highlight = run
++        routeNode.opacity = run == nil ? 1 : 0.3   // TEMP 시험: 고른 하강만 또렷하게
+         buildHighlight(lift: max(2, ribbonMPP), mpp: ribbonMPP)
+     }
+ 
+@@ -494,6 +549,7 @@
+         terrainMat.setValue(NSNumber(value: camera.distance + space.radius * 5), forKey: "fogEnd")
+         dotNode.simdScale = SIMD3(repeating: mpp)
+         for n in stationNode.childNodes { n.simdScale = SIMD3(repeating: mpp) }
++        for n in labelNode.childNodes { n.simdScale = SIMD3(repeating: mpp) }
+         SCNTransaction.commit()
+     }
+ 
