@@ -56,7 +56,7 @@
 | **비교** | 랭킹 | ● 단계적 | ○ | ○ | ○ | ● 점수·등급 | ○ |
 | **보조** | 리조트 날씨 | ● | ◐ 여행 화면의 리조트 상태 | ○ | ○ | ● | ● |
 | | 슬로프 운행 현황 | ○ 공식 링크만 | ◐ 북미 50여 곳만, 유료 | ○ | ○ | ○ | ● |
-| **가격** | | 무료 (미정) | 기본 무료. 유료 연 $29.99 (미국, 자료 시점 불분명) | 무료 | 무료 | 무료 | 무료 |
+| **가격** | | 기본 무료, 시즌 이용권 9,900원 | 기본 무료. 유료 연 $29.99 (미국, 자료 시점 불분명) | 무료 | 무료 | 무료 | 무료 |
 
 출처: 한국 앱스토어 앱 설명, [Slopes 2,000+ resorts 발표](https://news.getslopes.com/slopes-app-expands-to-2-000-resorts-worldwide-on-interactive-3d-maps/), [Slopes Premium 블로그](https://blog.getslopes.com/discover-slopes-premium/), [Slopes Premium 안내](https://slopes.helpscoutdocs.com/article/19-what-is-slopes-premium), [Slopes 용평 페이지](https://getslopes.com/resorts/yongpyong)
 
