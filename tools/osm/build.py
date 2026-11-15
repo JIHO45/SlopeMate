@@ -6,6 +6,7 @@
 
 - 우리 ID(<리조트>-s01, -l01)는 이전 출력의 OSM ID로 이어 붙여 유지한다. 새 선만 다음 번호를 받는다.
 - 선은 2m 기준으로 줄이고 좌표는 소수 5자리(약 1m)로 저장한다.
+- 리프트 선은 끝에 tools/dem/orient_lifts.py로 아래→위로 맞춘다(dem 파일이 있을 때).
 - 데이터: © OpenStreetMap contributors, ODbL.
 """
 import json, math, subprocess, sys, time
@@ -13,12 +14,19 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools/dem"))
+from orient_lifts import orient  # noqa: E402
 RESORTS = ROOT / "SlopeMate/Resources/resorts.json"
 AREAS = Path(__file__).with_name("areas.json")
 OUT = ROOT / "SlopeMate/Resources/maps"
 SERVER = "https://overpass-api.de/api/interpreter"
 LIFTS = "chair_lift|gondola|cable_car|mixed_lift|drag_lift|t-bar|j-bar|platter|rope_tow|magic_carpet"
 EPS_M = 2.0
+# 슬로프 태그가 붙었지만 스키 슬로프가 아닌 OSM 요소. OSM 원본은 그대로 두고 여기서만 뺀다.
+NOT_SLOPES = {
+    "way/545967313": "비발디 스노위하우스(눈놀이 시설)",
+    "way/1037974232": "웰리힐리 하프파이프 선, 면과 중복",
+}
 
 
 def overpass(query):
@@ -113,6 +121,7 @@ def build(resort, spec):
         elif e["id"] not in in_relation or name_of(t):
             slopes.append({"osm_ids": [f"way/{e['id']}"], "tags": t, "lines": [line(e["geometry"])],
                            "area": t.get("area") == "yes"})
+    slopes = [s for s in slopes if not NOT_SLOPES.keys() & set(s["osm_ids"])]
     for s in slopes:
         t = s.pop("tags")
         s["name"] = name_of(t)
@@ -179,6 +188,7 @@ def main():
         path.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")) + "\n")
         named = sum(1 for s in doc["slopes"] if s["name"])
         print(f"{rid}: 슬로프 {len(slopes)}(이름 {named}) 리프트 {len(lifts)} → {path.name} {path.stat().st_size // 1024}KB")
+        orient(rid)
         time.sleep(2)
 
 

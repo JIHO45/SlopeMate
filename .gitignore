@@ -6,3 +6,7 @@ SlopeMate/GoogleService-Info.plist
 
 # Firebase CLI 배포 캐시
 .firebase/
+
+# Copernicus DEM 원본 타일 캐시·가공 도구 환경 (tools/dem/build.py)
+tools/dem/cache/
+tools/dem/.venv/

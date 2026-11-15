@@ -62,7 +62,7 @@ struct SettingsView: View {
                 if let url = Self.privacyPolicyURL {
                     Link(destination: url) { row("개인정보처리방침", icon: "arrow.up.right") }
                 }
-                NavigationLink { MapSourceView() } label: { row("지도 데이터 출처", value: "OpenStreetMap") }
+                NavigationLink { MapSourceView() } label: { row("지도 데이터 출처", value: "OpenStreetMap, Copernicus") }
                 Button { welcome = true } label: { row("처음 안내 다시 보기", chevron: true) }
                 if let mail = Self.contactEmail, let url = URL(string: "mailto:\(mail)") {
                     Link(destination: url) { row("문의", icon: "arrow.up.right") }
@@ -142,7 +142,7 @@ struct SettingsView: View {
     }
 }
 
-/// S17 지도 데이터 출처 (v2). OSM 저작권 표시와 ODbL.
+/// S17 지도 데이터 출처 (v3). OSM 저작권 표시와 ODbL, Copernicus DEM 출처·면책 문장(라이선스 6조).
 struct MapSourceView: View {
     var body: some View {
         List {
@@ -152,6 +152,21 @@ struct MapSourceView: View {
                     Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
                         .font(.body.weight(.semibold)).foregroundStyle(Color.accentText)
                     Link("라이선스: Open Database License (ODbL)", destination: URL(string: "https://opendatacommons.org/licenses/odbl/")!)
+                        .font(.subheadline).foregroundStyle(Color.secondaryText)
+                }
+                .padding(.vertical, 6)
+            }
+            .listRowBackground(Color.card)
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("지형(음영·등고선)은 Copernicus DEM으로 만들었어요.")
+                    Text(Terrain.source).font(.subheadline.weight(.semibold))
+                    Text("Copernicus WorldDEM-30으로 만들었습니다 © DLR e.V. 2010-2014, © Airbus Defence and Space GmbH 2014-2018, Copernicus 프로그램(유럽연합·ESA) 제공; 모든 권리 보유")
+                        .font(.subheadline).foregroundStyle(Color.secondaryText)
+                    Text(Terrain.disclaimer).font(.subheadline.weight(.semibold))
+                    Text("법률 또는 위임에 따라 Copernicus 프로그램을 맡은 기관은 Copernicus WorldDEM-30의 어떤 사용에 대해서도 책임을 지지 않습니다")
+                        .font(.subheadline).foregroundStyle(Color.secondaryText)
+                    Link("라이선스: Copernicus DEM GLO-30", destination: Terrain.licenseURL)
                         .font(.subheadline).foregroundStyle(Color.secondaryText)
                 }
                 .padding(.vertical, 6)

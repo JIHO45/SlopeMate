@@ -12,8 +12,9 @@ struct DayMapView: View {
     let span: (Date, Date)?
 
     @Environment(\.colorScheme) private var scheme
-    /// 툴바 버튼 동작은 예전 화면 값을 잡고 있을 수 있어 상태로 둔다(동영상 색)
-    @State private var dark = false
+    /// 툴바 버튼 동작은 예전 화면 값을 잡고 있을 수 있어 상태로 둔다(동영상 색). 처음 onChange 전에는 scheme
+    @State private var darkState: Bool?
+    private var dark: Bool { darkState ?? (scheme == .dark) }
     @State private var detent: PresentationDetent
     @State private var size: CGSize = .zero
     /// 시트 높이. 재기 전에는 detent 비율로 어림
@@ -23,6 +24,20 @@ struct DayMapView: View {
     @State private var pan: CGSize = .zero
     @GestureState private var pinch: CGFloat = 1
     @GestureState private var drag: CGSize = .zero
+    // 3D 보기: 열 때마다 2D, 선택은 기억하지 않는다. 장면은 처음 켤 때 만들고 S6가 열려 있는 동안 둔다
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var is3D = false
+    @State private var scene3D: Map3DScene?
+    @State private var preparing3D = false
+    /// 3D가 미리 그리기를 끝냄(onReady). 그 전까지 2D를 보이고, 그때 겹쳐 바꾼다
+    @State private var ready3D = false
+    /// 장면을 만든 뒤 한 번 보였음. 첫 표시만 날아 들어온다
+    @State private var flownIn = false
+    // 지도 표시 메뉴(리조트·날짜와 상관없이 기기에 기억)와 누른 슬로프 말풍선
+    @AppStorage("mapShowSlopes") private var showSlopes = true
+    @AppStorage("mapShowLifts") private var showLifts = true
+    @State private var picked: SlopePick.Hit?
+    @State private var balloonSize: CGSize = .zero
     // 재생
     @State private var progress = 0.0
     @State private var playing = false
@@ -45,8 +60,10 @@ struct DayMapView: View {
     /// 하강 0회면 경로·재생·공유 없이 슬로프·리프트만
     private var hasRuns: Bool { !day.runs.isEmpty }
     private var clock: PlayClock { data?.clock ?? PlayClock([]) }
+    private var layers: MapLayers { MapLayers(slopes: showSlopes, lifts: showLifts) }
     private var drawing: DayMapDrawing {
-        DayMapDrawing(map: map, route: hasRuns ? data?.route ?? [] : [], showNames: SlopeNames.isShown(day.resortId), dark: dark)
+        DayMapDrawing(map: map, route: hasRuns ? data?.route ?? [] : [], dark: dark,
+                      terrain: Terrain.layer(map, dark: dark), layers: layers)
     }
     /// 재생을 시작하거나 옮기기 전에는 nil(경로 전체를 진하게)
     private var now: Date? { started ? clock.time(at: progress) : nil }
@@ -56,23 +73,27 @@ struct DayMapView: View {
     private var sheetHeight: CGFloat { sheetSize ?? size.height * (detent == .fraction(0.5) ? 0.5 : 0.25) }
 
     var body: some View {
-        Canvas { ctx, size in
-            let fit = fitRect(size)
-            let d = drawing, t = transform(fit), now = now, h = selected.map { day.runs[$0] }
-            ctx.withCGContext { cg in d.draw(cg, size: size, MapProjection(map, rect: fit), transform: t, now: now, highlight: h) }
+        ZStack {
+            // 3D는 미리 그리기가 끝날 때까지 투명하게 깔고 2D를 보이다가 겹쳐 바꾼다
+            if !(is3D && ready3D) { canvas.transition(.opacity) }
+            if is3D, let scene3D {
+                Map3DView(scene: scene3D, now: now, highlight: selected.map { day.runs[$0] }, dark: dark,
+                          bottomInset: sheetHeight + 24, reduceMotion: reduceMotion,
+                          layers: layers, flyIn: !flownIn && !reduceMotion,
+                          onReady: { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { ready3D = true } },
+                          onTap: { picked = showSlopes ? $0 : nil })
+                    .ignoresSafeArea()
+                    .opacity(ready3D ? 1 : 0)
+                    .accessibilityElement()
+                    .accessibilityLabel("\(Resort.name(day.resortId)) 3D 지형 지도\(hasRuns ? " 위 오늘 경로" : "")")
+                    .accessibilityHidden(!ready3D)
+                    .transition(.opacity)
+            }
         }
-        .ignoresSafeArea()
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
-        .gesture(MagnifyGesture()
-            .updating($pinch) { v, s, _ in s = v.magnification }
-            .onEnded { zoom = min(max(zoom * $0.magnification, 1), 8) }
-            .simultaneously(with: DragGesture()
-                .updating($drag) { v, s, _ in s = v.translation }
-                .onEnded { pan.width += $0.translation.width; pan.height += $0.translation.height }))
-        .accessibilityElement()
-        .accessibilityLabel("\(Resort.name(day.resortId)) 전체 슬로프 지도\(hasRuns ? " 위 오늘 경로" : "")")
+        .overlay { balloon }
         .overlay(alignment: .bottomTrailing) {
-            Text("© OpenStreetMap").font(.caption).foregroundStyle(Color.secondaryText)
+            Text(drawing.terrain == nil ? "© OpenStreetMap" : "© OpenStreetMap · Copernicus DEM").font(.caption).foregroundStyle(Color.secondaryText)
                 .dynamicTypeSize(...DynamicTypeSize.xxLarge) // 출처 표시가 지도를 가리지 않게
                 .padding(.trailing, 16).padding(.bottom, sheetHeight + 8)
                 .ignoresSafeArea()
@@ -81,6 +102,17 @@ struct DayMapView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { layersMenu }
+            if data != nil, drawing.terrain != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if preparing3D {
+                        ProgressView().accessibilityLabel("3D 준비 중")
+                    } else {
+                        Button(action: toggle3D) { Image(systemName: is3D ? "view.2d" : "view.3d") }
+                            .accessibilityLabel(is3D ? "2D로 보기" : "3D로 보기")
+                    }
+                }
+            }
             if hasRuns, data != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     // 공유 고르기 v1: 이미지(R31)·동영상(R50)
@@ -89,7 +121,7 @@ struct DayMapView: View {
                             Label { Text("이미지"); Text("오늘 요약 한 장, 경로 없음") } icon: { Image(systemName: "photo") }
                         }
                         Button { noticeShown ? make() : (notice = true) } label: {
-                            Label { Text("동영상"); Text("오늘 경로 재생, \(ShareVideo.seconds)초") } icon: { Image(systemName: "video") }
+                            Label { Text("동영상"); Text("오늘 경로 재생\(is3D ? "(2D 지도)" : ""), \(ShareVideo.seconds)초") } icon: { Image(systemName: "video") }
                         }
                     } label: { Image(systemName: "square.and.arrow.up") }
                         .accessibilityLabel("공유")
@@ -99,8 +131,122 @@ struct DayMapView: View {
         .sheet(isPresented: .constant(true)) { sheet }
         .task(id: playing) { await play() }
         .onChange(of: progress) { follow() }
-        .onChange(of: scheme, initial: true) { dark = scheme == .dark }
+        .onChange(of: scheme, initial: true) { darkState = scheme == .dark }
+        // 경로가 바뀌면(다시 읽기) 3D 장면은 다음에 켤 때 다시 만든다
+        .onChange(of: data?.route) { is3D = false; ready3D = false; scene3D = nil; flownIn = false; picked = nil }
+        // 말풍선은 화면 좌표에 고정: 지도가 움직이면(손짓·따라가기·시트 높이) 닫는다. 슬로프를 끄면 닫는다
+        .onChange(of: [zoom, pinch, pan.width, pan.height, drag.width, drag.height, sheetHeight]) { picked = nil }
+        .onChange(of: showSlopes) { if !showSlopes { picked = nil } }
         .onDisappear { making?.cancel() }
+    }
+
+    /// 2D 지도 층. 한 번 누르기 = 슬로프 이름(끌기는 10pt 움직여야 시작해 겹치지 않는다)
+    private var canvas: some View {
+        GeometryReader { geo in
+            Canvas { ctx, size in
+                let fit = fitRect(size)
+                let d = drawing, t = transform(fit), now = now, h = selected.map { day.runs[$0] }
+                ctx.withCGContext { cg in d.draw(cg, size: size, MapProjection(map, rect: fit), transform: t, now: now, highlight: h) }
+            }
+            .gesture(MagnifyGesture()
+                .updating($pinch) { v, s, _ in s = v.magnification }
+                .onEnded { zoom = min(max(zoom * $0.magnification, 1), 8) }
+                .simultaneously(with: DragGesture()
+                    .updating($drag) { v, s, _ in s = v.translation }
+                    .onEnded { pan.width += $0.translation.width; pan.height += $0.translation.height }))
+            .simultaneousGesture(SpatialTapGesture().onEnded { pick($0.location, in: geo.size) })
+        }
+        .ignoresSafeArea()
+        .accessibilityElement()
+        .accessibilityLabel("\(Resort.name(day.resortId)) 전체 슬로프 지도\(hasRuns ? " 위 오늘 경로" : "")")
+    }
+
+    /// 누른 자리 22pt 안의 가장 가까운 슬로프. 없거나 슬로프를 꺼 두면 말풍선을 닫는다
+    private func pick(_ p: CGPoint, in size: CGSize) {
+        guard showSlopes else { picked = nil; return }
+        let fit = fitRect(size), proj = MapProjection(map, rect: fit), t = transform(fit)
+        picked = SlopePick.nearest(to: p, in: map) { proj.point($0[0], $0[1]).applying(t) }
+    }
+
+    /// 말풍선: 누른 선 위 12pt, 좌우 16pt 안. 지도(2D Canvas·3D SCNView)와 같은 화면 전체 좌표
+    private var balloon: some View {
+        GeometryReader { geo in
+            if let picked {
+                let w = balloonSize.width, h = balloonSize.height
+                SlopeBalloon(hit: picked)
+                    .fixedSize()
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { balloonSize = $0 }
+                    .position(x: min(max(picked.anchor.x, 16 + w / 2), geo.size.width - 16 - w / 2),
+                              y: picked.anchor.y - 12 - h / 2)
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+
+    /// 지도 표시 메뉴 v1: 슬로프·리프트 켬·끔과 난이도 범례. 이용권·고도 파일과 상관없다
+    private var layersMenu: some View {
+        Menu {
+            Toggle("슬로프", isOn: $showSlopes)
+            Toggle("리프트", isOn: $showLifts)
+            Section("난이도") {
+                ForEach(SlopeStyle.Level.allCases, id: \.self) { level in
+                    let word = SlopeStyle.label(level) ?? "정보 없음"
+                    Label { Text(word) } icon: { Image(uiImage: Self.legendDot(level, dark: dark)) }
+                        .accessibilityLabel("난이도 색 \(word)")
+                }
+            }
+        } label: { Image(systemName: "map") }
+            .accessibilityLabel("지도 표시")
+    }
+
+    /// 범례 색 점. 메뉴가 아이콘을 한 색으로 칠하지 않게 원래 색으로
+    private static func legendDot(_ level: SlopeStyle.Level, dark: Bool) -> UIImage {
+        let hex = SlopeStyle.hex(level, dark: dark)
+        let casing = SlopeStyle.casing(level, dark: dark)
+        func ui(_ v: UInt32) -> UIColor {
+            UIColor(red: CGFloat(v >> 16 & 0xFF) / 255, green: CGFloat(v >> 8 & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1)
+        }
+        return UIGraphicsImageRenderer(size: CGSize(width: 12, height: 12)).image { ctx in
+            let r = CGRect(x: 1, y: 1, width: 10, height: 10)
+            ui(hex).setFill()
+            ctx.cgContext.fillEllipse(in: r)
+            if let casing {
+                ui(casing).setStroke()
+                ctx.cgContext.setLineWidth(1)
+                ctx.cgContext.strokeEllipse(in: r.insetBy(dx: 0.5, dy: 0.5))
+            }
+        }.withRenderingMode(.alwaysOriginal)
+    }
+
+    // MARK: 3D 보기
+
+    /// 처음 켤 때 지형 메시를 메인 스레드 밖에서 만들고(그동안 2D 그대로), 장면은 MainActor에서
+    private func toggle3D() {
+        if is3D || scene3D != nil { return switch3D(!is3D) }
+        guard !preparing3D, size != .zero, let terrain = drawing.terrain?.terrain else { return }
+        preparing3D = true
+        let map = map, route = hasRuns ? data?.route ?? [] : [], dark = dark, size = size
+        Task {
+            let (space, prepared) = await Task.detached(priority: .userInitiated) {
+                let space = Terrain3D(terrain: terrain, map: map)
+                return (space, Map3DTerrain(space: space, map: map))
+            }.value
+            // 준비 중 경로가 바뀌면(다시 읽기) 결과를 버린다
+            guard route == (hasRuns ? data?.route ?? [] : []) else { preparing3D = false; return }
+            scene3D = Map3DScene(space: space, terrain: prepared, map: map, route: route, dark: dark, viewport: size,
+                                  view3D: Resort.all.first { $0.id == day.resortId }?.view3D)
+            preparing3D = false
+            switch3D(true)
+        }
+    }
+
+    /// 켤 때는 3D를 투명하게 깔기만 하고 onReady에서 겹쳐 바꾼다. 끌 때 바로 2D로
+    private func switch3D(_ on: Bool) {
+        picked = nil
+        if on { return is3D = true }
+        if ready3D { flownIn = true }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { is3D = false; ready3D = false }
     }
 
     // MARK: 지도 위치

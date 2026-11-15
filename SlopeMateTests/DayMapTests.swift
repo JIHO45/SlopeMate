@@ -82,11 +82,32 @@ import Testing
         }
     }
 
+    /// 지도 방향 = 리프트 방위의 원형 중위(북 0, 시계 +, 도). 옆으로 가는 곤돌라·연결 리프트에 끌리지 않는다
+    @Test(arguments: [("high1", -146.0), ("yongpyong", -176.0), ("jisan", -164.0), ("vivaldi", 142.0), ("muju", -176.0), ("alpensia", -172.0)])
+    func angleIsCircularMedian(resortId: String, degrees: Double) throws {
+        let map = try #require(SlopeMap.load(resortId: resortId))
+        #expect(abs(MapProjection.angle(map) * 180 / .pi - degrees) < 0.6, "\(resortId)")
+    }
+
+    /// ±180° 경계: 방위 170°, −170°, 180°, 90°, −90° 리프트의 원형 중위는 180°(산술 평균이면 0° 근처)
+    @Test func angleCircularMedianWrapsAt180() throws {
+        let kx = cos(37.0 * .pi / 180)
+        let lifts = [170.0, -170, 180, 90, -90].enumerated().map { i, deg -> [String: Any] in
+            let b = deg * .pi / 180
+            return ["id": "l\(i)", "osm_id": "", "kind": "chair_lift", "line": [[37.0, 128.0], [37 + 0.01 * cos(b), 128 + 0.01 * sin(b) / kx]]]
+        }
+        let json: [String: Any] = ["resort_id": "test", "source": "test", "osm_timestamp": "", "slopes": [], "lifts": lifts]
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        let map = try d.decode(SlopeMap.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(abs(abs(MapProjection.angle(map) * 180 / .pi) - 180) < 0.6)
+    }
+
     /// 12초 × 30fps = 360프레임, 길이 12초 세로 H.264
     @Test func videoFramesAndDuration() async throws {
         let map = try #require(SlopeMap.load(resortId: "high1"))
         let route = [seg(.lift, 0, 600), seg(.run, 600, 900), seg(.run, 4000, 4300)]
-        let c = ShareVideo.Content(drawing: DayMapDrawing(map: map, route: route, showNames: true, dark: false), clock: PlayClock(route),
+        let c = ShareVideo.Content(drawing: DayMapDrawing(map: map, route: route, dark: false), clock: PlayClock(route),
                                    title: "11월 7일 · 하이원", count: "2회", summary: "1.2km")
         let url = try await ShareVideo.make(c, size: CGSize(width: 180, height: 320))
         defer { try? FileManager.default.removeItem(at: url) }
@@ -107,7 +128,7 @@ import Testing
     /// 취소하면 임시 파일을 남기지 않는다
     @Test func videoCancelRemovesFile() async throws {
         let map = try #require(SlopeMap.load(resortId: "high1"))
-        let c = ShareVideo.Content(drawing: DayMapDrawing(map: map, route: [seg(.run, 0, 600)], showNames: false, dark: true),
+        let c = ShareVideo.Content(drawing: DayMapDrawing(map: map, route: [seg(.run, 0, 600)], dark: true),
                                    clock: PlayClock([seg(.run, 0, 600)]), title: "", count: "", summary: "")
         let before = Set(try FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path))
         let task = Task { try await ShareVideo.make(c, size: CGSize(width: 180, height: 320)) }

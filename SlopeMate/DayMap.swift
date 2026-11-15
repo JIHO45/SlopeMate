@@ -97,7 +97,7 @@ nonisolated extension SlopeMap {
 
 /// 위경도 → 화면 좌표. 리조트 경계(슬로프·리프트 전부)가 rect 안에 가로세로 비율을 지켜 가운데로 들어온다.
 /// 위경도 → 화면. 스키장 안내도처럼 산 위가 화면 위로 오게 돌린다:
-/// 리프트 선(OSM에서 아래 → 위 방향)의 평균 방향이 화면 위를 향하도록 회전한다. 리프트가 없으면 북쪽이 위.
+/// 리프트 선(OSM에서 아래 → 위 방향)의 원형 중위 방위가 화면 위를 향하도록 회전한다. 리프트가 없으면 북쪽이 위.
 nonisolated struct MapProjection {
     let rect: CGRect
     private let lat0: Double, lon0: Double, kx: Double
@@ -116,10 +116,7 @@ nonisolated struct MapProjection {
         let kx = cos(lat0 * .pi / 180)
         self.lat0 = lat0; self.lon0 = lon0
         self.kx = kx
-        // 리프트 방향 합(동쪽 x, 북쪽 y). 이 방향을 화면 위(+v)로 돌린다.
-        var lx = 0.0, ly = 0.0
-        for l in map.lifts { if let a = l.line.first, let b = l.line.last { lx += (b[1] - a[1]) * kx; ly += b[0] - a[0] } }
-        let angle = lx == 0 && ly == 0 ? 0 : .pi / 2 - atan2(ly, lx)
+        let angle = Self.angle(map)
         cosA = cos(angle); sinA = sin(angle)
         let uv = all.map { c -> (Double, Double) in
             let x = (c[1] - lon0) * kx, y = c[0] - lat0
@@ -129,6 +126,30 @@ nonisolated struct MapProjection {
         let (u0, u1, v0, v1) = (us.min() ?? 0, us.max() ?? 0, vs.min() ?? 0, vs.max() ?? 0)
         cu = (u0 + u1) / 2; cv = (v0 + v1) / 2
         scale = min(rect.width / max(u1 - u0, 1e-6), rect.height / max(v1 - v0, 1e-6))
+    }
+
+    /// 회전각(라디안). 동쪽 x·북쪽 y를 u = x cos − y sin, v = x sin + y cos(화면 오른쪽 u, 위 v)로 돌린다.
+    /// 리프트 방위(북 0, 시계 +)의 원형 중위를 화면 위(+v)로. 리프트 2개 이하는 방향 벡터 합, 없으면 0.
+    /// 2D·3D가 같이 쓰고, 지형 음영의 빛 방향도 이 값으로 정한다(Terrain).
+    static func angle(_ map: SlopeMap) -> Double {
+        let all = map.slopes.flatMap { $0.lines.flatMap { $0 } } + map.lifts.flatMap(\.line)
+        let lats = all.map { $0[0] }
+        let kx = cos(((lats.min() ?? 0) + (lats.max() ?? 0)) / 2 * .pi / 180)
+        // 리프트마다 (동쪽, 북쪽) 벡터. 방위 = atan2(동, 북)
+        let v = map.lifts.compactMap { l -> (Double, Double)? in
+            guard let a = l.line.first, let b = l.line.last else { return nil }
+            return ((b[1] - a[1]) * kx, b[0] - a[0])
+        }
+        let lx = v.reduce(0) { $0 + $1.0 }, ly = v.reduce(0) { $0 + $1.1 }
+        let sum = lx == 0 && ly == 0 ? 0 : atan2(lx, ly)
+        guard v.count > 2 else { return sum }
+        // 원형 중위: 다른 방위들과의 각거리 합이 가장 작은 리프트 방위(옆길로 가는 몇 개에 끌리지 않게).
+        // 합이 같으면(짝수 개) 벡터 합 방향에 가까운 쪽
+        func dist(_ a: Double, _ b: Double) -> Double { abs(atan2(sin(a - b), cos(a - b))) }
+        let bearings = v.map { atan2($0.0, $0.1) }
+        let cost = bearings.map { b in bearings.reduce(0) { $0 + dist(b, $1) } }
+        let best = cost.min()!
+        return bearings.indices.filter { cost[$0] - best < 1e-9 }.map { bearings[$0] }.min { dist($0, sum) < dist($1, sum) }!
     }
 
     func point(_ lat: Double, _ lon: Double) -> CGPoint {
@@ -150,20 +171,26 @@ nonisolated struct DayMapDrawing {
     var map: SlopeMap
     /// 하강 0회면 빈 배열(슬로프·리프트만)
     var route: [RouteSegment]
-    /// 슬로프 이름(R9 기준 통과 리조트만)
-    var showNames: Bool
     var dark: Bool
+    /// 지형 바탕(음영·등고선). 고도 파일이 없는 리조트는 nil: 바탕 없이 그린다
+    var terrain: Terrain.Layer? = nil
+    /// 슬로프·리프트 선을 그릴지. 내 경로는 늘 그린다
+    var layers = MapLayers()
 
     struct Palette {
-        var bg, slope, lift, fill, text, dot, label, primary: UIColor
+        var bg, lift, fill, text, dot, label, primary: UIColor
+        /// 지형 바탕 (S6 지형 바탕 v1): 음영 밝은 면·그늘, 등고선(알파 0.12·0.18로 겹침)
+        var hillLight, hillShadow, contour: UIColor
         init(dark: Bool) {
             func c(_ l: UInt32, _ d: UInt32) -> UIColor {
                 let v = dark ? d : l
                 return UIColor(red: CGFloat(v >> 16 & 0xFF) / 255, green: CGFloat(v >> 8 & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1)
             }
-            bg = c(0xEEF6F8, 0x0F2027); slope = c(0xB8CDD3, 0x2C4650); lift = c(0x7C949B, 0x5A7680)
+            bg = c(0xEEF6F8, 0x0F2027); lift = c(0x7C949B, 0x5A7680)
             fill = c(0x0E9AA7, 0x5CE1E6); text = c(0x087480, 0x5CE1E6); dot = c(0xFFFFFF, 0x0B161B)
             label = c(0x4A636C, 0x86A0A8); primary = c(0x111418, 0xF4F8FA)
+            hillLight = c(0xF7FBFC, 0x1A323B); hillShadow = c(0xD6E5EA, 0x0A171C)
+            contour = c(0x1A323B, 0xF7FBFC)
         }
     }
 
@@ -194,28 +221,53 @@ nonisolated struct DayMapDrawing {
 
         cg.setFillColor(c.bg.cgColor)
         cg.fill(CGRect(origin: .zero, size: size))
-        for s in map.slopes {
-            for line in s.lines {
-                let pts = coords(line)
-                if s.area == true, pts.count > 2 {
-                    cg.addPath(path(pts))
-                    cg.setFillColor(c.slope.withAlphaComponent(0.35).cgColor)
-                    cg.fillPath()
-                }
-                stroke(pts, c.slope, 3)
+        if let terrain {
+            cg.saveGState()
+            cg.concatenate(terrain.imageTransform(proj, t))
+            cg.interpolationQuality = .high
+            cg.draw(terrain.image, in: CGRect(x: 0, y: 0, width: terrain.terrain.cols, height: terrain.terrain.rows))
+            cg.restoreGState()
+            // 등고선: 격자 좌표 경로를 그대로 두고 변환만 바꾼다. 선 굵기는 확대해도 그대로. 음영처럼 바깥 10%에서 사라진다
+            let g = terrain.gridTransform(proj, t), k = sqrt(abs(g.a * g.d - g.b * g.c))
+            cg.saveGState()
+            if let mask = terrain.mask {
+                let m = terrain.imageTransform(proj, t)
+                cg.concatenate(m)
+                cg.clip(to: CGRect(x: 0, y: 0, width: terrain.terrain.cols, height: terrain.terrain.rows), mask: mask)
+                cg.concatenate(m.inverted())
             }
+            for (line, w, a) in [(terrain.minor, 0.5, 0.12), (terrain.major, 1.0, 0.18)] {
+                cg.saveGState()
+                cg.concatenate(g)
+                cg.addPath(line)
+                cg.setStrokeColor(c.contour.withAlphaComponent(a).cgColor)
+                cg.setLineWidth(w * u / k)
+                cg.setLineCap(.butt)
+                cg.strokePath()
+                cg.restoreGState()
+            }
+            cg.restoreGState()
         }
-        for l in map.lifts { stroke(coords(l.line), c.lift, 1.5, dash: [4, 4]) }
-        if showNames {
-            UIGraphicsPushContext(cg)
-            let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 11 * u, weight: .medium), .foregroundColor: c.label]
+        // 슬로프: 난이도 색 2.5pt (S6 지도 난이도 색 v1). 지형 바탕이 있든 없든 같은 색
+        if layers.slopes {
             for s in map.slopes {
-                guard let name = s.name, let line = s.lines.first, !line.isEmpty else { continue }
-                let mid = coords([line[line.count / 2]])[0], size = (name as NSString).size(withAttributes: attrs)
-                (name as NSString).draw(at: CGPoint(x: mid.x - size.width / 2, y: mid.y - size.height - 3 * u), withAttributes: attrs)
+                let color = SlopeStyle.color(difficulty: s.difficulty, dark: dark)
+                let casing = SlopeStyle.casing(SlopeStyle.level(s.difficulty), dark: dark).map { v in
+                    UIColor(red: CGFloat(v >> 16 & 0xFF) / 255, green: CGFloat(v >> 8 & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1)
+                }
+                for line in s.lines {
+                    let pts = coords(line)
+                    if s.area == true, pts.count > 2 {
+                        cg.addPath(path(pts))
+                        cg.setFillColor(color.withAlphaComponent(0.2).cgColor)
+                        cg.fillPath()
+                    }
+                    if let casing { stroke(pts, casing, 3.5) }
+                    stroke(pts, color, 2.5)
+                }
             }
-            UIGraphicsPopContext()
         }
+        if layers.lifts { for l in map.lifts { stroke(coords(l.line), c.lift, 1.5, dash: [4, 4]) } }
 
         // 하강은 강조색 실선, 리프트는 점선, 그 밖(걷기·평지)은 옅은 가는 선
         func style(_ k: RouteSegment.Kind) -> (UIColor, CGFloat, [CGFloat], CGFloat) {

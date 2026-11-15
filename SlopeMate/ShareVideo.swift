@@ -83,12 +83,15 @@ nonisolated enum ShareVideo {
         }
     }
 
-    /// 프레임 1장: 위에 날짜·리조트와 재생 시각, 가운데 지도, 아래 합계와 OSM 출처. 위가 0인 좌표계
+    /// 프레임 1장: 위에 날짜·리조트와 재생 시각, 가운데 지도, 아래 합계와 OSM·Copernicus 출처. 위가 0인 좌표계.
+    /// 지도는 지형 바탕과 내 경로만: 리조트 슬로프·리프트 선은 지도 표시 메뉴와 상관없이 그리지 않는다 (공유 동영상 v2)
     static func frame(_ cg: CGContext, _ c: Content, size: CGSize, progress p: Double) {
         let u = size.width / 390
         let proj = MapProjection(c.drawing.map, rect: CGRect(x: 24 * u, y: 130 * u, width: size.width - 48 * u, height: size.height - 290 * u))
         let now = c.clock.time(at: p)
-        c.drawing.draw(cg, size: size, proj, now: now, unit: u)
+        var drawing = c.drawing
+        drawing.layers = .none
+        drawing.draw(cg, size: size, proj, now: now, unit: u)
 
         let pal = DayMapDrawing.Palette(dark: c.drawing.dark)
         UIGraphicsPushContext(cg)
@@ -103,7 +106,19 @@ nonisolated enum ShareVideo {
         if let now { text(hm.string(from: now), CGPoint(x: size.width - 24 * u, y: 56 * u), digits, pal.text, right: true) }
         text(c.count, CGPoint(x: 24 * u, y: size.height - 140 * u), .monospacedDigitSystemFont(ofSize: 34 * u, weight: .bold), pal.text)
         text(c.summary, CGPoint(x: 24 * u, y: size.height - 96 * u), .systemFont(ofSize: 15 * u), pal.label)
-        text("© OpenStreetMap contributors", CGPoint(x: size.width - 24 * u, y: size.height - 44 * u), .systemFont(ofSize: 12 * u), pal.label, right: true)
+        // 지형이 있으면 OSM 아래에 Copernicus 출처·면책 문장 전체(작은 글씨, 오른쪽 맞춤)를 아래 여백에서 위로 쌓는다
+        var osmY = size.height - 44 * u
+        if c.drawing.terrain != nil {
+            let style = NSMutableParagraphStyle()
+            style.alignment = .right
+            let note = "\(Terrain.source).\n\(Terrain.disclaimer)." as NSString
+            let a: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 7.5 * u), .foregroundColor: pal.label, .paragraphStyle: style]
+            let w = size.width - 48 * u
+            let h = ceil(note.boundingRect(with: CGSize(width: w, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: a, context: nil).height)
+            note.draw(with: CGRect(x: 24 * u, y: size.height - 12 * u - h, width: w, height: h), options: .usesLineFragmentOrigin, attributes: a, context: nil)
+            osmY = size.height - 12 * u - h - 17 * u
+        }
+        text("© OpenStreetMap contributors", CGPoint(x: size.width - 24 * u, y: osmY), .systemFont(ofSize: 12 * u), pal.label, right: true)
     }
 
     /// 만드는 중 창의 세로 썸네일: 마지막 프레임

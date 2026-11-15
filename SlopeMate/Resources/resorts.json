@@ -6,7 +6,10 @@
     "longitude": 128.839,
     "homePageURL": "https://www.high1.com",
     "slopeStatusURL": "https://www.high1.com/ski/slopeView.do?key=748&mode=p",
-    "webCamURL": null
+    "webCamURL": null,
+    "view3D": {
+      "yaw": 30
+    }
   },
   {
     "id": "yongpyong",
@@ -24,7 +27,10 @@
     "longitude": 127.684,
     "homePageURL": "https://www.sonohotelsresorts.com/vp",
     "slopeStatusURL": "https://www.sonohotelsresorts.com/skiboard/status",
-    "webCamURL": null
+    "webCamURL": null,
+    "view3D": {
+      "yaw": 15
+    }
   },
   {
     "id": "phoenix",
@@ -33,7 +39,10 @@
     "longitude": 128.3254,
     "homePageURL": "https://phoenixhnr.co.kr/pyeongchang/index",
     "slopeStatusURL": "https://phoenixhnr.co.kr/static/pyeongchang/snowpark/slope-lift",
-    "webCamURL": "https://phoenixhnr.co.kr/page/pyeongchang/guide/operation/sketchMovie"
+    "webCamURL": "https://phoenixhnr.co.kr/page/pyeongchang/guide/operation/sketchMovie",
+    "view3D": {
+      "yaw": -15
+    }
   },
   {
     "id": "wellihilli",
@@ -42,7 +51,10 @@
     "longitude": 128.2506,
     "homePageURL": "https://www.wellihillipark.com",
     "slopeStatusURL": "https://m.wellihillipark.com/snowpark/schedule/open-slope",
-    "webCamURL": "https://m.wellihillipark.com/customer/webcam"
+    "webCamURL": "https://m.wellihillipark.com/customer/webcam",
+    "view3D": {
+      "yaw": -15
+    }
   },
   {
     "id": "alpensia",
@@ -59,8 +71,11 @@
     "latitude": 37.8164,
     "longitude": 127.587,
     "homePageURL": "https://www.elysian.co.kr",
-    "slopeStatusURL": "https://www.elysian.co.kr/about-gangchon/sky#guide-to-using-slopes",
-    "webCamURL": null
+    "slopeStatusURL": "https://www.elysian.co.kr/about-gangchon/ski#guide-to-using-slopes",
+    "webCamURL": null,
+    "view3D": {
+      "yaw": 15
+    }
   },
   {
     "id": "o2",
@@ -78,7 +93,10 @@
     "longitude": 127.2936,
     "homePageURL": "https://www.konjiamresort.co.kr",
     "slopeStatusURL": "https://www.konjiamresort.co.kr/ski/slopeOpenClose.dev",
-    "webCamURL": "https://www.konjiamresort.co.kr/ski/liveCam.dev"
+    "webCamURL": "https://www.konjiamresort.co.kr/ski/liveCam.dev",
+    "view3D": {
+      "yaw": -15
+    }
   },
   {
     "id": "jisan",
@@ -96,7 +114,10 @@
     "longitude": 127.7369,
     "homePageURL": "https://www.mdysresort.com",
     "slopeStatusURL": "https://www.mdysresort.com/convert_main_slope_221207.asp",
-    "webCamURL": "https://www.mdysresort.com/guide/webcam.asp"
+    "webCamURL": "https://www.mdysresort.com/guide/webcam.asp",
+    "view3D": {
+      "yaw": 20
+    }
   },
   {
     "id": "edenvalley",
