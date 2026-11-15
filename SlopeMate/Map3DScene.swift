@@ -84,6 +84,20 @@ nonisolated struct Camera3D: Equatable, Sendable {
         return CGPoint(x: CGFloat(W / 2 + simd_dot(v, r) / (z * t) * H / 2), y: CGFloat(H / 2 - simd_dot(v, u) / (z * t) * H / 2))
     }
 
+    /// 화면 점(pt)이 보는 땅(장면 xz). screen과 같은 투영의 광선을 거리의 1/32씩 3배 거리까지 걷는다. 하늘이면 nil
+    func ground(_ pt: CGPoint, viewport: CGSize, top: CGFloat, bottom: CGFloat, space: Terrain3D) -> SIMD2<Float>? {
+        let H = Float(viewport.height), W = Float(viewport.width), t = tan(Self.fovY / 2)
+        let f = simd_normalize(target - position), r = SIMD3(cos(yaw), 0, -sin(yaw)), u = simd_cross(r, f)
+        let visibleMid = Float(top) + max(80, H - Float(top) - Float(bottom)) / 2
+        var p = position - u * (H / 2 - visibleMid) * metersPerPoint(viewportHeight: viewport.height)
+        let d = simd_normalize(f + r * ((Float(pt.x) - W / 2) / (H / 2) * t) + u * ((H / 2 - Float(pt.y)) / (H / 2) * t)) * (distance / 32)
+        for _ in 0..<96 {
+            p += d
+            if p.y <= space.height(SIMD2(p.x, p.z)) { return SIMD2(p.x, p.z) }
+        }
+        return nil
+    }
+
     /// 목표점 거리에서 화면 1pt의 길이(m) = 2 · distance · tan(fovY / 2) / viewportHeight
     func metersPerPoint(viewportHeight: CGFloat) -> Float {
         2 * distance * tan(Self.fovY / 2) / max(Float(viewportHeight), 1)
@@ -121,7 +135,7 @@ final class Map3DScene {
     private var limit: Camera3D
     /// 처음 시점: 슬로프·리프트가 보이는 영역을 채운다
     private var start: Camera3D
-    /// 슬로프·리프트 점 전부(장면 좌표, view3D.excludeLifts 리프트는 뺌). 처음 시점 맞춤용
+    /// 슬로프·리프트 점 전부(장면 좌표, view3D.excludeLifts 리프트는 뺌) 또는 fitPoints. 처음 시점 맞춤용
     let linePoints: [SIMD3<Float>]
     /// 리조트별 처음 시점 값(yaw·pitch)
     private let view3D: Resort.View3D?
@@ -160,10 +174,13 @@ final class Map3DScene {
     /// 경로 조각마다 리본과 두 겹 노드
     private var segments: [(seg: RouteSegment, ribbon: Terrain3D.Ribbon, solid: SCNNode, faded: SCNNode)] = []
 
-    /// route: 하강 0회면 빈 배열. terrain: Map3DTerrain(space, map). viewport: 화면 전체 크기(pt). 카메라는 처음 시점
+    /// route: 하강 0회면 빈 배열. terrain: Map3DTerrain(space, map). viewport: 화면 전체 크기(pt). 카메라는 처음 시점.
+    /// fitPoints: 처음 시점을 이 점들(S19 하강 하나)에 맞춘다. 이때 view3D는 yaw·pitch만 쓰고 zoom(리조트 전체용)은 곱하지 않는다
     init(space: Terrain3D, terrain: Map3DTerrain, map: SlopeMap, route: [RouteSegment], dark: Bool, viewport: CGSize,
-         view3D: Resort.View3D? = nil) {
+         view3D: Resort.View3D? = nil, fitPoints: [(lat: Double, lon: Double)]? = nil) {
         self.space = space
+        var view3D = view3D
+        if fitPoints != nil { view3D?.zoom = nil }
         self.view3D = view3D
         self.map = map
         self.route = route
@@ -172,7 +189,7 @@ final class Map3DScene {
         bottomInset = viewport.height * 0.25 + 24
         let excluded = Set(view3D?.excludeLifts ?? [])
         let all = map.slopes.flatMap { $0.lines.flatMap { $0 } } + map.lifts.filter { !excluded.contains($0.id) }.flatMap(\.line)
-        linePoints = all.map { space.point(lat: $0[0], lon: $0[1]) }
+        linePoints = fitPoints?.map { space.point(lat: $0.lat, lon: $0.lon) } ?? all.map { space.point(lat: $0[0], lon: $0[1]) }
         stations = map.lifts.flatMap { l in [l.line.first, l.line.last].compactMap { $0 } }
         limit = Camera3D.home(space, viewport: viewport)
         start = Self.fit(space, points: linePoints, viewport: viewport, top: 150, bottom: viewport.height * 0.25 + 24, limit: limit, view3D: view3D)
@@ -197,6 +214,10 @@ final class Map3DScene {
         terrainMat.shaderModifiers = [.fragment: Self.terrainShader]
         let es = space.edgeScale
         terrainMat.setValue(SCNVector3(es.x, es.y, 0), forKey: "edgeScale")
+        // 고해상 패치(S19 loadDetail): 붙기 전에는 UV 밖 자리라 쓰지 않는다
+        terrainMat.setValue(SCNMaterialProperty(contents: UIColor.white), forKey: "detailTex")
+        terrainMat.setValue(SCNVector4(2, 2, 3, 3), forKey: "detailRect")
+        terrainMat.setValue(NSNumber(value: 0), forKey: "detailMix")
         terrain.geometry.firstMaterial = terrainMat
         terrainNode.geometry = terrain.geometry
         terrainNode.renderingOrder = Order.terrain
@@ -415,6 +436,49 @@ final class Map3DScene {
         return c
     }
 
+    /// 처음 시점(날아 들어오기가 끝난 자리)에서 화면 전체(시트 뒤 포함)에 보이는 땅의 격자 범위(행0, 열0, 행1, 열1).
+    /// 7×9 점의 광선이 닿는 곳 + 2칸
+    func detailWindow() -> SIMD4<Float>? {
+        let t = space.terrain
+        var lo = SIMD2<Float>(repeating: .infinity), hi = -lo
+        for i in 0...8 {
+            for j in 0...6 {
+                let pt = CGPoint(x: viewport.width * CGFloat(j) / 6, y: viewport.height * CGFloat(i) / 8)
+                guard let g = start.ground(pt, viewport: viewport, top: topInset, bottom: bottomInset, space: space) else { continue }
+                let c = space.coordinate(g), rc = SIMD2(Float((t.north - c.lat) / t.step), Float((c.lon - t.west) / t.step))
+                lo = simd_min(lo, rc); hi = simd_max(hi, rc)
+            }
+        }
+        guard lo.x < hi.x, lo.y < hi.y else { return nil }
+        lo = simd_max(lo - 2, .zero); hi = simd_min(hi + 2, SIMD2(Float(t.rows - 1), Float(t.cols - 1)))
+        guard lo.x < hi.x, lo.y < hi.y else { return nil }
+        return SIMD4(lo.x, lo.y, hi.x, hi.y)
+    }
+
+    private var detailLoading = false
+
+    /// S19: 처음 시점에 보이는 땅만 2048 질감으로 다시 그려(나무 모양·그림자) 지형 질감 위에 0.6초에 걸쳐 덮는다. 몇 초 걸려 메인 스레드 밖에서.
+    /// 화면 크기가 정해진 뒤(onReady) 한 번만 부른다.
+    /// ponytail: 캐시 없음(열 때마다 만든다), 화면을 닫아도 만들던 것은 끝까지 돈다(결과만 버림). 느리면 하강별 캐시·중간 취소
+    func loadDetail() async {
+        guard !detailLoading, let win = detailWindow() else { return }
+        detailLoading = true
+        let (space, map) = (space, map)
+        let image = await Task.detached(priority: .utility) { space.groundTexture(map: map, mesh: space.mesh(), window: win).image }.value
+        guard let image, !Task.isCancelled else { return }
+        let t = space.terrain
+        let p = SCNMaterialProperty(contents: image)
+        p.mipFilter = .linear
+        terrainMat.setValue(p, forKey: "detailTex")
+        terrainMat.setValue(SCNVector4(win.y / Float(t.cols - 1), win.x / Float(t.rows - 1), win.w / Float(t.cols - 1), win.z / Float(t.rows - 1)), forKey: "detailRect")
+        terrainMat.setValue(NSNumber(value: 1), forKey: "detailMix")
+        let fade = CABasicAnimation(keyPath: "detailMix")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = 0.6
+        terrainMat.addAnimation(fade, forKey: "detailFade")
+    }
+
     private func applyCamera(animated: Bool) {
         let mpp = camera.metersPerPoint(viewportHeight: viewport.height)
         // 목표점을 시트 위 보이는 영역 가운데로: 카메라를 화면 세로 방향으로 평행 이동
@@ -583,8 +647,18 @@ final class Map3DScene {
         float3 edgeScale;
         float fogStart;
         float fogEnd;
+        float4 detailRect;
+        float detailMix;
+        texture2d<float> detailTex;
         #pragma body
         float3 c = _surface.diffuse.rgb;
+        // 고해상 패치(detailRect: UV u0, v0, u1, v1) 안이면 그 질감. 패치 가장자리 6%에서 섞는다
+        float2 du = (_surface.diffuseTexcoord - detailRect.xy) / (detailRect.zw - detailRect.xy);
+        float din = min(min(du.x, 1.0 - du.x), min(du.y, 1.0 - du.y));
+        if (din > 0.0) {
+            constexpr sampler ds(filter::linear, mip_filter::linear, address::clamp_to_edge, max_anisotropy(8));
+            c = mix(c, detailTex.sample(ds, du).rgb, smoothstep(0.0, 0.06, din) * detailMix);
+        }
         float lum = dot(c, float3(0.2126, 0.7152, 0.0722));
         c *= mix(tintLow, tintHigh, smoothstep(0.03, 0.8, lum));
         float4 clip = scn_frame.projectionTransform * float4(_surface.position, 1.0);

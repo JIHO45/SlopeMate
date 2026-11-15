@@ -10,7 +10,7 @@ struct Map3DSceneTests {
     typealias T = Terrain3DTests
 
     /// 북쪽 리프트 하나 + 난이도가 다른 슬로프 넷(초급 둘, 상급, 정보 없음)
-    static func scene(view3D: Resort.View3D? = nil) throws -> Map3DScene {
+    static func scene(view3D: Resort.View3D? = nil, fitPoints: [(lat: Double, lon: Double)]? = nil) throws -> Map3DScene {
         func line(_ c: Double) -> [[Double]] { [(4.0, c), (16.0, c)].map { let p = T.ll($0.0, $0.1); return [p.lat, p.lon] } }
         let json: [String: Any] = [
             "resort_id": "test", "source": "test", "osm_timestamp": "",
@@ -25,7 +25,8 @@ struct Map3DSceneTests {
         d.keyDecodingStrategy = .convertFromSnakeCase
         let m = try d.decode(SlopeMap.self, from: JSONSerialization.data(withJSONObject: json))
         let s = Terrain3D(terrain: T.grid(T.plane), map: m)
-        return Map3DScene(space: s, terrain: Map3DTerrain(space: s, map: m), map: m, route: [], dark: false, viewport: T.viewport, view3D: view3D)
+        return Map3DScene(space: s, terrain: Map3DTerrain(space: s, map: m), map: m, route: [], dark: false, viewport: T.viewport, view3D: view3D,
+                          fitPoints: fitPoints)
     }
 
     static func node(_ scene: Map3DScene, _ name: String) throws -> SCNNode {
@@ -142,5 +143,43 @@ struct Map3DSceneTests {
         #expect(scene.camera.pitch < c.pitch && scene.camera.pitch > start.pitch)
         scene.setFlyIn(progress: 1)
         #expect(scene.camera == start)
+    }
+
+    /// S19: fitPoints를 주면 처음 시점이 그 점들(하강 하나)에 맞춰져 안전 영역 안에 들어오고 더 가깝다. view3D.zoom은 곱하지 않는다. 안 주면 그대로
+    @Test func fitPoints() throws {
+        let run = [(9.0, 7.0), (10.0, 7.5), (11.0, 7.2), (12.0, 8.0)].map { T.ll($0.0, $0.1) }
+        let base = try Self.scene(), scene = try Self.scene(fitPoints: run)
+        #expect(scene.linePoints.count == run.count)
+        #expect(scene.camera.distance < base.camera.distance)
+        let v = T.viewport, top: CGFloat = 150, bottom = v.height * 0.25 + 24
+        let area = CGRect(x: 16, y: top + Map3DScene.startPadTop, width: v.width - 32, height: v.height - bottom - top - Map3DScene.startPadTop)
+        for p in scene.linePoints {
+            let s = scene.camera.screen(p, viewport: v, top: top, bottom: bottom)
+            #expect(area.insetBy(dx: -1, dy: -1).contains(s), "\(s) \(area)")
+        }
+        #expect(try Self.scene(view3D: .init(zoom: 0.8), fitPoints: run).camera == scene.camera)
+        #expect(try Self.scene(fitPoints: nil).camera == base.camera)
+    }
+
+    /// S19 2D 고정 시점(RunDetailView.frame): 점 상자가 영역 가운데에 들어오고 한 변을 채운다. 최대 8배, 점이 없으면 fit을 영역에
+    @Test func runDetailFrame() {
+        let area = CGRect(x: 32, y: 126, width: 300, height: 400)
+        let pts = [CGPoint(x: 100, y: 100), CGPoint(x: 150, y: 300)]
+        let t = RunDetailView.frame(pts, in: area, fit: .zero)
+        let a = pts[0].applying(t), b = pts[1].applying(t)
+        #expect(abs((a.x + b.x) / 2 - area.midX) < 1e-6 && abs((a.y + b.y) / 2 - area.midY) < 1e-6)
+        #expect(abs(abs(b.y - a.y) - area.height) < 1e-6 && abs(b.x - a.x) <= area.width)
+        #expect(abs(RunDetailView.frame([CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 1)], in: area, fit: .zero).a - 8) < 1e-9)
+        let fit = CGRect(x: 0, y: 0, width: 600, height: 400)
+        #expect(CGPoint(x: fit.midX, y: fit.midY).applying(RunDetailView.frame([], in: area, fit: fit)) == CGPoint(x: area.midX, y: area.midY))
+    }
+
+    @Test func objectParticle() {
+        #expect(RunDetailView.objectParticle("레인보우 1") == "을")
+        #expect(RunDetailView.objectParticle("하강 2") == "를")
+        #expect(RunDetailView.objectParticle("제우스") == "를")
+        #expect(RunDetailView.objectParticle("빅토리아") == "를")
+        #expect(RunDetailView.objectParticle("헤라") == "를")
+        #expect(RunDetailView.objectParticle("아테나 3") == "을")
     }
 }

@@ -16,7 +16,7 @@ struct DayDetailView: View {
     var body: some View {
         Group {
             if let map = SlopeMap.cached(resortId: day.resortId), map.isDrawable {
-                DayMapView(day: shown, map: map, data: data, gaps: gaps, ratings: ratings, span: span)
+                DayMapView(db: db, day: shown, map: map, data: data, gaps: gaps, ratings: ratings, span: span)
             } else {
                 list
             }
@@ -120,6 +120,7 @@ struct DaySummary: View {
 }
 
 /// 세션별 하강 목록과 "기록 없음" 행. 지도형 시트에서는 세션 머리줄을 위에 붙이고(pinned), 행을 누르면 onTap(하강 번호).
+/// onDetail이 있으면 강조된 행 아래 "자세히"(S19, 잠금 S6 v1: 잠기면 자물쇠).
 struct DayRunList: View {
     let day: Stats.Day
     let gaps: [Gap]
@@ -127,6 +128,8 @@ struct DayRunList: View {
     var highlight: Int? = nil
     var pinned = false
     var onTap: ((Int) -> Void)? = nil
+    var onDetail: ((Int) -> Void)? = nil
+    var detailLocked = false
     @Environment(\.dynamicTypeSize) private var typeSize
 
     private enum Row: Identifiable {
@@ -181,6 +184,7 @@ struct DayRunList: View {
                                 } else {
                                     runRow(n, r)
                                 }
+                                if highlight == n, let onDetail { detailButton { onDetail(n) } }
                             case .gap(let g): gapRow(g)
                             }
                         }
@@ -240,6 +244,27 @@ struct DayRunList: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    /// 잠금 S6 v1: 강조 행 아래 꽉 찬 44pt 캡슐
+    private func detailButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if detailLocked { Image(systemName: "lock").foregroundStyle(Color.secondaryText).accessibilityHidden(true) }
+                Text("자세히")
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText).accessibilityHidden(true)
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Color.primaryText)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(Color.card, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.cardBorder))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(detailLocked ? "자세히, 시즌 이용권 필요" : "자세히")
+        .padding(.horizontal, 16).padding(.bottom, 10)
+        .background(Color.surface.opacity(0.6))
     }
 
     private func gapRow(_ g: Gap) -> some View {

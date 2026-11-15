@@ -424,17 +424,19 @@ nonisolated extension Terrain3D {
         return g
     }
 
-    func groundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048) -> GroundTexture {
+    /// window: 격자 (행0, 열0, 행1, 열1) 안만 side 해상도로 그린다(S19 고해상 패치). 이때 나무는 7m 칸에 별 모양 수관·긴 그림자. nil이면 격자 전체
+    func groundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048, window: SIMD4<Float>? = nil) -> GroundTexture {
         let t = terrain, rows = t.rows, cols = t.cols
+        let win = window ?? SIMD4(0, 0, Float(rows - 1), Float(cols - 1))
         let cell = t.step * Self.metersPerDegree
-        let wm = Float(Double(cols - 1) * cell * kx), hm = Float(Double(rows - 1) * cell)
-        let long = max(2, min(side, 16 * max(rows, cols)))
+        let wm = Float(Double(win.w - win.y) * cell * kx), hm = Float(Double(win.z - win.x) * cell)
+        let long = window == nil ? max(2, min(side, 16 * max(rows, cols))) : side
         let W = wm >= hm ? long : max(2, Int((Float(long) * wm / hm).rounded()))
         let H = wm >= hm ? max(2, Int((Float(long) * hm / wm).rounded())) : long
-        let sr = Float(rows - 1) / Float(H), sc = Float(cols - 1) / Float(W)   // 텍셀 한 칸 = 격자 몇 칸
+        let sr = (win.z - win.x) / Float(H), sc = (win.w - win.y) / Float(W)   // 텍셀 한 칸 = 격자 몇 칸
         // 텍셀 (i, j) → 장면 xz는 아핀
-        let p0 = xz(lat: t.north, lon: t.west)
-        let di = (xz(lat: t.north - t.step, lon: t.west) - p0) * sr, dj = (xz(lat: t.north, lon: t.west + t.step) - p0) * sc
+        let la0 = t.north - Double(win.x) * t.step, lo0 = t.west + Double(win.y) * t.step, p0 = xz(lat: la0, lon: lo0)
+        let di = (xz(lat: la0 - t.step, lon: lo0) - p0) * sr, dj = (xz(lat: la0, lon: lo0 + t.step) - p0) * sc
         let o = p0 + (di + dj) / 2, pr = simd_length(di), pc = simd_length(dj)
 
         // 1. 높이(과장 적용, Catmull-Rom 가로 → 세로)
@@ -444,7 +446,7 @@ nonisolated extension Terrain3D {
             let w = SIMD4(-f3 + 2 * f2 - f, 3 * f3 - 5 * f2 + 2, -3 * f3 + 4 * f2 + f, f3 - f2) / 2
             return (SIMD4(i - 1, i, i + 1, i + 2).clamped(lowerBound: .zero, upperBound: SIMD4(repeating: n - 1)), w)
         }
-        let colTaps = (0..<W).map { taps((Float($0) + 0.5) * sc, cols) }, rowTaps = (0..<H).map { taps((Float($0) + 0.5) * sr, rows) }
+        let colTaps = (0..<W).map { taps(win.y + (Float($0) + 0.5) * sc, cols) }, rowTaps = (0..<H).map { taps(win.x + (Float($0) + 0.5) * sr, rows) }
         var across = [Float](repeating: 0, count: rows * W)
         for r in 0..<rows {
             for j in 0..<W {
@@ -466,7 +468,7 @@ nonisolated extension Terrain3D {
 
         // 2. 슬로프·리프트 자리(0 숲 … 1 깨끗한 눈)
         var clear = [Float](repeating: 0, count: W * H)
-        func texel(_ p: [Double]) -> SIMD2<Float> { SIMD2(Float((t.north - p[0]) / t.step) / sr - 0.5, Float((p[1] - t.west) / t.step) / sc - 0.5) }
+        func texel(_ p: [Double]) -> SIMD2<Float> { SIMD2((Float((t.north - p[0]) / t.step) - win.x) / sr - 0.5, (Float((p[1] - t.west) / t.step) - win.y) / sc - 0.5) }
         func stroke(_ line: [[Double]], half: Float, soft: Float, amount: Float) {
             guard line.count >= 2 else { return }
             let g = line.map(texel), pts = line.map { xz(lat: $0[0], lon: $0[1]) }
@@ -627,12 +629,12 @@ nonisolated extension Terrain3D {
             let x = Float(k) / 4095
             return UInt8(min(255, max(0, (x <= 0.0031308 ? x * 12.92 : 1.055 * pow(x, 1 / 2.4) - 0.055) * 255 + 0.5)))
         }
-        // 나무: 3텍셀 칸마다 하나. 칸마다 가운데(텍셀)·반지름과 있을 확률·활엽 문턱을 미리 구한다
-        let cs: Float = 3, cr = Int((Float(H) / cs).rounded(.up)) + 2, cc = Int((Float(W) / cs).rounded(.up)) + 2
+        // 나무: 3텍셀(패치는 7m) 칸마다 하나. 칸마다 가운데(텍셀)·반지름과 있을 확률·활엽 문턱을 미리 구한다
+        let detail = window != nil, cs: Float = detail ? max(3, 7 / min(pr, pc)) : 3, cr = Int((Float(H) / cs).rounded(.up)) + 4, cc = Int((Float(W) / cs).rounded(.up)) + 4
         var trees = [SIMD3<Float>](repeating: .zero, count: cr * cc), treeKind = [SIMD2<Float>](repeating: .zero, count: cr * cc)
         for ci in 0..<cr {
             for cj in 0..<cc {
-                let a = ci - 1, b = cj - 1
+                let a = ci - 2, b = cj - 2
                 let center = (SIMD2(Float(a), Float(b)) + 0.15 + 0.7 * SIMD2(Self.hash(a &+ 17, b), Self.hash(a, b &+ 31))) * cs
                 trees[ci * cc + cj] = SIMD3(center.x, center.y, cs * (0.46 + 0.26 * Self.hash(a &+ 5, b &+ 9)))
                 treeKind[ci * cc + cj] = SIMD2(Self.hash(a, b &+ 50_021), Self.hash(a &+ 3, b &+ 77))
@@ -653,20 +655,20 @@ nonisolated extension Terrain3D {
                 return (shade[k] * (1 - v) + shade[k + 1] * v) * (1 - u) + (shade[k + cols] * (1 - v) + shade[k + cols + 1] * v) * u
             }
             DispatchQueue.concurrentPerform(iterations: H) { i in
-                let gr = (Float(i) + 0.5) * sr, iu = max(0, i - 1), id = min(H - 1, i + 1)
+                let gr = win.x + (Float(i) + 0.5) * sr, iu = max(0, i - 1), id = min(H - 1, i + 1)
                 for j in 0..<W {
                     let k = i * W + j, h = heights[k]
                     let jl = max(0, j - 1), jr = min(W - 1, j + 1)
                     let ri = SIMD3(di.x, (heights[id * W + j] - heights[iu * W + j]) / Float(id - iu), di.y)
                     let rj = SIMD3(dj.x, (heights[i * W + jr] - heights[i * W + jl]) / Float(jr - jl), dj.y)
                     let n = simd_normalize(simd_cross(ri, rj)), ndl = max(0, simd_dot(n, Self.sun))
-                    let gc = (Float(j) + 0.5) * sc
+                    let gc = win.y + (Float(j) + 0.5) * sc
                     let g = grid(gr, gc), sh = g.x, ao = g.y
                     // 잔 골: 5텍셀 떨어진 네 점 평균보다 낮으면 어둡게
                     let a5 = max(0, i - 5), b5 = min(H - 1, i + 5), c5 = max(0, j - 5), d5 = min(W - 1, j + 5)
                     let fine = min(max((h - (heights[a5 * W + j] + heights[b5 * W + j] + heights[i * W + c5] + heights[i * W + d5]) / 4) / 6, -1), 1)
                     // 숲 밀도: 낮은 평지·높은 능선·급사면은 눈, 잡음으로 성긴 곳. 스키장 구역(z) 안은 이 빈터를 끈다
-                    let m = SIMD2(Float(i), Float(j)) * meters
+                    let m = (SIMD2(win.x, win.y) / SIMD2(sr, sc) + SIMD2(Float(i), Float(j))) * meters
                     let nl = Self.noise(m.y / 420, m.x / 420, 1), nm = Self.noise(m.y / 110, m.x / 110, 2)
                     let rel = h / top
                     let zi = Float(i) / Float(q), zj = Float(j) / Float(q), z0 = Int(zi), z1 = Int(zj), zu = zi - Float(z0), zv = zj - Float(z1), zk = z0 * zc + z1
@@ -683,19 +685,36 @@ nonisolated extension Terrain3D {
                     albedo = simd_mix(albedo, slope, SIMD3(repeating: c))
                     // 나무(밀도 확률): 지름 2.8~4.3텍셀, 해 쪽이 밝고 해 반대쪽에 그림자
                     let p = SIMD2(Float(i) + 0.5, Float(j) + 0.5)
-                    let bi = Int(p.x / cs) + 1, bj = Int(p.y / cs) + 1
+                    let bi = Int(p.x / cs) + 2, bj = Int(p.y / cs) + 2, reach = detail ? 2 : 1   // 패치의 긴 그림자는 두 칸까지
                     var cover: Float = 0, shade: Float = 0, lit: Float = 0, leafKey: Float = 1
                     if density > 0.003 {
-                        for ci in bi - 1...bi + 1 {
-                            for cj in bj - 1...bj + 1 {
+                        for ci in bi - reach...bi + reach {
+                            for cj in bj - reach...bj + reach {
                                 let kind = kinds[ci * cc + cj]
                                 guard kind.x < density else { continue }
                                 let tr = cells[ci * cc + cj], center = SIMD2(tr.x, tr.y), radius = tr.z
-                                let d = p - center, cv = min(max(radius + 0.5 - simd_length(d), 0), 1)
-                                shade = max(shade, min(max(radius * 1.05 + 0.5 - simd_distance(p, center - sunPx * radius * 1.2), 0), 1))
+                                let d = p - center, len = simd_length(d)
+                                if detail, len > radius * 3.7 + 1 { continue }   // 수관·그림자(2.6r 뒤 0.75r)가 닿지 않는 나무
+                                var edge = radius
+                                if detail, len < radius * 1.3 + 1 {
+                                    // 위에서 본 침엽수: 가지 끝이 들쭉날쭉한 별 모양
+                                    let phase = kind.y * 40
+                                    edge = radius * (0.8 + 0.14 * cos(9 * atan2(d.y, d.x) + phase) + 0.06 * cos(5 * atan2(d.y, d.x) - phase))
+                                }
+                                let cv = min(max(edge + 0.5 - len, 0), 1)
+                                if detail {
+                                    // 그림자: 해 반대쪽으로 길게(경사 시점에서 줄기·높이가 보이게)
+                                    let a = center, b = center - sunPx * radius * 2.6, ab = b - a
+                                    let s = min(max(simd_dot(p - a, ab) / simd_length_squared(ab), 0), 1)
+                                    shade = max(shade, min(max(radius * (0.75 - 0.35 * s) + 0.5 - simd_distance(p, a + ab * s), 0), 1))
+                                } else {
+                                    shade = max(shade, min(max(radius * 1.05 + 0.5 - simd_distance(p, center - sunPx * radius * 1.2), 0), 1))
+                                }
                                 if cv > cover {
                                     cover = cv
                                     lit = simd_dot(d, sunPx) / radius
+                                    // 가운데(꼭대기)가 밝고 층마다 결
+                                    if detail { lit += 0.35 * (1 - len / radius) - 0.25 + 0.12 * cos(len / radius * 13) }
                                     leafKey = kind.y
                                 }
                             }

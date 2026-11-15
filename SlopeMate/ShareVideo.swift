@@ -15,7 +15,12 @@ nonisolated enum ShareVideo {
         var title: String    // "11월 7일 · 하이원"
         var count: String    // "9회"
         var summary: String  // "12.3km · 고도차 1,500m · 최고 54km/h"
+        /// 무료: 오른쪽 아래 "SlopeMate" 워터마크(R50·R54)
+        var watermark = false
     }
+
+    /// 무료 720×1280, 시즌 이용권 1080×1920 (R50·R54)
+    static func size(hd: Bool) -> CGSize { hd ? CGSize(width: 1080, height: 1920) : CGSize(width: 720, height: 1280) }
 
     private static let hm: DateFormatter = {
         let d = DateFormatter()
@@ -104,7 +109,13 @@ nonisolated enum ShareVideo {
         let digits = UIFont.monospacedDigitSystemFont(ofSize: 22 * u, weight: .semibold)
         text(c.title, CGPoint(x: 24 * u, y: 56 * u), .systemFont(ofSize: 22 * u, weight: .bold), pal.primary)
         if let now { text(hm.string(from: now), CGPoint(x: size.width - 24 * u, y: 56 * u), digits, pal.text, right: true) }
-        text(c.count, CGPoint(x: 24 * u, y: size.height - 140 * u), .monospacedDigitSystemFont(ofSize: 34 * u, weight: .bold), pal.text)
+        let countFont = UIFont.monospacedDigitSystemFont(ofSize: 34 * u, weight: .bold)
+        text(c.count, CGPoint(x: 24 * u, y: size.height - 140 * u), countFont, pal.text)
+        // 워터마크는 횟수 줄 오른쪽(세로 가운데): 합계·출처가 길어도 겹치지 않는다
+        if c.watermark {
+            let wm = UIFont.systemFont(ofSize: 15 * u, weight: .bold)
+            text("SlopeMate", CGPoint(x: size.width - 24 * u, y: size.height - 140 * u + (countFont.lineHeight - wm.lineHeight) / 2), wm, pal.label, right: true)
+        }
         text(c.summary, CGPoint(x: 24 * u, y: size.height - 96 * u), .systemFont(ofSize: 15 * u), pal.label)
         // 지형이 있으면 OSM 아래에 Copernicus 출처·면책 문장 전체(작은 글씨, 오른쪽 맞춤)를 아래 여백에서 위로 쌓는다
         var osmY = size.height - 44 * u

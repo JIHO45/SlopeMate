@@ -3,6 +3,7 @@ import SwiftUI
 /// S6 하루 기록 지도형 (v3, 하강 0회 v1; R50). 전체 화면 지도 + 닫히지 않는 아래 시트(약 25%·50%, 뒤 지도 조작 가능).
 /// 지도는 내장 OSM으로 기기 안에서 그린다(MapKit·타일 없음). 시트 높이가 바뀌면 시트 위 보이는 영역에 맞춰 중심만 옮긴다.
 struct DayMapView: View {
+    let db: AppDatabase
     let day: Stats.Day
     let map: SlopeMap
     /// 읽기 전 nil: 슬로프·리프트만 그린다
@@ -12,6 +13,7 @@ struct DayMapView: View {
     let span: (Date, Date)?
 
     @Environment(\.colorScheme) private var scheme
+    @Environment(SeasonTicket.self) private var ticket
     /// 툴바 버튼 동작은 예전 화면 값을 잡고 있을 수 있어 상태로 둔다(동영상 색). 처음 onChange 전에는 scheme
     @State private var darkState: Bool?
     private var dark: Bool { darkState ?? (scheme == .dark) }
@@ -28,6 +30,8 @@ struct DayMapView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var is3D = false
     @State private var scene3D: Map3DScene?
+    /// 만든 3D 지형. S19가 다시 쓴다(경로와 상관없음)
+    @State private var prepared3D: (space: Terrain3D, terrain: Map3DTerrain)?
     @State private var preparing3D = false
     /// 3D가 미리 그리기를 끝냄(onReady). 그 전까지 2D를 보이고, 그때 겹쳐 바꾼다
     @State private var ready3D = false
@@ -51,9 +55,18 @@ struct DayMapView: View {
     @State private var makeProgress = 0.0
     @State private var thumb: UIImage?
     @State private var failed = false
+    // 시즌 이용권 잠금(R54): 3D·동영상 고화질·하강 상세. 잠긴 기능을 눌러 산 뒤 S18이 닫히면 그 기능으로 이어 간다
+    @State private var showTicket = false
+    @State private var pastNote = false
+    private enum Resume { case threeD, detail(Int) }
+    @State private var resume: Resume?
+    // S19 하강 상세(R52): S6 시트를 내린 뒤 밀어 넣고, 돌아오면 다시 올린다(decisions 2026-11-15)
+    @State private var showSheet = true
+    @State private var pendingDetail: Int?
+    @State private var detail: Int?
 
-    init(day: Stats.Day, map: SlopeMap, data: DayData?, gaps: [Gap], ratings: [Int: SnowRating], span: (Date, Date)?) {
-        (self.day, self.map, self.data, self.gaps, self.ratings, self.span) = (day, map, data, gaps, ratings, span)
+    init(db: AppDatabase, day: Stats.Day, map: SlopeMap, data: DayData?, gaps: [Gap], ratings: [Int: SnowRating], span: (Date, Date)?) {
+        (self.db, self.day, self.map, self.data, self.gaps, self.ratings, self.span) = (db, day, map, data, gaps, ratings, span)
         _detent = State(initialValue: day.runs.isEmpty ? .fraction(0.5) : .fraction(0.25))
     }
 
@@ -71,6 +84,13 @@ struct DayMapView: View {
     private var title: String { "\(RecordFormat.monthDay(day.date)) · \(Resort.name(day.resortId))" }
     private var small: Bool { detent == .fraction(0.25) }
     private var sheetHeight: CGFloat { sheetSize ?? size.height * (detent == .fraction(0.5) ? 0.5 : 0.25) }
+    private var lock: SeasonRecap.Lock { Self.lock(day: day.date, owned: ticket.seasons) }
+
+    /// 그 하루 기록 시즌의 이용권으로 연다(decisions 2026-11-14). 시즌 밖 날짜(5~10월)는 이번 시즌으로 본다
+    static func lock(day: Date, owned: Set<String>, now: Date = .now) -> SeasonRecap.Lock {
+        let current = SeasonTicket.season(purchase: now)
+        return SeasonRecap.lock(season: Stats.season(of: day) ?? current, owned: owned, current: current)
+    }
 
     var body: some View {
         ZStack {
@@ -107,9 +127,21 @@ struct DayMapView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     if preparing3D {
                         ProgressView().accessibilityLabel("3D 준비 중")
-                    } else {
+                    } else if lock == .open {
                         Button(action: toggle3D) { Image(systemName: is3D ? "view.2d" : "view.3d") }
                             .accessibilityLabel(is3D ? "2D로 보기" : "3D로 보기")
+                    } else {
+                        // 잠금 표시 S6 v1: 오른쪽 위 모서리에 걸친 18pt 자물쇠 배지
+                        Button { resume = .threeD; unlock() } label: {
+                            Image(systemName: "view.3d").overlay(alignment: .topTrailing) {
+                                Image(systemName: "lock").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.secondaryText)
+                                    .frame(width: 18, height: 18)
+                                    .background(Color.card, in: Circle())
+                                    .overlay(Circle().strokeBorder(Color.cardBorder))
+                                    .offset(x: 13, y: -13)
+                            }
+                        }
+                        .accessibilityLabel("3D로 보기, 시즌 이용권 필요")
                     }
                 }
             }
@@ -123,17 +155,31 @@ struct DayMapView: View {
                         Button { noticeShown ? make() : (notice = true) } label: {
                             Label { Text("동영상"); Text("오늘 경로 재생\(is3D ? "(2D 지도)" : ""), \(ShareVideo.seconds)초") } icon: { Image(systemName: "video") }
                         }
+                        if lock == .ticket {
+                            Divider()
+                            Button { resume = nil; unlock() } label: {
+                                Label("이용권: 고화질·워터마크 없이", systemImage: "lock")
+                            }
+                        }
                     } label: { Image(systemName: "square.and.arrow.up") }
                         .accessibilityLabel("공유")
                 }
             }
         }
-        .sheet(isPresented: .constant(true)) { sheet }
+        .sheet(isPresented: $showSheet, onDismiss: { if let i = pendingDetail { pendingDetail = nil; detail = i } }) { sheet }
+        .navigationDestination(item: $detail) { i in RunDetailView(db: db, day: day, index: i, route: data?.route ?? [], map: map, prepared3D: prepared3D) }
+        .onChange(of: detail) { if detail == nil { showSheet = true } }
         .task(id: playing) { await play() }
         .onChange(of: progress) { follow() }
+        // 보는 중 잠기면(환불 등) 3D는 2D로, S19는 닫기
+        .onChange(of: lock) {
+            guard lock != .open else { return }
+            if is3D { switch3D(false) }
+            detail = nil
+        }
         .onChange(of: scheme, initial: true) { darkState = scheme == .dark }
         // 경로가 바뀌면(다시 읽기) 3D 장면은 다음에 켤 때 다시 만든다
-        .onChange(of: data?.route) { is3D = false; ready3D = false; scene3D = nil; flownIn = false; picked = nil }
+        .onChange(of: data?.route) { detail = nil; is3D = false; ready3D = false; scene3D = nil; flownIn = false; picked = nil }
         // 말풍선은 화면 좌표에 고정: 지도가 움직이면(손짓·따라가기·시트 높이) 닫는다. 슬로프를 끄면 닫는다
         .onChange(of: [zoom, pinch, pan.width, pan.height, drag.width, drag.height, sheetHeight]) { picked = nil }
         .onChange(of: showSlopes) { if !showSlopes { picked = nil } }
@@ -221,6 +267,31 @@ struct DayMapView: View {
 
     // MARK: 3D 보기
 
+    /// 잠긴 기능: 이번 시즌은 S18, 사지 않은 지난 시즌은 안내만(지난 시즌 이용권은 팔지 않음)
+    private func unlock() {
+        playing = false
+        if lock == .pastSeason { pastNote = true } else { showTicket = true }
+    }
+
+    /// "자세히": 열려 있으면 S6 시트를 내린 뒤(onDismiss) S19, 잠겨 있으면 S18·지난 시즌 안내
+    private func openDetail(_ i: Int) {
+        playing = false
+        guard lock == .open else { resume = .detail(i); return unlock() }
+        pendingDetail = i
+        showSheet = false
+    }
+
+    /// S18이 닫혔을 때 사서 열렸으면 누른 기능으로
+    private func resumeAfterTicket() {
+        defer { resume = nil }
+        guard lock == .open else { return }
+        switch resume {
+        case .threeD: toggle3D()
+        case .detail(let i): openDetail(i)
+        case nil: break
+        }
+    }
+
     /// 처음 켤 때 지형 메시를 메인 스레드 밖에서 만들고(그동안 2D 그대로), 장면은 MainActor에서
     private func toggle3D() {
         if is3D || scene3D != nil { return switch3D(!is3D) }
@@ -233,6 +304,7 @@ struct DayMapView: View {
                 return (space, Map3DTerrain(space: space, map: map))
             }.value
             // 준비 중 경로가 바뀌면(다시 읽기) 결과를 버린다
+            prepared3D = (space, prepared)
             guard route == (hasRuns ? data?.route ?? [] : []) else { preparing3D = false; return }
             scene3D = Map3DScene(space: space, terrain: prepared, map: map, route: route, dark: dark, viewport: size,
                                   view3D: Resort.all.first { $0.id == day.resortId }?.view3D)
@@ -298,7 +370,7 @@ struct DayMapView: View {
         while playing, !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(33))
             let t = Date.now
-            progress = min(1, progress + t.timeIntervalSince(last) / 30)
+            progress = min(1, progress + min(t.timeIntervalSince(last), 0.1) / 30) // 멈췄다 돌아와도 건너뛰지 않게
             last = t
             if progress >= 1 { playing = false }
         }
@@ -345,7 +417,8 @@ struct DayMapView: View {
                 .dynamicTypeSize(.xSmall...(small ? .accessibility1 : .accessibility5))
                 .fixedSize(horizontal: false, vertical: true) // 목록에 밀려 세로로 눌리면 합계 글씨가 줄어든다
                 ScrollView {
-                    DayRunList(day: day, gaps: gaps, ratings: ratings, highlight: selected ?? playingRun, pinned: true, onTap: seek)
+                    DayRunList(day: day, gaps: gaps, ratings: ratings, highlight: selected ?? playingRun, pinned: true, onTap: seek,
+                               onDetail: data.map { _ in openDetail }, detailLocked: lock != .open)
                         .padding(.bottom, 24)
                 }
                 .scrollIndicators(.hidden)
@@ -369,6 +442,8 @@ struct DayMapView: View {
         } message: {
             Text("동영상 속 지도에 오늘 다닌 경로가 보여요. 받는 사람이 어느 슬로프를 탔는지 알 수 있어요.")
         }
+        .sheet(isPresented: $showTicket, onDismiss: resumeAfterTicket) { SeasonTicketView() }
+        .alert(SeasonRecap.pastSeasonNote, isPresented: $pastNote) { Button("확인", role: .cancel) {} }
         .alert("동영상을 만들지 못했어요", isPresented: $failed) {
             Button("닫기", role: .cancel) {}
             Button("다시 시도") { make() }
@@ -384,7 +459,8 @@ struct DayMapView: View {
     private func make() {
         playing = false
         let c = ShareVideo.Content(drawing: drawing, clock: clock, title: title, count: "\(day.runs.count)회",
-                                   summary: DaySummary.line(Stats.totals([day])))
+                                   summary: DaySummary.line(Stats.totals([day])), watermark: lock != .open)
+        let size = ShareVideo.size(hd: lock == .open)
         thumb = ShareVideo.thumbnail(c)
         makeProgress = 0
         withoutAnimation { showMaking = true }
@@ -394,7 +470,7 @@ struct DayMapView: View {
                     try await Task.sleep(for: .seconds(1)) // 만드는 중 화면이 뜬 뒤 실패
                     throw DebugFailures.Injected()
                 }
-                let url = try await ShareVideo.make(c) { p in Task { @MainActor in makeProgress = p } }
+                let url = try await ShareVideo.make(c, size: size) { p in Task { @MainActor in makeProgress = p } }
                 withoutAnimation { showMaking = false }
                 try? await Task.sleep(for: .milliseconds(350)) // 만드는 중 창이 닫힌 뒤 공유 시트
                 if Task.isCancelled { try? FileManager.default.removeItem(at: url) } else { ShareSheet.present(url) }

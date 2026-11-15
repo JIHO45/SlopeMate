@@ -578,4 +578,36 @@ struct Terrain3DTests {
         print("high1 texture \(elapsed)")   // 기록만(부하에 흔들린다)
         #expect(g?.height == 2048 && (g?.width ?? 0) > 1500)
     }
+
+    // MARK: S19 고해상 패치
+
+    /// 창(격자 일부) 질감: 긴 변 = side, 슬로프 자리는 전체 질감과 같은 자리에 같은 슬로프 색
+    @Test func groundTextureWindow() throws {
+        let m = try Self.northMap(), s = Terrain3D(terrain: Self.hill, map: m), mesh = s.mesh()
+        let win = SIMD4<Float>(2, 4, 18, 12), g = s.groundTexture(map: m, mesh: mesh, side: 128, window: win)
+        let all = s.groundTexture(map: m, mesh: mesh)
+        #expect(g.height == 128 && g.width < 128)
+        // 슬로프(열 8, 행 4…16) 가운데 (10, 8)의 밝기
+        func lum(_ t: Terrain3D.GroundTexture, _ r: Float, _ c: Float, _ w: SIMD4<Float>) -> Int {
+            let i = Int((r - w.x) / (w.z - w.x) * Float(t.height)), j = Int((c - w.y) / (w.w - w.y) * Float(t.width)), k = (i * t.width + j) * 4
+            return Int(t.bytes[k]) + Int(t.bytes[k + 1]) + Int(t.bytes[k + 2])
+        }
+        let full = SIMD4<Float>(0, 0, 20, 20)
+        #expect(abs(lum(g, 10, 8, win) - lum(all, 10, 8, full)) < 40)
+        #expect(lum(g, 10, 8, win) > 600)
+        // 행 방향 어긋남: 가로 슬로프(행 10)도 같은 자리
+        let h = try Self.map(lifts: [[(16, 10), (4, 10)]], slopes: [[(10, 3), (10, 17)]]), sh = Terrain3D(terrain: Self.hill, map: h), hm = sh.mesh()
+        let gw = sh.groundTexture(map: h, mesh: hm, side: 128, window: win), ga = sh.groundTexture(map: h, mesh: hm)
+        #expect(lum(gw, 10, 6, win) > 600 && abs(lum(gw, 10, 6, win) - lum(ga, 10, 6, full)) < 40)
+    }
+
+    /// 보이는 땅의 창은 처음 시점이 맞춘 하강 점을 모두 덮는다
+    @MainActor @Test func detailWindowCoversRun() throws {
+        let pts = [Self.ll(14, 8), Self.ll(9, 8), Self.ll(6, 7)]
+        let w = try #require(try Map3DSceneTests.scene(fitPoints: pts.map { (lat: $0.lat, lon: $0.lon) }).detailWindow())
+        for (r, c) in [(14.0, 8.0), (9.0, 8.0), (6.0, 7.0)] {
+            #expect(Float(r) >= w.x && Float(r) <= w.z && Float(c) >= w.y && Float(c) <= w.w)
+        }
+        #expect(w.x >= 0 && w.y >= 0 && w.z <= 20 && w.w <= 20)
+    }
 }
