@@ -194,4 +194,28 @@ struct RunDetailTests {
         #expect(RunDetail.speedTicks(max: 130) == [0, 60, 120])
         #expect(RunDetail.speedTicks(max: 25) == [0, 10, 20])
     }
+
+    /// 3D 장소 이름(용평 실제 리프트 좌표): 하나로 정해질 때만, 모호하면 앞뒤 리프트 구간으로 가리고, 그래도 아니면 nil
+    @Test func placeNames() throws {
+        let lifts = try #require(SlopeMap.load(resortId: "yongpyong")).lifts
+        let t0 = Date(timeIntervalSince1970: 0)
+        func p(_ lat: Double, _ lon: Double, _ s: Double) -> RoutePoint { RoutePoint(t: t0 + s, lat: lat, lon: lon) }
+        let run = [p(37.61195, 128.67190, 100), p(37.63000, 128.68000, 200), p(37.63850, 128.68700, 300)]
+        // 레인보우 곤돌라 하차장 옆 출발이지만 레인보우 리프트 하차장도 52m: 직전 리프트 구간이 없으면 모호
+        #expect(RunDetail.placeNames(run: run, day: [], lifts: lifts).start == nil)
+        let gondola = RouteSegment(kind: .lift, points: [p(37.64398, 128.67877, 0), p(37.61191, 128.67188, 90)])
+        #expect(RunDetail.placeNames(run: run, day: [gondola], lifts: lifts).start == "출발 · 레인보우 곤돌라")
+        // 도착: 골드·뉴골드·브릿지 탑승장이 모여 있어 직후 구간(뉴골드 하차장에서 끝남)으로 가린다
+        #expect(RunDetail.placeNames(run: run, day: [gondola], lifts: lifts).end == nil)
+        let newGold = RouteSegment(kind: .lift, points: [p(37.63842, 128.68667, 400), p(37.63214, 128.68551, 700)])
+        #expect(RunDetail.placeNames(run: run, day: [gondola, newGold], lifts: lifts).end == "도착 · 뉴골드 리프트 탑승장")
+        // 직전 탑승이 10분 넘게 떨어져 있으면 가리는 데 쓰지 않는다
+        let stale = RouteSegment(kind: .lift, points: [p(37.64398, 128.67877, -900), p(37.61191, 128.67188, -800)])
+        #expect(RunDetail.placeNames(run: run, day: [stale], lifts: lifts).start == nil)
+        // 이름 없는 리프트(l11) 하차장 옆 출발은 nil
+        #expect(RunDetail.placeNames(run: [p(37.63998, 128.68023, 0), p(37.63500, 128.68000, 60)], day: [], lifts: lifts).start == nil)
+        // 반경 밖이면 nil
+        let far = [p(37.62500, 128.67700, 0), p(37.62000, 128.67800, 60)]
+        #expect(RunDetail.placeNames(run: far, day: [gondola, newGold], lifts: lifts) == (nil, nil))
+    }
 }

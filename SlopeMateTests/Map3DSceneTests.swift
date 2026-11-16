@@ -250,6 +250,19 @@ struct Map3DSceneTests {
         #expect(Map3DScene.arrowAngle(from: o, to: CGPoint(x: 100.5, y: 100.5)) == nil)
     }
 
+    /// 장소 이름표 숨김: 재생 점 16pt 안·반대 표식 8pt 안·보이는 영역 밖이면 숨김
+    @Test func labelHidden() {
+        let visible = CGRect(x: 8, y: 150, width: 377, height: 400)
+        let r = Map3DScene.labelRect(at: CGPoint(x: 200, y: 300), size: CGSize(width: 100, height: 24))
+        #expect(r == CGRect(x: 150, y: 266, width: 100, height: 24))
+        #expect(!Map3DScene.labelHidden(r, dot: nil, other: nil, visible: visible))
+        #expect(Map3DScene.labelHidden(r, dot: CGPoint(x: 265, y: 270), other: nil, visible: visible))
+        #expect(!Map3DScene.labelHidden(r, dot: CGPoint(x: 267, y: 270), other: nil, visible: visible))
+        #expect(Map3DScene.labelHidden(r, dot: nil, other: CGPoint(x: 143, y: 280), visible: visible))
+        #expect(!Map3DScene.labelHidden(r, dot: nil, other: CGPoint(x: 141, y: 280), visible: visible))
+        #expect(Map3DScene.labelHidden(Map3DScene.labelRect(at: CGPoint(x: 200, y: 170), size: CGSize(width: 100, height: 24)), dot: nil, other: nil, visible: visible))
+    }
+
     /// S19 2D 고정 시점(RunDetailView.frame): 점 상자가 영역 가운데에 들어오고 한 변을 채운다. 최대 8배, 점이 없으면 fit을 영역에
     @Test func runDetailFrame() {
         let area = CGRect(x: 32, y: 126, width: 300, height: 400)

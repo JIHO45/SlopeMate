@@ -11,6 +11,20 @@ enum ServerConfig {
         /// false면 익명 표본을 보내지 않는다(R12, 표본 전송을 붙일 때 사용). 차단 스위치라 기본은 true이고,
         /// 실제로 보낼지는 사용자 동의(설정의 익명 전송)가 정한다.
         var samples: Bool
+        /// false면 3D 하강 상세의 리프트 이름표를 숨긴다(오표기 차단 스위치, decisions 2026-11-16). 키가 없는 예전 파일도 켜짐으로 읽는다
+        var placeNames: Bool = true
+
+        init(slopeNames: [String], crewSync: Bool, samples: Bool, placeNames: Bool = true) {
+            (self.slopeNames, self.crewSync, self.samples, self.placeNames) = (slopeNames, crewSync, samples, placeNames)
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            slopeNames = try c.decode([String].self, forKey: .slopeNames)
+            crewSync = try c.decode(Bool.self, forKey: .crewSync)
+            samples = try c.decode(Bool.self, forKey: .samples)
+            placeNames = try c.decodeIfPresent(Bool.self, forKey: .placeNames) ?? true
+        }
     }
 
     static let base = URL(string: "https://slopemate-f9a5b.web.app")!

@@ -36,6 +36,8 @@ struct RunDetailView: View {
     @State private var failed = false
     @State private var attempt = 0
     @State private var scene3D: Map3DScene?
+    /// 3D 출발·도착 리프트 이름(장면을 만들 때 한 번 정해 VoiceOver와 같이 쓴다)
+    @State private var placeNames: (start: String?, end: String?) = (nil, nil)
     @State private var ready3D = false
     @State private var progress = 0.0
     @State private var playing = false
@@ -161,7 +163,14 @@ struct RunDetailView: View {
 
     private func mapLabel(threeD: Bool) -> String {
         "\(threeD ? "3D 지형" : "지도")에서 \(name)\(Self.objectParticle(name)) 내려오는 모습"
+            + (threeD ? [placeNames.start, placeNames.end].compactMap { $0.map { ", " + $0 } }.joined() : "")
             + ((loaded?.series.gaps.isEmpty ?? true) ? "" : ", 기록 없음 구간은 경로가 끊겨 있음")
+    }
+
+    /// 3D 출발·도착 리프트 이름(확인될 때만). 서버 설정 placeNames로 끌 수 있다
+    private func computePlaceNames() -> (start: String?, end: String?) {
+        guard ServerConfig.config.placeNames else { return (nil, nil) }
+        return RunDetail.placeNames(run: runRoute.flatMap(\.points).sorted { $0.t < $1.t }, day: route, lifts: map.lifts)
     }
 
     /// 을/를: 받침 있는 한글·받침으로 읽는 숫자(0·1·3·6·7·8)는 "을"
@@ -215,10 +224,12 @@ struct RunDetailView: View {
         }
         let (space, prepared) = pair
         guard !Task.isCancelled else { return }
+        placeNames = computePlaceNames()
         scene3D = Map3DScene(space: space, terrain: prepared, map: map, route: route, dark: dark,
                              viewport: size == .zero ? CGSize(width: 393, height: 852) : size,
                              view3D: Resort.all.first { $0.id == day.resortId }?.view3D,
-                             fitPoints: route.flatMap(\.points).map { (lat: $0.lat, lon: $0.lon) })
+                             fitPoints: route.flatMap(\.points).map { (lat: $0.lat, lon: $0.lon) },
+                             placeNames: placeNames)
     }
 
     // MARK: 읽기·재생

@@ -192,6 +192,42 @@ nonisolated enum RunDetail {
     struct Loaded: Sendable { var series: Series; var history: History? }
 
     /// 메인 스레드 밖에서 부른다. day.runs[index]가 대상
+    /// 3D 장소 이름표 반경(m, 첫 시험값). 용평 하차장끼리 52m 떨어진 곳도 있어 하나로 정해지지 않으면 앞뒤 리프트 구간으로 가린다
+    static let placeRadius = 80.0
+    /// 하강과 앞뒤 리프트 구간 사이 최대 간격(초, 첫 시험값)
+    static let rideGap = 600.0
+
+    /// 하강 출발·도착의 리프트 이름(decisions 2026-11-16 "3D 장소 이름"). 확인될 때만, 아니면 nil(표식만).
+    /// 출발: 하강 첫 점 반경 안의 하차장(리프트 선 끝). 여럿이면 직전 탄 리프트 구간의 첫 점이 그 탑승장 반경 안인 것.
+    /// 도착: 하강 끝 점 반경 안의 탑승장(선 처음). 여럿이면 직후 리프트 구간의 끝 점이 그 하차장 반경 안인 것.
+    /// 이름 없는 리프트도 후보로 센다(더 가까운 이름 없는 리프트를 건너뛰고 먼 리프트 이름을 달지 않게). 고른 하나가 이름이 없으면 nil
+    static func placeNames(run: [RoutePoint], day: [RouteSegment], lifts: [SlopeMap.Lift]) -> (start: String?, end: String?) {
+        let all = lifts.filter { $0.line.count >= 2 }
+        let rides = day.filter { $0.kind == .lift && !$0.points.isEmpty }
+        func near(_ p: RoutePoint?, _ q: [Double]) -> Bool { p.map { meters($0, q) <= placeRadius } ?? false }
+        func pick(_ at: RoutePoint?, top: Bool, ride: RouteSegment?) -> String? {
+            var c = all.filter { near(at, top ? $0.line.last! : $0.line.first!) }
+            if c.count > 1 { c = c.filter { near(top ? ride?.points.first : ride?.points.last, top ? $0.line.first! : $0.line.last!) } }
+            return c.count == 1 ? c[0].name.map(label) : nil
+        }
+        let s = run.first, e = run.last
+        // 앞뒤 리프트 구간은 rideGap 안에 붙어 있을 때만(기록이 끊겨 몇 시간 전 탑승으로 가리지 않게)
+        let before = s.flatMap { s in rides.last { $0.points.last!.t <= s.t }.flatMap { s.t.timeIntervalSince($0.points.last!.t) <= rideGap ? $0 : nil } }
+        let after = e.flatMap { e in rides.first { $0.points.first!.t >= e.t }.flatMap { $0.points.first!.t.timeIntervalSince(e.t) <= rideGap ? $0 : nil } }
+        return (pick(s, top: true, ride: before).map { "출발 · \($0)" }, pick(e, top: false, ride: after).map { "도착 · \($0) 탑승장" })
+    }
+
+    /// "곤돌라"·"리프트"가 없으면 " 리프트"를 붙인다
+    static func label(_ name: String) -> String {
+        name.contains("곤돌라") || name.contains("리프트") ? name : name + " 리프트"
+    }
+
+    /// 두 점 사이 거리(m, 짧은 거리용 평면 근사)
+    static func meters(_ p: RoutePoint, _ q: [Double]) -> Double {
+        let dy = (p.lat - q[0]) * 111_320, dx = (p.lon - q[1]) * 111_320 * cos(p.lat * .pi / 180)
+        return (dx * dx + dy * dy).squareRoot()
+    }
+
     static func load(_ db: AppDatabase, day: Stats.Day, index: Int) throws -> Loaded {
         let run = day.runs[index]
         let files = try db.recordings(of: day).map { try db.file($0) }

@@ -1,5 +1,6 @@
 {
   "slopeNames": [],
   "crewSync": true,
-  "samples": true
+  "samples": true,
+  "placeNames": true
 }

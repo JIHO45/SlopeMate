@@ -204,6 +204,10 @@ final class Map3DScene {
     private let dotPlane = SCNNode(), startNode = SCNNode(), endNode = SCNNode()
     /// S6 강조 하강의 아직 안 지난 부분(옅게). 강조가 한 조각일 때만 진행을 나눈다
     private let highlightFadedNode = SCNNode()
+    /// S19 출발·도착 리프트 이름표(RunDetail.placeNames). 표식의 자식이라 카메라를 보고 같은 크기로 따라간다
+    private let placeNames: (start: String?, end: String?)
+    private let startLabel = SCNNode(), endLabel = SCNNode()
+    private var labelSizes: [CGSize] = [.zero, .zero]
     private var highlightProgress: (points: [RoutePoint], ribbon: Terrain3D.Ribbon)?
     /// 난이도 단계별 슬로프 색 선(SlopeStyle.Level.allCases 순서). slopeNode 아래
     private let levelNodes = SlopeStyle.Level.allCases.map { _ in SCNNode() }
@@ -225,8 +229,10 @@ final class Map3DScene {
     /// route: 하강 0회면 빈 배열. terrain: Map3DTerrain(space, map). viewport: 화면 전체 크기(pt). 카메라는 처음 시점.
     /// fitPoints: 처음 시점을 이 점들(S19 하강 하나)에 맞춘다. 이때 view3D는 yaw·pitch만 쓰고 zoom(리조트 전체용)은 곱하지 않는다
     init(space: Terrain3D, terrain: Map3DTerrain, map: SlopeMap, route: [RouteSegment], dark: Bool, viewport: CGSize,
-         view3D: Resort.View3D? = nil, fitPoints: [(lat: Double, lon: Double)]? = nil) {
+         view3D: Resort.View3D? = nil, fitPoints: [(lat: Double, lon: Double)]? = nil,
+         placeNames: (start: String?, end: String?) = (nil, nil)) {
         self.space = space
+        self.placeNames = placeNames
         var view3D = view3D
         if fitPoints != nil {
             view3D?.zoom = nil
@@ -319,6 +325,11 @@ final class Map3DScene {
             n.renderingOrder = Order.marker
             n.constraints = [SCNBillboardConstraint()]
             n.isHidden = true
+        }
+        for (n, l) in [(startNode, startLabel), (endNode, endLabel)] {
+            l.renderingOrder = Order.marker
+            l.isHidden = true
+            n.addChildNode(l)
         }
         if isRun { for n in [slopeNode, liftNode, stationNode] { n.opacity = Self.runOthersOpacity } }
 
@@ -613,6 +624,7 @@ final class Map3DScene {
         terrainMat.setValue(NSNumber(value: camera.distance + space.radius * 5), forKey: "fogEnd")
         for n in [dotNode, startNode, endNode] + stationNode.childNodes { n.simdScale = SIMD3(repeating: mpp) }
         updateArrow()   // 카메라와 같은 애니메이션으로 돈다
+        updateLabels()
         SCNTransaction.commit()
     }
 
@@ -718,6 +730,61 @@ final class Map3DScene {
         if let r = Self.arrowAngle(from: sa, to: sb) { let z = dotPlane.eulerAngles.z; dotPlane.eulerAngles.z = z + remainder(r - z, 2 * .pi) }
     }
 
+    /// 이름표: 표식 위 간격(pt), 재생 점·반대 표식과 띄울 거리(pt)
+    static let labelGap: CGFloat = 4, labelDotClear: CGFloat = 16, labelMarkerClear: CGFloat = 8
+
+    /// 이름표를 화면 기준으로 숨긴다: 재생 점이 16pt 안, 반대쪽 표식이 8pt 안, 보이는 영역(좌우 8pt, 위 topInset, 아래 시트) 밖, 두 이름표가 겹치면 도착 쪽
+    private func updateLabels() {
+        let nodes = [(startNode, startLabel), (endNode, endLabel)]
+        var rects: [CGRect?] = [nil, nil]
+        for (i, (n, l)) in nodes.enumerated() where l.geometry != nil {
+            guard !n.isHidden else { continue }
+            var r = Self.labelRect(at: camera.screen(n.simdPosition, viewport: viewport, top: topInset, bottom: bottomInset), size: labelSizes[i])
+            // 좌우 끝이면 숨기지 않고 화면 안(8pt)으로 밀어 넣는다
+            let dx = max(8 - r.minX, 0) + min(viewport.width - 8 - r.maxX, 0)
+            r.origin.x += dx
+            l.simdPosition.x = Float(dx)
+            rects[i] = r
+        }
+        // 위는 처음 시점 맞춤(경로 상자 위 topInset+24)에 이름표가 걸리지 않게 50pt 더 허용
+        let visible = CGRect(x: 8, y: topInset - 50, width: viewport.width - 16, height: viewport.height - topInset - bottomInset + 50)
+        let dotP = dot.map { camera.screen($0, viewport: viewport, top: topInset, bottom: bottomInset) }
+        for (i, (_, l)) in nodes.enumerated() {
+            guard let r = rects[i] else { l.isHidden = true; continue }
+            let other = nodes[1 - i].0
+            let otherP = other.isHidden ? nil : camera.screen(other.simdPosition, viewport: viewport, top: topInset, bottom: bottomInset)
+            var hide = Self.labelHidden(r, dot: dotNode.isHidden ? nil : dotP, other: otherP, visible: visible)
+            if i == 1, let r0 = rects[0], !startLabel.isHidden, r0.intersects(r) { hide = true }
+            l.isHidden = hide
+        }
+    }
+
+    /// 표식 화면 위치 위에 놓인 이름표 사각형(표식 반지름 6pt + 간격)
+    static func labelRect(at p: CGPoint, size: CGSize) -> CGRect {
+        CGRect(x: p.x - size.width / 2, y: p.y - 6 - labelGap - size.height, width: size.width, height: size.height)
+    }
+
+    static func labelHidden(_ r: CGRect, dot: CGPoint?, other: CGPoint?, visible: CGRect) -> Bool {
+        if let dot, r.insetBy(dx: -labelDotClear, dy: -labelDotClear).contains(dot) { return true }
+        if let other, r.insetBy(dx: -labelMarkerClear, dy: -labelMarkerClear).contains(other) { return true }
+        return !visible.contains(r)
+    }
+
+    /// 이름표 알약: 굵은 각주 글씨(큰 글씨는 xxLarge까지), 좌우 8pt·위아래 4pt, 밝게 흰 92% + 짙은 글씨, 어둡게 반대
+    private static func labelImage(_ text: String, dark: Bool) -> UIImage {
+        let size = min(UITraitCollection.current.preferredContentSizeCategory, .extraExtraLarge)
+        let base = UIFont.preferredFont(forTextStyle: .footnote, compatibleWith: UITraitCollection(preferredContentSizeCategory: size))
+        let font = UIFont(descriptor: base.fontDescriptor.withSymbolicTraits(.traitBold) ?? base.fontDescriptor, size: 0)
+        let ink = color(dark ? 0xFFFFFF : 0x0B161B), fill = color(dark ? 0x0B161B : 0xFFFFFF).withAlphaComponent(0.92)
+        let str = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: ink])
+        let t = str.size(), box = CGSize(width: ceil(t.width) + 16, height: ceil(t.height) + 8)
+        return UIGraphicsImageRenderer(size: box).image { _ in
+            fill.setFill()
+            UIBezierPath(roundedRect: CGRect(origin: .zero, size: box), cornerRadius: box.height / 2).fill()
+            str.draw(at: CGPoint(x: 8, y: 4))
+        }
+    }
+
     /// 화면 방향(아래로 +y) → 위를 향한 판을 돌릴 z 각(반시계 +). 1pt 미만이면 nil
     static func arrowAngle(from a: CGPoint, to b: CGPoint) -> Float? {
         let dx = b.x - a.x, dy = b.y - a.y
@@ -760,9 +827,11 @@ final class Map3DScene {
             dotNode.simdPosition = q
             dotNode.isHidden = false
             updateArrow()
+            updateLabels()
         } else {
             dot = nil
             dotNode.isHidden = true
+            updateLabels()
         }
     }
 
@@ -787,6 +856,17 @@ final class Map3DScene {
         highlightFadedMat.transparency = 0.35
         startMat.diffuse.contents = Self.stationImage(fill: .white, border: c.text, size: 12, line: 3)
         endMat.diffuse.contents = Self.stationImage(fill: c.text, border: .white, size: 12, line: 2)
+        for (i, (l, text)) in [(startLabel, placeNames.start), (endLabel, placeNames.end)].enumerated() {
+            guard let text else { l.geometry = nil; continue }
+            let img = Self.labelImage(text, dark: dark)
+            labelSizes[i] = img.size
+            let m = Self.flat()
+            m.diffuse.contents = img
+            m.readsFromDepthBuffer = false
+            l.geometry = SCNPlane(width: img.size.width, height: img.size.height)
+            l.geometry?.firstMaterial = m
+            l.simdPosition = SIMD3(0, Float(6 + Self.labelGap + img.size.height / 2), 0)   // 표식(12pt) 위 labelGap
+        }
         for (k, mats) in routeMats {
             let color = k == .lift ? c.text : c.fill
             for m in mats { m.diffuse.contents = color }
