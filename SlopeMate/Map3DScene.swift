@@ -673,7 +673,7 @@ final class Map3DScene {
 
         let aerial = cables.compactMap { $0 }
         // 경로: 조각마다 옅은 전체(알파 0.3배)와 진한 앞부분 두 겹. 꺾인 곳은 둥글게(Chaikin 2회)
-        // S19 하강 3pt(테두리 5pt)·탄 리프트 2.5pt(4pt), S6 하강 2.5pt(4.5pt)·탄 리프트 1.5pt(3pt)(차분하게, 고른 하강은 강조로 덧그림)
+        // S19 하강 3pt(테두리 4pt)·탄 리프트 2.5pt(3.25pt), S6 하강 2.5pt(3.5pt)·탄 리프트 1.5pt(2.25pt)(차분하게, 고른 하강은 강조로 덧그림). 테두리는 양쪽 0.5pt(베이스에서 덜 뭉치게)
         routeNode.childNodes.forEach { $0.removeFromParentNode() }
         segments = route.map { seg in
             let (w, dash): (Float, (on: Float, off: Float)?) = switch seg.kind {
@@ -687,7 +687,7 @@ final class Map3DScene {
             func ribbon(_ width: Float) -> Terrain3D.Ribbon { space.ribbon(pts, width: width * mpp, lift: lift, dash: dash, smooth: 2, heightAt: air) }
             let r = ribbon(w)
             // 하강·탄 리프트 아래 테두리(숲 위에서도 보이게). 재생 중에도 전체
-            if seg.kind != .other, let g = ribbon(w + (seg.kind == .run ? 2 : 1.5)).geometry() {
+            if seg.kind != .other, let g = ribbon(w + (seg.kind == .run ? 1 : 0.75)).geometry() {
                 let casing = SCNNode(geometry: g)
                 g.firstMaterial = routeCasingMat
                 casing.renderingOrder = Order.casing
@@ -708,7 +708,7 @@ final class Map3DScene {
         applyPlayback()
     }
 
-    /// 하강 강조(S6): 그 하강 시간 구간의 리본을 S19 하강과 같은 3pt(테두리 5pt)로 덧그림. 출발·도착 표식은 S19 하강 또는 S6 강조 하강의 첫·끝 점
+    /// 하강 강조(S6): 그 하강 시간 구간의 리본을 S19 하강과 같은 3pt(테두리 4pt)로 덧그림. 출발·도착 표식은 S19 하강 또는 S6 강조 하강의 첫·끝 점
     private func buildHighlight(lift: Float, mpp: Float) {
         let runs = route.filter { $0.kind == .run }
         let lines = highlight.map { h in runs.map { $0.points.filter { $0.t >= h.start && $0.t <= h.end } }.filter { !$0.isEmpty } } ?? []
@@ -719,7 +719,7 @@ final class Map3DScene {
             n.geometry?.firstMaterial = m
         }
         highlightProgress = lines.count == 1 ? (lines[0], ribbons[0]) : nil
-        highlightCasingNode.geometry = lines.isEmpty ? nil : Terrain3D.Ribbon.geometry(lines.map { space.ribbon($0.map { (lat: $0.lat, lon: $0.lon) }, width: 5 * mpp, lift: lift, smooth: 2) })
+        highlightCasingNode.geometry = lines.isEmpty ? nil : Terrain3D.Ribbon.geometry(lines.map { space.ribbon($0.map { (lat: $0.lat, lon: $0.lon) }, width: 4 * mpp, lift: lift, smooth: 2) })
         highlightCasingNode.geometry?.firstMaterial = casingMat
         let ends = isRun ? runs.flatMap(\.points).sorted { $0.t < $1.t } : lines.flatMap { $0 }
         for (n, p) in [(startNode, ends.first), (endNode, ends.last)] {
