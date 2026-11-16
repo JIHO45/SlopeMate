@@ -97,7 +97,7 @@ struct DayMapView: View {
             // 3D는 미리 그리기가 끝날 때까지 투명하게 깔고 2D를 보이다가 겹쳐 바꾼다
             if !(is3D && ready3D) { canvas.transition(.opacity) }
             if is3D, let scene3D {
-                Map3DView(scene: scene3D, now: now, highlight: selected.map { day.runs[$0] }, dark: dark,
+                Map3DView(scene: scene3D, now: now, highlight: (selected ?? playingRun).map { day.runs[$0] }, dark: dark,
                           bottomInset: sheetHeight + 24, reduceMotion: reduceMotion,
                           layers: layers, flyIn: !flownIn && !reduceMotion,
                           onReady: { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { ready3D = true } },

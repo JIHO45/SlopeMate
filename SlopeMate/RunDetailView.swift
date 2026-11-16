@@ -57,6 +57,16 @@ struct RunDetailView: View {
         _detent = State(initialValue: start == "large" ? Self.large : start == "medium" ? Self.medium : Self.small)
     }
 
+    /// 화면 비교용(DEBUG): -SMRunFreeze 0.35 → 3D가 뜨면 그 진행률에 멈춘다(0이면 재생 전 모습). 날아 들어오기·자동 재생·추적 없이 처음 시점 그대로
+    #if DEBUG
+    private static let freeze: Double? = {
+        let a = ProcessInfo.processInfo.arguments
+        return a.firstIndex(of: "-SMRunFreeze").flatMap { a.indices.contains($0 + 1) ? Double(a[$0 + 1]) : nil }
+    }()
+    #else
+    private static let freeze: Double? = nil
+    #endif
+
     private var run: RunDetector.Run { day.runs[index] }
     private var dark: Bool { scheme == .dark }
     private var layers: MapLayers { MapLayers(slopes: showSlopes, lifts: showLifts) }
@@ -85,9 +95,10 @@ struct RunDetailView: View {
             if !(scene3D != nil && ready3D) { canvas.transition(.opacity) }
             if let scene3D {
                 Map3DView(scene: scene3D, now: now, highlight: nil, dark: dark, bottomInset: mapInset + 24, reduceMotion: reduceMotion,
-                          layers: layers, flyIn: !reduceMotion,
+                          layers: layers, flyIn: !reduceMotion && Self.freeze == nil,
                           onReady: {
                               withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { ready3D = true }
+                              if let f = Self.freeze { scene3D.stopFollowing(); (progress, started) = (f, f > 0); return }
                               // 날아 들어온 뒤 하강 전체를 잠깐 보여 주고 재생(그사이 재생을 누르면 그대로)
                               Task {
                                   try? await Task.sleep(for: .seconds((reduceMotion ? 0 : Map3DView.flyDuration) + RunDetail.entryHold))

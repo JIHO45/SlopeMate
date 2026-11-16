@@ -241,6 +241,15 @@ struct Map3DSceneTests {
         #expect(worst == nil, "\(String(describing: worst)) \(area)")
     }
 
+    /// 재생 점 화살촉: 위로 가면 0, 오른쪽이면 -90도(시계), 왼쪽 +90도, 1pt 미만이면 그대로(nil)
+    @Test func arrowAngle() {
+        let o = CGPoint(x: 100, y: 100)
+        #expect(Map3DScene.arrowAngle(from: o, to: CGPoint(x: 100, y: 90)) == 0)
+        #expect(abs(Map3DScene.arrowAngle(from: o, to: CGPoint(x: 110, y: 100))! + .pi / 2) < 1e-5)
+        #expect(abs(Map3DScene.arrowAngle(from: o, to: CGPoint(x: 90, y: 100))! - .pi / 2) < 1e-5)
+        #expect(Map3DScene.arrowAngle(from: o, to: CGPoint(x: 100.5, y: 100.5)) == nil)
+    }
+
     /// S19 2D 고정 시점(RunDetailView.frame): 점 상자가 영역 가운데에 들어오고 한 변을 채운다. 최대 8배, 점이 없으면 fit을 영역에
     @Test func runDetailFrame() {
         let area = CGRect(x: 32, y: 126, width: 300, height: 400)

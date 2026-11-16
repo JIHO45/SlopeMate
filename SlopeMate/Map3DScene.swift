@@ -186,14 +186,25 @@ final class Map3DScene {
     /// 리본을 만들 때의 화면 1pt 길이(m). 15% 넘게 바뀌면 다시 만든다
     private var ribbonMPP: Float = 0
 
-    /// 그리는 순서(05-design 4장 "화면용 3D 보기"): 지형 < 슬로프 색 선 < 리프트 < 승·하차장 점 < 경로 번짐 < 경로 테두리 < 옅은 경로 < 진한 경로 < 강조 테두리 < 강조 < 재생 점
+    /// 그리는 순서(05-design 4장 "화면용 3D 보기"): 지형 < 슬로프 색 선 < 리프트 < 승·하차장 점 < 경로 테두리 < 옅은 경로 < 진한 경로 < 강조 테두리 < 강조 < 출발·도착 표식 < 재생 점
     enum Order {
-        static let terrain = -10, slope = -3, lift = -2, station = -1, glow = 0
-        static let casing = 3, faded = 4, solid = 5, highlightCasing = 6, highlight = 7, dot = 8
+        static let terrain = -10, slope = -3, lift = -2, station = -1
+        static let casing = 3, faded = 4, solid = 5, highlightCasing = 6, highlight = 7, marker = 8, dot = 9
     }
+    /// S19(하강 하나): 고른 하강만 또렷하게, 나머지는 낮춘다. S6(하루): 하루 경로는 가늘고 차분하게, 고르거나 재생 중인 하강만 또렷하게
+    private var isRun: Bool { !followPath.isEmpty }
+    /// 경로 읽힘 첫 시험값(a22-3): S19 OSM 슬로프·리프트·승강장 불투명도, S6 하강·탄 리프트 알파
+    static let runOthersOpacity: CGFloat = 0.35, dayRunAlpha: CGFloat = 0.55, dayLiftAlpha: CGFloat = 0.5
+    /// S6에서 하강을 고르지 않았고 재생 위치도 없는 첫 화면: 하루 하강을 조금 더 살린다(리조트 난이도 선보다 먼저 보이게)
+    static let dayRunAlphaIdle: CGFloat = 0.85
 
     private let terrainNode = SCNNode(), slopeNode = SCNNode(), liftNode = SCNNode(), stationNode = SCNNode()
     private let routeNode = SCNNode(), highlightNode = SCNNode(), highlightCasingNode = SCNNode(), dotNode = SCNNode()
+    /// 재생 점 판(dotNode는 카메라를 보는 빈 노드, 이 판은 그 안에서 진행 방향으로 돈다)과 출발·도착 표식
+    private let dotPlane = SCNNode(), startNode = SCNNode(), endNode = SCNNode()
+    /// S6 강조 하강의 아직 안 지난 부분(옅게). 강조가 한 조각일 때만 진행을 나눈다
+    private let highlightFadedNode = SCNNode()
+    private var highlightProgress: (points: [RoutePoint], ribbon: Terrain3D.Ribbon)?
     /// 난이도 단계별 슬로프 색 선(SlopeStyle.Level.allCases 순서). slopeNode 아래
     private let levelNodes = SlopeStyle.Level.allCases.map { _ in SCNNode() }
     /// 단계별 단색 재질. 눈 띠 위라 밝게·어둡게 모두 밝게 색
@@ -202,7 +213,7 @@ final class Map3DScene {
         m.diffuse.contents = Map3DScene.color(SlopeStyle.hex(l, dark: false))
         return m
     }
-    private let terrainMat = SCNMaterial(), liftMat = Map3DScene.flat(), stationMat = Map3DScene.flat(), glowMat = Map3DScene.flat()
+    private let terrainMat = SCNMaterial(), liftMat = Map3DScene.flat(), stationMat = Map3DScene.flat(), startMat = Map3DScene.flat(), endMat = Map3DScene.flat(), routeCasingMat = Map3DScene.flat(), highlightFadedMat = Map3DScene.flat()
     private let highlightMat = Map3DScene.flat(), casingMat = Map3DScene.flat(), dotMat = Map3DScene.flat()
     /// 승·하차장 점 판(8pt = 6pt 원 + 테두리 1pt). 화면 1pt 길이로 키운다
     private let stationPlane = SCNPlane(width: 8, height: 8)
@@ -280,7 +291,7 @@ final class Map3DScene {
         liftNode.renderingOrder = Order.lift
         highlightCasingNode.renderingOrder = Order.highlightCasing
         highlightNode.renderingOrder = Order.highlight
-        dotNode.renderingOrder = Order.dot
+        highlightFadedNode.renderingOrder = Order.highlight
         for k in [RouteSegment.Kind.run, .lift, .other] { routeMats[k] = [Self.flat(), Self.flat()] }
 
         // 승·하차장 점: 카메라를 보는 판, 지형에 가려진다(깊이 읽기)
@@ -293,13 +304,25 @@ final class Map3DScene {
         }
 
         // 재생 점: 항상 카메라를 보는 판, 지형에 가려지지 않게 맨 위
-        dotNode.geometry = SCNPlane(width: 32, height: 32)
-        dotNode.geometry?.firstMaterial = dotMat
+        dotPlane.geometry = SCNPlane(width: 32, height: 32)
+        dotPlane.geometry?.firstMaterial = dotMat
+        dotPlane.renderingOrder = Order.dot
+        dotNode.addChildNode(dotPlane)
         dotMat.readsFromDepthBuffer = false
         dotNode.constraints = [SCNBillboardConstraint()]
         dotNode.isHidden = true
+        // 출발(흰 속)·도착(찬 속) 12pt 표식: 재생 점처럼 카메라를 보고 지형에 가리지 않는다
+        for (n, m) in [(startNode, startMat), (endNode, endMat)] {
+            n.geometry = SCNPlane(width: 12, height: 12)
+            n.geometry?.firstMaterial = m
+            m.readsFromDepthBuffer = false
+            n.renderingOrder = Order.marker
+            n.constraints = [SCNBillboardConstraint()]
+            n.isHidden = true
+        }
+        if isRun { for n in [slopeNode, liftNode, stationNode] { n.opacity = Self.runOthersOpacity } }
 
-        for n in [terrainNode, slopeNode, liftNode, stationNode, routeNode, highlightCasingNode, highlightNode, dotNode] { scene.rootNode.addChildNode(n) }
+        for n in [terrainNode, slopeNode, liftNode, stationNode, routeNode, highlightCasingNode, highlightFadedNode, highlightNode, startNode, endNode, dotNode] { scene.rootNode.addChildNode(n) }
 
         applyColors()
         buildRibbons()
@@ -371,6 +394,7 @@ final class Map3DScene {
         guard run != highlight else { return }
         highlight = run
         buildHighlight(lift: max(2, ribbonMPP), mpp: ribbonMPP)
+        applyPlayback()
     }
 
     // MARK: 카메라
@@ -587,8 +611,8 @@ final class Map3DScene {
         // 먼 산은 뒤 하늘빛으로 옅어진다(셰이더 안개)
         terrainMat.setValue(NSNumber(value: camera.distance + space.radius * 0.5), forKey: "fogStart")
         terrainMat.setValue(NSNumber(value: camera.distance + space.radius * 5), forKey: "fogEnd")
-        dotNode.simdScale = SIMD3(repeating: mpp)
-        for n in stationNode.childNodes { n.simdScale = SIMD3(repeating: mpp) }
+        for n in [dotNode, startNode, endNode] + stationNode.childNodes { n.simdScale = SIMD3(repeating: mpp) }
+        updateArrow()   // 카메라와 같은 애니메이션으로 돈다
         SCNTransaction.commit()
     }
 
@@ -615,27 +639,21 @@ final class Map3DScene {
         for (n, p) in zip(stationNode.childNodes, stations) { n.simdPosition = space.point(lat: p[0], lon: p[1], lift: lift + 4 * mpp) }
 
         // 경로: 조각마다 옅은 전체(알파 0.3배)와 진한 앞부분 두 겹. 꺾인 곳은 둥글게(Chaikin 2회)
+        // S19 하강 3pt(테두리 5pt)·탄 리프트 2.5pt(4pt), S6 하강 2.5pt(4.5pt)·탄 리프트 1.5pt(3pt)(차분하게, 고른 하강은 강조로 덧그림)
         routeNode.childNodes.forEach { $0.removeFromParentNode() }
         segments = route.map { seg in
             let (w, dash): (Float, (on: Float, off: Float)?) = switch seg.kind {
-            case .run: (4.5, nil)
-            case .lift: (2.5, (5 * mpp, 4 * mpp))
+            case .run: (isRun ? 3 : 2.5, nil)
+            case .lift: (isRun ? 2.5 : 1.5, (5 * mpp, 4 * mpp))
             case .other: (2, nil)
             }
             let pts = seg.points.map { (lat: $0.lat, lon: $0.lon) }
             func ribbon(_ width: Float) -> Terrain3D.Ribbon { space.ribbon(pts, width: width * mpp, lift: lift, dash: dash, smooth: 2) }
             let r = ribbon(w)
-            // 하강 아래 12pt 번짐(같은 색 22%)
-            if seg.kind == .run, let g = ribbon(12).geometry() {
-                g.firstMaterial = glowMat
-                let glow = SCNNode(geometry: g)
-                glow.renderingOrder = Order.glow
-                routeNode.addChildNode(glow)
-            }
-            // 하강·탄 리프트 아래 양쪽 1.25pt 넓은 테두리(숲 위에서도 보이게). 재생 중에도 전체
-            if seg.kind != .other, let g = ribbon(w + 2.5).geometry() {
+            // 하강·탄 리프트 아래 테두리(숲 위에서도 보이게). 재생 중에도 전체
+            if seg.kind != .other, let g = ribbon(w + (seg.kind == .run ? 2 : 1.5)).geometry() {
                 let casing = SCNNode(geometry: g)
-                g.firstMaterial = casingMat
+                g.firstMaterial = routeCasingMat
                 casing.renderingOrder = Order.casing
                 routeNode.addChildNode(casing)
             }
@@ -654,20 +672,62 @@ final class Map3DScene {
         applyPlayback()
     }
 
-    /// 하강 강조: 그 하강 시간 구간의 리본을 7pt(테두리 9.5pt)로 덧그림
+    /// 하강 강조(S6): 그 하강 시간 구간의 리본을 S19 하강과 같은 3pt(테두리 5pt)로 덧그림. 출발·도착 표식은 S19 하강 또는 S6 강조 하강의 첫·끝 점
     private func buildHighlight(lift: Float, mpp: Float) {
-        guard let h = highlight else { highlightNode.geometry = nil; highlightCasingNode.geometry = nil; return }
-        let lines = route.filter { $0.kind == .run }.map { seg in
-            seg.points.filter { $0.t >= h.start && $0.t <= h.end }.map { (lat: $0.lat, lon: $0.lon) }
+        let runs = route.filter { $0.kind == .run }
+        let lines = highlight.map { h in runs.map { $0.points.filter { $0.t >= h.start && $0.t <= h.end } }.filter { !$0.isEmpty } } ?? []
+        let ribbons = lines.map { space.ribbon($0.map { (lat: $0.lat, lon: $0.lon) }, width: 3 * mpp, lift: lift, smooth: 2) }
+        // 진한 겹(지나온 만큼)과 옅은 겹(전체). primitiveRange를 따로 쓰려고 지오메트리를 둘 만든다
+        for (n, m) in [(highlightNode, highlightMat), (highlightFadedNode, highlightFadedMat)] {
+            n.geometry = ribbons.isEmpty ? nil : Terrain3D.Ribbon.geometry(ribbons)
+            n.geometry?.firstMaterial = m
         }
-        highlightNode.geometry = Terrain3D.Ribbon.geometry(lines.map { space.ribbon($0, width: 7 * mpp, lift: lift, smooth: 2) })
-        highlightNode.geometry?.firstMaterial = highlightMat
-        highlightCasingNode.geometry = Terrain3D.Ribbon.geometry(lines.map { space.ribbon($0, width: 9.5 * mpp, lift: lift, smooth: 2) })
+        highlightProgress = lines.count == 1 ? (lines[0], ribbons[0]) : nil
+        highlightCasingNode.geometry = lines.isEmpty ? nil : Terrain3D.Ribbon.geometry(lines.map { space.ribbon($0.map { (lat: $0.lat, lon: $0.lon) }, width: 5 * mpp, lift: lift, smooth: 2) })
         highlightCasingNode.geometry?.firstMaterial = casingMat
+        let ends = isRun ? runs.flatMap(\.points).sorted { $0.t < $1.t } : lines.flatMap { $0 }
+        for (n, p) in [(startNode, ends.first), (endNode, ends.last)] {
+            n.isHidden = p == nil
+            if let p { n.simdPosition = space.point(lat: p.lat, lon: p.lon, lift: lift) }
+        }
+    }
+
+    /// 경로 알파(진한 겹, 옅은 겹은 0.3배). S6은 고른 하강도 재생 위치도 없을 때(첫 화면) 하강을 더 진하게
+    private func applyRouteAlpha() {
+        for (k, mats) in routeMats {
+            let a: CGFloat = switch k {
+            case .run: isRun ? 1 : highlight == nil && playback == nil ? Self.dayRunAlphaIdle : Self.dayRunAlpha
+            case .lift: isRun ? 1 : Self.dayLiftAlpha
+            case .other: 0.5
+            }
+            mats[0].transparency = a
+            mats[1].transparency = a * 0.3
+        }
+    }
+
+    /// 재생 점 판을 진행 방향(앞뒤 2초 위치를 화면에 투영)으로 돌린다. 화면에서 1pt도 안 움직이면 그대로
+    private func updateArrow() {
+        guard let now = playback else { return }
+        func pos(_ dt: Double) -> SIMD3<Float>? {
+            route.lazy.compactMap { $0.position(at: now.addingTimeInterval(dt)) }.first.map { space.point(lat: $0.lat, lon: $0.lon) }
+        }
+        guard let a = pos(-2) ?? pos(0), let b = pos(2) ?? pos(0) else { return }
+        let sa = camera.screen(a, viewport: viewport, top: topInset, bottom: bottomInset)
+        let sb = camera.screen(b, viewport: viewport, top: topInset, bottom: bottomInset)
+        // 직전 각에서 가까운 쪽으로 감는다(170도 → -170도에서 한 바퀴 돌지 않게)
+        if let r = Self.arrowAngle(from: sa, to: sb) { let z = dotPlane.eulerAngles.z; dotPlane.eulerAngles.z = z + remainder(r - z, 2 * .pi) }
+    }
+
+    /// 화면 방향(아래로 +y) → 위를 향한 판을 돌릴 z 각(반시계 +). 1pt 미만이면 nil
+    static func arrowAngle(from a: CGPoint, to b: CGPoint) -> Float? {
+        let dx = b.x - a.x, dy = b.y - a.y
+        guard hypot(dx, dy) >= 1 else { return nil }
+        return Float(atan2(-dx, -dy))
     }
 
     /// 진한 앞부분은 그릴 삼각형 수(primitiveRange)만 바꾼다. 재생 점 위치도 여기서
     private func applyPlayback() {
+        applyRouteAlpha()
         for s in segments {
             let total = s.ribbon.indices.count / 3
             guard total > 0 else { continue }
@@ -682,11 +742,24 @@ final class Map3DScene {
             let range = NSRange(location: 0, length: n)
             if let el = s.solid.geometry?.elements.first, el.primitiveRange != range { el.primitiveRange = range }
         }
+        // S6 강조 하강: 재생이 그 안을 지나는 중이면 지나온 만큼만 진하게(고른 직후 출발점에서는 전체 진하게)
+        if let hp = highlightProgress, let el = highlightNode.geometry?.elements.first {
+            let total = hp.ribbon.indices.count / 3
+            var n = total
+            if let now = playback, let f = hp.points.first, let l = hp.points.last, now > f.t.addingTimeInterval(1), now < l.t,
+               let i = hp.points.lastIndex(where: { $0.t <= now }), i < hp.ribbon.cuts.count { n = hp.ribbon.cuts[i] }
+            let range = NSRange(location: 0, length: n)
+            if el.primitiveRange != range { el.primitiveRange = range }
+            highlightFadedNode.isHidden = n == total
+        } else {
+            highlightFadedNode.isHidden = true
+        }
         if let now = playback, let p = route.lazy.compactMap({ $0.position(at: now) }).first {
             let q = space.point(lat: p.lat, lon: p.lon, lift: max(2, ribbonMPP))
             dot = q
             dotNode.simdPosition = q
             dotNode.isHidden = false
+            updateArrow()
         } else {
             dot = nil
             dotNode.isHidden = true
@@ -706,24 +779,19 @@ final class Map3DScene {
         liftMat.diffuse.contents = lift
         stationMat.diffuse.contents = Self.stationImage(fill: lift, border: Self.color(dark ? 0x0B161B : 0xFFFFFF))
         casingMat.diffuse.contents = c.dot
+        // S6 하루 경로 테두리도 경로처럼 낮춘다(흰 테두리가 탄 리프트를 도드라지게 하지 않게)
+        routeCasingMat.diffuse.contents = c.dot
+        routeCasingMat.transparency = isRun ? 1 : Self.dayLiftAlpha
         highlightMat.diffuse.contents = c.text
-        // 번짐 22%. 더하기 섞기는 투명도를 보지 않아 색에 미리 곱한다
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, al: CGFloat = 0
-        c.fill.getRed(&r, green: &g, blue: &b, alpha: &al)
-        glowMat.diffuse.contents = dark ? UIColor(red: r * 0.22, green: g * 0.22, blue: b * 0.22, alpha: 1) : c.fill
-        glowMat.transparency = dark ? 1 : 0.22
-        glowMat.blendMode = dark ? .add : .alpha
+        highlightFadedMat.diffuse.contents = c.text
+        highlightFadedMat.transparency = 0.35
+        startMat.diffuse.contents = Self.stationImage(fill: .white, border: c.text, size: 12, line: 3)
+        endMat.diffuse.contents = Self.stationImage(fill: c.text, border: .white, size: 12, line: 2)
         for (k, mats) in routeMats {
-            let (color, a): (UIColor, CGFloat) = switch k {
-            case .run: (c.fill, 1)
-            case .lift: (c.text, 1)
-            case .other: (c.fill, 0.5)
-            }
-            mats[0].diffuse.contents = color
-            mats[0].transparency = a
-            mats[1].diffuse.contents = color
-            mats[1].transparency = a * 0.3
+            let color = k == .lift ? c.text : c.fill
+            for m in mats { m.diffuse.contents = color }
         }
+        applyRouteAlpha()
         dotMat.diffuse.contents = Self.dotImage(c, dark: dark)
     }
 
@@ -799,23 +867,26 @@ final class Map3DScene {
         }
     }
 
-    /// 승·하차장 점: 6pt 원 + 테두리 1pt (판 8pt)
-    private static func stationImage(fill: UIColor, border: UIColor) -> UIImage {
-        UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { ctx in
+    /// 원 + 테두리. 승·하차장 점은 판 8pt·테두리 1pt, 출발·도착 표식은 12pt
+    private static func stationImage(fill: UIColor, border: UIColor, size: CGFloat = 8, line: CGFloat = 1) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { ctx in
             let cg = ctx.cgContext
             cg.setFillColor(border.cgColor)
-            cg.fillEllipse(in: CGRect(x: 0, y: 0, width: 8, height: 8))
+            cg.fillEllipse(in: CGRect(x: 0, y: 0, width: size, height: size))
             cg.setFillColor(fill.cgColor)
-            cg.fillEllipse(in: CGRect(x: 1, y: 1, width: 6, height: 6))
+            cg.fillEllipse(in: CGRect(x: line, y: line, width: size - 2 * line, height: size - 2 * line))
         }
     }
 
-    /// 2D와 같은 재생 점: 옅은 원 32pt + 흰 원 16pt + 테두리 3pt
+    /// 2D와 같은 재생 점: 옅은 원 32pt + 흰 원 16pt + 테두리 3pt, 위쪽에 진행 방향 화살촉(밑변 10pt·높이 7pt). 판을 돌려 방향을 맞춘다
     private static func dotImage(_ c: DayMapDrawing.Palette, dark: Bool) -> UIImage {
         UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { ctx in
             let cg = ctx.cgContext
             cg.setFillColor(c.fill.withAlphaComponent(dark ? 0.25 : 0.2).cgColor)
             cg.fillEllipse(in: CGRect(x: 0, y: 0, width: 32, height: 32))
+            cg.setFillColor(c.text.cgColor)
+            cg.move(to: CGPoint(x: 16, y: 0.5)); cg.addLine(to: CGPoint(x: 21, y: 7.5)); cg.addLine(to: CGPoint(x: 11, y: 7.5)); cg.closePath()
+            cg.fillPath()
             let dot = CGRect(x: 8, y: 8, width: 16, height: 16)
             cg.setFillColor(c.dot.cgColor)
             cg.fillEllipse(in: dot)
