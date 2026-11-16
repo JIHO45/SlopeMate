@@ -458,7 +458,7 @@ nonisolated extension Terrain3D {
     }
 
     /// 질감 만드는 방식(색·폭·나무 등)을 바꾸면 올린다. 캐시 키에 들어간다
-    static let textureVersion: UInt64 = 12
+    static let textureVersion: UInt64 = 13
 
     static let textureCacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("terrain3d", isDirectory: true)
@@ -495,7 +495,7 @@ nonisolated extension Terrain3D {
     }
 
     /// 앱용 숲 지도(tools/canopy/build.py). 출처 Meta·WRI 나무 높이 지도 v2(CC BY 4.0)를 가공:
-    /// 숲 비율 판 = DEM 격자를 k배로 나눈 칸(약 5m)의 높이 4m 이상 비율 0~15(범위 밖 255),
+    /// 숲 비율 판 = DEM 격자를 k배로 나눈 칸(용평 k=10, 약 3m)의 높이 4m 이상 비율 0~15(범위 밖 255),
     /// 나무 높이 판 = DEM 격자를 hk배로 나눈 칸(약 15m)의 숲 평균 높이 ÷ 2m(0~15).
     /// 파일 maps/canopy-<리조트>.bin = "CNP2" + k + hk + 숲 판 너비·높이(UInt16 LE) + raw DEFLATE(숲 판 + 높이 판)
     struct Canopy: Sendable {
@@ -817,12 +817,13 @@ nonisolated extension Terrain3D {
                         let relief = min(max((at(8).h - at(-8).h) * 0.025, -0.2), 0.2)
                         let grain = Self.noise(m.y / 9, m.x / 9, 5)
                         let tone = (1.08 - 0.22 * Self.smooth(8, 24, hgt)) * (0.86 + 0.14 * nm + 0.16 * grain) * (1 + relief)
-                        // 숲 그림자: 해 쪽 d m에 높이 d·tan(해 고도)보다 큰 숲이 있으면 눈 위에 그림자(여러 거리로 부드럽게)
+                        // 숲 그림자: 해 쪽 d m에 높이 d·tan(해 고도)보다 큰 숲이 있으면 눈 위에 그림자(2m 간격)
                         var fsh: Float = 0
                         if f < 0.98 {
-                            for d: Float in [3, 6, 9, 12, 16, 20, 25, 31] {
+                            for d: Float in stride(from: 2, through: 30, by: 2) {   // 촘촘히: 성기면 작은 군락 그림자가 계단·점선으로 끊긴다
                                 let s2 = at(d)
-                                fsh = max(fsh, Self.smooth(d * tanSun - 3, d * tanSun + 3, s2.h) * Self.smooth(0.2, 0.6, s2.f))
+                                // 멀수록 옅게: 긴 그림자가 군락 사이 눈을 다 덮으면 군락이 한 덩어리로 읽힌다
+                                fsh = max(fsh, Self.smooth(d * tanSun - 3, d * tanSun + 3, s2.h) * Self.smooth(0.2, 0.6, s2.f) * (1 - d / 40))
                             }
                         }
                         var albedo = simd_mix(simd_mix(snow, slope, SIMD3(repeating: c)), forestFace * tone, SIMD3(repeating: f))

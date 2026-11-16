@@ -426,6 +426,7 @@ struct Terrain3DTests {
         let dem = try #require(Bundle.main.url(forResource: "dem-yongpyong", withExtension: "json"))
         let j = try JSONSerialization.jsonObject(with: Data(contentsOf: dem)) as! [String: Any]
         #expect(c.width == ((j["cols"] as! Int) - 1) * c.k && c.height == ((j["rows"] as! Int) - 1) * c.k)
+        #expect(c.k >= 10, "칸이 5m(k=6)면 폭 10m 안쪽 숲 띠·군락이 뭉개진다")
     }
 
     /// 선 슬로프(반폭 20m)는 흰 눈 띠, 40~80m 떨어진 숲보다 확실히 밝다

@@ -1,8 +1,8 @@
 # 앱용 숲 파일: 나무 높이 지도(EPSG:3857 .u8/.json, extract.py에 dem-<id>.json을 넣어 DEM 범위로 받은 것)를 DEM 격자(1초)에 맞춘 두 판으로 줄인다.
-#   숲 비율 판: DEM 칸을 K배로 나눈 칸(약 5m). 값 = 높이 4m 이상 원본 화소 비율 0~15, 범위 밖 255.
+#   숲 비율 판: DEM 칸을 K배로 나눈 칸(K=10이면 약 3m). 값 = 높이 4m 이상 원본 화소 비율 0~15, 범위 밖 255.
 #   나무 높이 판: DEM 칸을 HK배로 나눈 칸(약 15m). 값 = 그 칸 숲 화소 평균 높이 ÷ 2m(0~15 = 0~30m). 그림자 길이·숲 결용.
 # 파일: b'CNP2' + K(u8) + HK(u8) + 숲 판 너비·높이(u16 LE) + raw DEFLATE(숲 판 바이트 + 높이 판 바이트). 앱 Terrain3D.Canopy가 읽는다.
-# 사용: tools/dem/.venv/bin/python tools/canopy/build.py <chm 접두어> SlopeMate/Resources/maps/dem-<id>.json <out.bin> [K=6] [HK=2] [확인용.png]
+# 사용: tools/dem/.venv/bin/python tools/canopy/build.py <chm 접두어> SlopeMate/Resources/maps/dem-<id>.json <out.bin> [K=10] [HK=2] [확인용.png]
 import json, math, struct, sys, zlib
 import numpy as np
 
@@ -52,7 +52,7 @@ if __name__ == '__main__' and len(sys.argv) == 1:   # 자체 확인: 왼쪽 반 
     assert b[:4] == b'CNP2' and raw[:16] == fr.tobytes() and raw[16:] == hg.tobytes()
     print('ok')
 elif __name__ == '__main__':
-    pre, dem_path, out = sys.argv[1:4]; K = int(sys.argv[4]) if len(sys.argv) > 4 else 6; HK = int(sys.argv[5]) if len(sys.argv) > 5 else 2
+    pre, dem_path, out = sys.argv[1:4]; K = int(sys.argv[4]) if len(sys.argv) > 4 else 10; HK = int(sys.argv[5]) if len(sys.argv) > 5 else 2
     meta = json.load(open(pre + '.json')); dem = json.load(open(dem_path))
     h = np.fromfile(pre + '.u8', np.uint8).reshape(meta['height'], meta['width'])
     fr, hg = build(h, meta, dem, K, HK)
