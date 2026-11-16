@@ -24,6 +24,11 @@ import UIKit
         d.removePersistentDomain(forName: "migrate3D-test")
         MapLayers.migrate3D(d)   // 고른 적 없는 사용자
         #expect(d.object(forKey: "mapShowSlopes3D") == nil)
+        // 리프트도 같은 규칙(예전에 끈 사람은 3D도 끔으로 시작)
+        d.removePersistentDomain(forName: "migrate3D-test")
+        d.set(false, forKey: "mapShowLifts")
+        MapLayers.migrate3D(d)
+        #expect(d.object(forKey: "mapShowLifts3D") as? Bool == false)
     }
 
     func render(_ d: DayMapDrawing) -> Data {

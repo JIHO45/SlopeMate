@@ -458,7 +458,7 @@ nonisolated extension Terrain3D {
     }
 
     /// 질감 만드는 방식(색·폭·나무 등)을 바꾸면 올린다. 캐시 키에 들어간다
-    static let textureVersion: UInt64 = 13
+    static let textureVersion: UInt64 = 14
 
     static let textureCacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("terrain3d", isDirectory: true)
@@ -636,7 +636,9 @@ nonisolated extension Terrain3D {
                 }
             }
         }
-        for l in map.lifts { stroke(l.line, half: Self.liftHalf, soft: Self.liftSoft, amount: 0.9) }
+        // 리프트 길 눈은 지면형(견인식·매직카펫)만. 공중 리프트는 숲 위를 지나기도 해 근거 없이 숲을 비우지 않는다
+        // (실제 벌목 통로는 숲 지도가 있는 리조트에서 숲 지도로 나타난다. 리프트 위치는 공중 케이블·지주로 보인다)
+        for l in map.lifts where !Self.aerialKinds.contains(l.kind) { stroke(l.line, half: Self.liftHalf, soft: Self.liftSoft, amount: 0.9) }
         // 베이스·정상 눈밭: 리프트 끝점과 baseJoin 안의 끝점(선 슬로프·리프트)을 묶는다. 묶음의 끝점마다 바깥쪽(끝점 − 직전 점)으로
         // basePush 밀어 둔 반지름 baseRadius 눈 덩어리, 이웃 덩어리 중심끼리(최소 신장 트리) 반폭 baseBand 띠. 덩어리·띠는 끝점 기준
         // 바깥 방향 거리 baseBack…baseFront에서 켜져 슬로프 쪽으로 넘어오지 않는다(슬로프는 끝까지 원래 폭). 부드러운 합(baseBlend)에

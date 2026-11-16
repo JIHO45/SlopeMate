@@ -42,6 +42,8 @@ struct DayMapView: View {
     /// 3D는 슬로프가 눈길로 보이므로 난이도 선을 기본으로 끈다(내 경로가 먼저 보이게). 2D와 따로 기억한다
     @AppStorage("mapShowSlopes3D") private var showSlopes3D = false
     @AppStorage("mapShowLifts") private var showLifts = true
+    /// 3D는 리프트 선도 기본 끔(내 경로가 먼저 보이게, 탄 리프트 경로는 그대로 보인다). 2D와 따로 기억한다
+    @AppStorage("mapShowLifts3D") private var showLifts3D = false
     @State private var picked: SlopePick.Hit?
     @State private var balloonSize: CGSize = .zero
     // 재생
@@ -76,7 +78,7 @@ struct DayMapView: View {
     private var hasRuns: Bool { !day.runs.isEmpty }
     private var clock: PlayClock { data?.clock ?? PlayClock([]) }
     private var layers: MapLayers { MapLayers(slopes: showSlopes, lifts: showLifts) }
-    private var layers3D: MapLayers { MapLayers(slopes: showSlopes3D, lifts: showLifts) }
+    private var layers3D: MapLayers { MapLayers(slopes: showSlopes3D, lifts: showLifts3D) }
     private var drawing: DayMapDrawing {
         DayMapDrawing(map: map, route: hasRuns ? data?.route ?? [] : [], dark: dark,
                       terrain: Terrain.layer(map, dark: dark), layers: layers)
@@ -116,7 +118,7 @@ struct DayMapView: View {
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
         .overlay { balloon }
         .overlay(alignment: .topTrailing) {
-            MapLayersButton(slopes: is3D ? $showSlopes3D : $showSlopes, lifts: $showLifts)
+            MapLayersButton(slopes: is3D ? $showSlopes3D : $showSlopes, lifts: is3D ? $showLifts3D : $showLifts)
                 .padding(.top, 8).padding(.trailing, 16)
         }
         .overlay(alignment: .bottomTrailing) {

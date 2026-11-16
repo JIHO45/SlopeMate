@@ -24,6 +24,7 @@ struct RunDetailView: View {
     @AppStorage("mapShowSlopes") private var showSlopes = true
     @AppStorage("mapShowSlopes3D") private var showSlopes3D = false
     @AppStorage("mapShowLifts") private var showLifts = true
+    @AppStorage("mapShowLifts3D") private var showLifts3D = false
     @ScaledMetric(relativeTo: .largeTitle) private var bigSize = 44
     @ScaledMetric(relativeTo: .body) private var bigUnit = 17
     @ScaledMetric(relativeTo: .title2) private var cellSize = 22
@@ -98,7 +99,7 @@ struct RunDetailView: View {
             if !(scene3D != nil && ready3D) { canvas.transition(.opacity) }
             if let scene3D {
                 Map3DView(scene: scene3D, now: now, highlight: nil, dark: dark, bottomInset: mapInset + 24, reduceMotion: reduceMotion,
-                          layers: MapLayers(slopes: showSlopes3D, lifts: showLifts), flyIn: !reduceMotion && Self.freeze == nil,
+                          layers: MapLayers(slopes: showSlopes3D, lifts: showLifts3D), flyIn: !reduceMotion && Self.freeze == nil,
                           onReady: {
                               withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { ready3D = true }
                               if let f = Self.freeze { scene3D.stopFollowing(); (progress, started) = (f, f > 0); return }
@@ -120,7 +121,8 @@ struct RunDetailView: View {
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
         .overlay(alignment: .topTrailing) {
             if sheetHeight < size.height * 0.75 { // 크게에서는 지도가 가려져 숨김(출처 줄과 같음)
-                MapLayersButton(slopes: scene3D != nil && ready3D ? $showSlopes3D : $showSlopes, lifts: $showLifts)
+                MapLayersButton(slopes: scene3D != nil && ready3D ? $showSlopes3D : $showSlopes,
+                                lifts: scene3D != nil && ready3D ? $showLifts3D : $showLifts)
                     .padding(.top, 8).padding(.trailing, 16)
             }
         }
