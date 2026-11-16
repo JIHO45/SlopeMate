@@ -27,10 +27,11 @@ nonisolated struct Camera3D: Equatable, Sendable {
     }
 
     /// 제한을 적용한 값 (pitch, 거리, 목표점 위치·높이, 지형 아래로 내려가지 않기)
-    func clamped(_ space: Terrain3D, home: Camera3D) -> Camera3D {
+    /// minDistance: 가장 가까운 거리(m). nil이면 처음 거리 × 0.15(S19 추적은 따로 준다)
+    func clamped(_ space: Terrain3D, home: Camera3D, minDistance: Float? = nil) -> Camera3D {
         var c = self
         c.pitch = min(max(pitch, Self.pitchRange.lowerBound), Self.pitchRange.upperBound)
-        c.distance = min(max(distance, home.distance * Self.zoomRange.lowerBound), home.distance * Self.zoomRange.upperBound)
+        c.distance = min(max(distance, minDistance ?? home.distance * Self.zoomRange.lowerBound), home.distance * Self.zoomRange.upperBound)
         let center = SIMD2(space.center.x, space.center.z)
         var xz = SIMD2(target.x, target.z)
         let off = xz - center, len = simd_length(off)
@@ -68,6 +69,34 @@ nonisolated struct Camera3D: Equatable, Sendable {
             return space.edge(SIMD2(p.x, p.z))
         }.min()!
     }
+
+    /// S19 추적 카메라 한 걸음(순수 계산). dot: 재생 점, ahead: 경로를 따라 잰 앞 점(장면 좌표).
+    /// 카메라는 dot→ahead 방향의 뒤에서 보고, 목표점은 dot과 ahead 사이. yaw는 최단각으로 지수 평활(τ)하되 초당 maxTurn 라디안까지만,
+    /// 거리·pitch도 같은 비율로, 목표점은 targetTau로 더 빨리 다가간다(진입 시점에서 부드럽게 넘어간다). dt는 0.1초로 자른다
+    static func follow(from c: Camera3D, dot: SIMD3<Float>, ahead: SIMD3<Float>, back: SIMD3<Float>? = nil, dt: Float,
+                       pitch: Float = followPitch, distance: Float = followDistance,
+                       tau: Float = 1.2, targetTau: Float = followTargetTau, maxTurn: Float = followMaxTurn) -> Camera3D {
+        let dt = min(max(dt, 0), 0.1), a = 1 - exp(-dt / tau)
+        // 방향은 back(경로 뒤 점)→ahead. 도착 직전에 앞 점이 가까워져도 저속 GPS 흔들림을 따라 돌지 않는다
+        let from = back ?? dot, d = SIMD2(ahead.x - from.x, ahead.z - from.z)
+        var n = c
+        if simd_length(d) > 1 {
+            let want = atan2(-d.x, -d.y)
+            var delta = remainder(want - c.yaw, 2 * .pi)
+            delta *= a
+            delta = min(max(delta, -maxTurn * dt), maxTurn * dt)
+            n.yaw = remainder(c.yaw + delta, 2 * .pi)
+        }
+        n.target += (dot + (ahead - dot) * 0.35 - c.target) * (1 - exp(-dt / targetTau))
+        n.distance += (distance - c.distance) * a
+        n.pitch += (pitch - c.pitch) * a
+        return n
+    }
+    /// 추적 첫 시험값: pitch 38도(수평 기준), 거리 800m, 앞 점 120m(경로를 따라 잰 거리), 회전 초당 40도.
+    /// 목표점 τ 0.4초: 용평 하강 14(4.3km를 20초) 측정에서 1.2초면 굽이에서 점이 위 가장자리 밖으로 42pt 밀렸고(앞보기를 60m로 줄이면 더 나빠지고 회전 60도는 그대로),
+    /// 0.4초면 점이 보이는 영역 안쪽 40pt를 벗어나는 프레임 0%
+    static let followTargetTau: Float = 0.4
+    static let followPitch: Float = 38 * .pi / 180, followDistance: Float = 800, followAhead: Float = 120, followMaxTurn: Float = 40 * .pi / 180
 
     /// target + distance × (sin yaw · cos pitch, sin pitch, cos yaw · cos pitch)
     var position: SIMD3<Float> {
@@ -146,6 +175,14 @@ final class Map3DScene {
     private var bottomInset: CGFloat
     private var playback: Date?
     private var highlight: RunDetector.Run?
+    /// S19 추적: 하강 점(시각 순, 장면 좌표)과 경로를 따라 잰 누적 거리(m, xz). S6이면 비어 있다
+    private let followPath: [(t: Date, p: SIMD3<Float>)]
+    private let followDist: [Float]
+    /// 손짓하면 끈다. 처음 시점 버튼을 누르거나 재생을 처음부터 다시 하면 다시 켠다
+    private var followOn = true
+    private var followClock: CFTimeInterval = 0
+    /// 지금 재생을 따라 카메라를 움직이는 중(Map3DView의 화면 밖 따라가기는 이때 쉰다)
+    var isFollowing: Bool { followOn && !followPath.isEmpty && playback != nil }
     /// 리본을 만들 때의 화면 1pt 길이(m). 15% 넘게 바뀌면 다시 만든다
     private var ribbonMPP: Float = 0
 
@@ -180,7 +217,17 @@ final class Map3DScene {
          view3D: Resort.View3D? = nil, fitPoints: [(lat: Double, lon: Double)]? = nil) {
         self.space = space
         var view3D = view3D
-        if fitPoints != nil { view3D?.zoom = nil }
+        if fitPoints != nil {
+            view3D?.zoom = nil
+            // S19 진입: 하강 전체(출발·도착)가 보이는 높은 시점. 리조트 view3D의 방위만 쓴다
+            view3D = Resort.View3D(yaw: view3D?.yaw, pitch: Double(Self.runPitch * 180 / .pi), excludeLifts: view3D?.excludeLifts, zoom: nil)
+        }
+        let path = fitPoints == nil ? [] : route.filter { $0.kind == .run }.flatMap(\.points).sorted { $0.t < $1.t }
+            .map { (t: $0.t, p: space.point(lat: $0.lat, lon: $0.lon)) }
+        followPath = path
+        followDist = path.indices.reduce(into: [Float]()) { acc, i in
+            acc.append(i == 0 ? 0 : acc[i - 1] + simd_distance(SIMD2(path[i].p.x, path[i].p.z), SIMD2(path[i - 1].p.x, path[i - 1].p.z)))
+        }
         self.view3D = view3D
         self.map = map
         self.route = route
@@ -275,11 +322,49 @@ final class Map3DScene {
         stationNode.isHidden = !layers.lifts
     }
 
-    /// nil: 경로 전체를 진하게, 점 숨김. 값이 같으면 아무것도 하지 않는다
-    func setPlayback(_ now: Date?) {
+    /// nil: 경로 전체를 진하게, 점 숨김. 값이 같으면 아무것도 하지 않는다.
+    /// S19(추적 경로가 있으면): 재생 시각마다 추적 카메라를 한 걸음. 처음부터 다시 재생하면 추적을 다시 켠다
+    func setPlayback(_ now: Date?, clock: CFTimeInterval = CACurrentMediaTime()) {
         guard now != playback else { return }
+        if let now, let old = playback, now < old, let first = followPath.first, now <= first.t.addingTimeInterval(1) { followOn = true }
+        let wasNil = playback == nil
         playback = now
         applyPlayback()
+        guard isFollowing, let now, let dot else { return }
+        let dt = wasNil || followClock == 0 ? Float(1.0 / 30) : Float(clock - followClock)
+        followClock = clock
+        let ahead = aheadPoint(at: now), back = Self.ahead(path: followPath, dist: followDist, at: now, by: -60)
+        var c = Camera3D.follow(from: camera, dot: dot, ahead: ahead, back: back, dt: dt)
+        // 슬라이더로 크게 건너뛰면(150m 넘게) 목표점만 바로 맞춘다(점이 화면 밖에 남지 않게)
+        if let last = lastFollowDot, simd_distance(last, dot) > 150 { c.target = dot + (ahead - dot) * 0.35 }
+        lastFollowDot = dot
+        camera = clamp(c)
+        applyCamera(animated: false)
+        gestureEnded()   // 화면 1pt 길이가 15% 넘게 바뀌면 선 굵기를 다시 맞춘다
+    }
+    private var lastFollowDot: SIMD3<Float>?
+
+    /// 추적을 멈춘다(손짓)
+    func stopFollowing() { followOn = false }
+
+    /// 재생 시각의 경로 위치에서 경로를 따라 followAhead m 앞 점. 남은 거리가 모자라면 도착점
+    func aheadPoint(at now: Date) -> SIMD3<Float> {
+        Self.ahead(path: followPath, dist: followDist, at: now, by: Camera3D.followAhead)
+    }
+
+    static func ahead(path: [(t: Date, p: SIMD3<Float>)], dist: [Float], at now: Date, by meters: Float) -> SIMD3<Float> {
+        guard let last = path.last else { return .zero }
+        let i = path.lastIndex { $0.t <= now } ?? 0
+        var s = dist[i]
+        if i + 1 < path.count {
+            let span = path[i + 1].t.timeIntervalSince(path[i].t)
+            if span > 0 { s += (dist[i + 1] - dist[i]) * Float(min(max(now.timeIntervalSince(path[i].t) / span, 0), 1)) }
+        }
+        let want = max(s + meters, 0)
+        guard let j = dist.firstIndex(where: { $0 >= want }) else { return last.p }
+        guard j > 0 else { return path[0].p }
+        let f = (want - dist[j - 1]) / max(dist[j] - dist[j - 1], 0.001)
+        return path[j - 1].p + (path[j].p - path[j - 1].p) * f
     }
 
     func setHighlight(_ run: RunDetector.Run?) {
@@ -359,9 +444,13 @@ final class Map3DScene {
         if ribbonMPP > 0, abs(mpp / ribbonMPP - 1) > 0.15 { buildRibbons() }
     }
 
-    func resetCamera(animated: Bool) {
+    /// duration: 재생 끝에 추적 시점에서 돌아올 때는 길게
+    func resetCamera(animated: Bool, duration: CFTimeInterval = 0.25) {
+        followOn = true
+        followClock = 0
+        lastFollowDot = nil
         camera = start
-        applyCamera(animated: animated)
+        applyCamera(animated: animated, duration: duration)
         gestureEnded()
     }
 
@@ -379,12 +468,17 @@ final class Map3DScene {
         applyCamera(animated: false)
     }
 
-    private func clamp(_ c: Camera3D) -> Camera3D { c.clamped(space, home: limit) }
+    /// S19(추적 경로가 있으면)는 추적 거리의 0.8배까지 가까이
+    private func clamp(_ c: Camera3D) -> Camera3D {
+        c.clamped(space, home: limit, minDistance: followPath.isEmpty ? nil : Camera3D.followDistance * 0.8)
+    }
 
     /// 처음 시점 확인 기준: 시트 위 선(bottomEdge at 0.5)에서 보는 땅의 원형 가장자리 값. 시트 뒤는 원 밖이어도 된다
     static let startEdge: Float = 0.5
     /// 처음 pitch 42도(3D v5 카메라). 리조트 view3D.pitch가 있으면 그 값(30~60도)
     static let startPitch: Float = 42 * .pi / 180
+    /// S19 진입 pitch 55도(수평 기준): 하강 전체를 높은 곳에서
+    static let runPitch: Float = 55 * .pi / 180
     /// 안전 영역 위 여백: 위 가림(top) + 24pt
     static let startPadTop: CGFloat = 24
 
@@ -479,13 +573,14 @@ final class Map3DScene {
         terrainMat.addAnimation(fade, forKey: "detailFade")
     }
 
-    private func applyCamera(animated: Bool) {
+    private func applyCamera(animated: Bool, duration: CFTimeInterval = 0.25) {
         let mpp = camera.metersPerPoint(viewportHeight: viewport.height)
         // 목표점을 시트 위 보이는 영역 가운데로: 카메라를 화면 세로 방향으로 평행 이동
         let visibleMid = topInset + max(80, viewport.height - topInset - bottomInset) / 2
         let shift = Float(viewport.height / 2 - visibleMid) * mpp
         SCNTransaction.begin()
-        SCNTransaction.animationDuration = animated ? 0.25 : 0
+        SCNTransaction.animationDuration = animated ? duration : 0
+        SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         cameraNode.simdPosition = camera.position
         cameraNode.simdLook(at: camera.target, up: SIMD3(0, 1, 0), localFront: SIMD3(0, 0, -1))
         cameraNode.simdPosition -= cameraNode.simdWorldUp * shift

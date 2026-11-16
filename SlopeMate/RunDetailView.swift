@@ -88,7 +88,11 @@ struct RunDetailView: View {
                           layers: layers, flyIn: !reduceMotion,
                           onReady: {
                               withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { ready3D = true }
-                              if !started { playing = true } // 3D가 보인 뒤 재생
+                              // 날아 들어온 뒤 하강 전체를 잠깐 보여 주고 재생(그사이 재생을 누르면 그대로)
+                              Task {
+                                  try? await Task.sleep(for: .seconds((reduceMotion ? 0 : Map3DView.flyDuration) + RunDetail.entryHold))
+                                  if !started { playing = true }
+                              }
                               Task { await scene3D.loadDetail() } // 화면 크기가 정해진 뒤 보이는 땅만 고해상(나무 모양)
                           })
                     .ignoresSafeArea()
@@ -215,7 +219,7 @@ struct RunDetailView: View {
             if !started && (drawing.terrain == nil || runRoute.isEmpty) { playing = true; return }
             // 3D가 2초 안에 안 뜨면 2D로 재생을 시작한다(3D가 나중에 뜨면 그 위치에서 이어 감)
             try? await Task.sleep(for: .seconds(2))
-            if !started && !Task.isCancelled { playing = true }
+            if !started && !ready3D && !Task.isCancelled { playing = true }
         } catch {
             failed = true
         }
@@ -223,7 +227,13 @@ struct RunDetailView: View {
 
     /// 하강 하나를 playSeconds에 (PlayClock: 끊긴 구간은 잠깐 머문 뒤 건너뜀)
     private func play() async {
-        guard playing else { return }
+        guard playing else {
+            // 끝까지 재생했으면 잠깐 머문 뒤 하강 전체 보기로(그사이 다시 재생하면 취소)
+            guard started, progress >= 1 else { return }
+            try? await Task.sleep(for: .seconds(RunDetail.endHold))
+            if !Task.isCancelled, let scene3D, scene3D.isFollowing { scene3D.resetCamera(animated: !reduceMotion, duration: 1.2) } // 손으로 옮겼으면 그대로
+            return
+        }
         if progress >= 1 { progress = 0 }
         started = true
         var last = Date.now

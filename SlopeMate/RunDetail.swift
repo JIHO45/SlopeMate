@@ -4,6 +4,8 @@ import Foundation
 nonisolated enum RunDetail {
     /// 하강 하나의 재생 길이(초)
     static let playSeconds = 20.0
+    /// 3D 진입: 날아 들어온 뒤 하강 전체를 보여 주는 시간(초), 그다음 자동 재생. 재생이 끝나면 머무는 시간 뒤 전체 보기로(첫 시험값)
+    static let entryHold = 1.5, endHold = 1.0
 
     /// 속도 m/s 또는 고도 m
     struct Value: Equatable, Sendable { var t: Date; var v: Double }

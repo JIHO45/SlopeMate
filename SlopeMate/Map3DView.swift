@@ -85,7 +85,7 @@ struct Map3DView: UIViewRepresentable {
             c.layout(animated: !reduceMotion)
         }
         scene.setPlayback(now)
-        if now != nil, now != c.now { c.follow() }
+        if now != nil, now != c.now, !scene.isFollowing { c.follow() }
         c.now = now
     }
 
@@ -168,6 +168,7 @@ struct Map3DView: UIViewRepresentable {
         private func began(_ g: UIGestureRecognizer) {
             guard g.state == .began else { return }
             stopFlight()
+            scene.stopFollowing()
             onTap(nil)
         }
 
