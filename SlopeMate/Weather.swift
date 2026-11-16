@@ -7,7 +7,7 @@ nonisolated struct WeatherSnapshot {
     struct Current {
         var temperature: Double
         var symbolName: String
-        var condition: String        // WeatherCondition.description
+        var condition: String        // WeatherCondition.plainKorean
         var windSpeed: Double
         var humidity: Double
     }
@@ -69,7 +69,7 @@ nonisolated enum Weather {
         return WeatherSnapshot(
             fetchedAt: now,
             current: .init(temperature: c(cur.temperature), symbolName: cur.symbolName,
-                           condition: cur.condition.description, windSpeed: ms(cur.wind), humidity: cur.humidity),
+                           condition: cur.condition.plainKorean, windSpeed: ms(cur.wind), humidity: cur.humidity),
             hours: hourly.map { h in
                 var snow: Double?
                 if #available(iOS 18.0, *) { snow = h.snowfallAmount.converted(to: .centimeters).value }
@@ -109,5 +109,37 @@ nonisolated enum Weather {
         let s = try await fetch(resort, t)
         snapshots[resort.id] = s
         return s
+    }
+}
+
+/// 애플 기본 표기("연무", "뇌우" 등)는 낯설어서 쉬운 말로 바꾼다 (R33).
+extension WeatherCondition {
+    nonisolated var plainKorean: String {
+        switch self {
+        case .clear, .mostlyClear: "맑음"
+        case .partlyCloudy: "구름 조금"
+        case .mostlyCloudy, .cloudy: "흐림"
+        case .haze, .smoky: "뿌옇음"
+        case .foggy: "안개"
+        case .blowingDust: "황사·먼지"
+        case .breezy: "바람 약간"
+        case .windy: "바람 강함"
+        case .drizzle: "약한 비"
+        case .rain, .freezingDrizzle, .freezingRain: "비"
+        case .heavyRain: "강한 비"
+        case .sunShowers: "소나기"
+        case .sleet, .wintryMix: "진눈깨비"
+        case .flurries, .sunFlurries: "눈 약간"
+        case .snow: "눈"
+        case .heavySnow: "많은 눈"
+        case .blowingSnow: "눈보라"
+        case .blizzard: "강한 눈보라"
+        case .hail: "우박"
+        case .frigid: "매우 추움"
+        case .hot: "더움"
+        case .isolatedThunderstorms, .scatteredThunderstorms, .thunderstorms, .strongStorms: "천둥번개"
+        case .tropicalStorm, .hurricane: "태풍"
+        @unknown default: description
+        }
     }
 }
