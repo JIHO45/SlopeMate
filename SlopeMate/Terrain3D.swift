@@ -152,10 +152,76 @@ nonisolated struct Terrain3D: Sendable {
         var cuts: [Int]                 // cuts[i] = 입력 점 i까지 그릴 때의 삼각형 수. 개수는 입력 점 수, 마지막 = indices.count / 3
     }
 
+    /// 공중 리프트 케이블(지지점 장면 좌표, 아래→위). 견인식·매직카펫 등 지면형은 nil(지면을 따라 그린다).
+    /// 승·하차장은 지면 + stationHeight, 지주는 지면 + pylonHeight(m, 고도 과장 배율을 곱함). 지지점 사이 직선이
+    /// 지면에서 clearance 안으로 내려가면(지주 누락·지주 데이터 없음) 가장 낮은 곳에, maxSpanHeight보다 높이 뜨면 가장 높은 곳에
+    /// 지주 높이 지지점을 더한다(지주 데이터가 없는 리프트는 양 끝에서 시작해 이것만으로 세운다)
+    static let aerialKinds: Set<String> = ["chair_lift", "gondola", "cable_car", "mixed_lift"]
+    static let maxSpanHeight: Float = 50
+    /// 지주 높이는 실제(10~20m)보다 높게 잡는다: 실제 높이로는 지도 축척에서 지면 선과 구분되지 않는다(2026-11-16 시뮬레이터)
+    static let stationHeight: Float = 4, pylonHeight: Float = 20, cableClearance: Float = 4
+
+    func cable(_ lift: SlopeMap.Lift) -> [SIMD3<Float>]? {
+        guard Self.aerialKinds.contains(lift.kind), let a = lift.line.first, let b = lift.line.last, lift.line.count >= 2 else { return nil }
+        let pylons = lift.pylons ?? []
+        func at(_ p: SIMD2<Float>, _ up: Float) -> SIMD3<Float> { SIMD3(p.x, height(p) + up * exaggeration, p.y) }
+        var sup = [at(xz(lat: a[0], lon: a[1]), Self.stationHeight)]
+            + pylons.map { at(xz(lat: $0[0], lon: $0[1]), Self.pylonHeight) }
+            + [at(xz(lat: b[0], lon: b[1]), Self.stationHeight)]
+        var i = 0
+        while i + 1 < sup.count, sup.count < 200 {
+            let p = sup[i], q = sup[i + 1], len = simd_distance(SIMD2(p.x, p.z), SIMD2(q.x, q.z))
+            var worst: (gap: Float, t: Float)?, highest: (gap: Float, t: Float)?
+            for k in stride(from: Float(10), to: len, by: 10) {
+                let t = k / len, m = p + (q - p) * t
+                let gap = m.y - height(SIMD2(m.x, m.z))
+                if gap < Self.cableClearance * exaggeration, gap < (worst?.gap ?? .infinity) { worst = (gap, t) }
+                if gap > Self.maxSpanHeight * exaggeration, gap > (highest?.gap ?? -.infinity) { highest = (gap, t) }
+            }
+            worst = worst ?? highest
+            if let w = worst {
+                let m = p + (q - p) * w.t
+                sup.insert(at(SIMD2(m.x, m.z), Self.pylonHeight), at: i + 1)
+            } else { i += 1 }
+        }
+        return sup
+    }
+
+    /// 지주 기둥: 케이블 지지점(양 끝 승·하차장 제외)마다 지면에서 케이블까지 십자로 엇갈린 세로 판 두 장(어느 방향에서도 보이게). width는 m
+    func pylons(_ cable: [SIMD3<Float>], width: Float) -> Ribbon {
+        var r = Ribbon(positions: [], indices: [], cuts: [])
+        let h = width / 2
+        for top in cable.dropFirst().dropLast() {
+            let y0 = height(SIMD2(top.x, top.z))
+            for d in [SIMD3<Float>(h, 0, 0), SIMD3<Float>(0, 0, h)] {
+                let b = UInt32(r.positions.count)
+                r.positions += [SIMD3(top.x, y0, top.z) - d, SIMD3(top.x, y0, top.z) + d, top - d, top + d]
+                r.indices += [b, b + 1, b + 2, b + 2, b + 1, b + 3]
+            }
+        }
+        return r
+    }
+
+    /// xz에서 within m 안의 가장 가까운 케이블 높이(구간에 투영해 직선 보간). 없으면 nil
+    static func cableHeight(_ cables: [[SIMD3<Float>]], at p: SIMD2<Float>, within: Float = 60) -> Float? {
+        var best: (d: Float, y: Float)?
+        for c in cables {
+            for (a, b) in zip(c, c.dropFirst()) {
+                let a2 = SIMD2(a.x, a.z), ab = SIMD2(b.x, b.z) - a2
+                let t = min(max(simd_dot(p - a2, ab) / max(simd_length_squared(ab), 1e-6), 0), 1)
+                let d = simd_distance(p, a2 + ab * t)
+                if d <= within, d < (best?.d ?? .infinity) { best = (d, a.y + (b.y - a.y) * t) }
+            }
+        }
+        return best?.y
+    }
+
     /// 위경도 선 → 지형 위 리본. width·lift·dash·maxStep은 m. dash가 있으면 on만큼 그리고 off만큼 비운다. 점이 2개 미만이거나 모두 같은 자리면 빈 리본.
     /// smooth: Chaikin 횟수(경로만 2). cuts는 입력 점 기준 그대로. 리본 3D 폭은 어디서나 width(기운 면에서도)
+    /// heightAt: 지면 대신 쓸 높이(공중 케이블). nil을 돌려주는 곳과 주지 않으면 지면 + lift
     func ribbon(_ line: [(lat: Double, lon: Double)], width: Float, lift: Float,
-                dash: (on: Float, off: Float)? = nil, maxStep: Float = 15, smooth: Int = 0) -> Ribbon {
+                dash: (on: Float, off: Float)? = nil, maxStep: Float = 15, smooth: Int = 0,
+                heightAt: ((SIMD2<Float>) -> Float?)? = nil) -> Ribbon {
         guard line.count >= 2 else { return Ribbon(positions: [], indices: [], cuts: line.isEmpty ? [] : [0]) }
         let (pts, inputAt) = Self.chaikin(line.map { xz(lat: $0.lat, lon: $0.lon) }, times: smooth)
         let period = dash.map { $0.on + $0.off } ?? 0
@@ -204,7 +270,8 @@ nonisolated struct Terrain3D: Sendable {
             var n = simd_normalize((nin ?? nout!) + (nout ?? nin!))
             if !n.x.isFinite { n = nout ?? nin! } // 되돌아가는 선
             let scale = min(2, 1 / max(0.5, simd_dot(n, nout ?? nin!)))
-            let e = [samples[k] + n * half * scale, samples[k] - n * half * scale].map { SIMD3($0.x, height($0) + lift, $0.y) }
+            let air = heightAt?(samples[k])   // 공중이면 가운데 높이 하나로(양쪽이 수평)
+            let e = [samples[k] + n * half * scale, samples[k] - n * half * scale].map { SIMD3($0.x, air ?? height($0) + lift, $0.y) }
             let m = (e[0] + e[1]) / 2
             for v in e { positions.append(simd_length(v - m) > 1e-6 ? m + simd_normalize(v - m) * half * scale : v) }
             if k > 0, drawNext[k - 1] {

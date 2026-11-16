@@ -18,6 +18,8 @@ nonisolated struct SlopeMap: Decodable {
         let kind: String        // OSM aerialway 값
         let osmId: String
         let line: [[Double]]
+        /// 공중 리프트 지주 [위도, 경도], 선 방향(아래→위) 순서. 승·하차장 제외. 없으면 지면을 따라 그린다(tools/osm/pylons.py)
+        let pylons: [[Double]]?
     }
 
     let resortId: String

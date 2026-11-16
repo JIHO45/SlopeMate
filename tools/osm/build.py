@@ -6,7 +6,7 @@
 
 - 우리 ID(<리조트>-s01, -l01)는 이전 출력의 OSM ID로 이어 붙여 유지한다. 새 선만 다음 번호를 받는다.
 - 선은 2m 기준으로 줄이고 좌표는 소수 5자리(약 1m)로 저장한다.
-- 리프트 선은 끝에 tools/dem/orient_lifts.py로 아래→위로 맞춘다(dem 파일이 있을 때).
+- 리프트 선은 끝에 tools/dem/orient_lifts.py로 아래→위로 맞춘다(dem 파일이 있을 때). 공중 리프트 지주는 tools/osm/pylons.py.
 - 데이터: © OpenStreetMap contributors, ODbL.
 """
 import json, math, subprocess, sys, time
@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/dem"))
 from orient_lifts import orient  # noqa: E402
+from pylons import add as add_pylons  # noqa: E402
 RESORTS = ROOT / "SlopeMate/Resources/resorts.json"
 AREAS = Path(__file__).with_name("areas.json")
 OUT = ROOT / "SlopeMate/Resources/maps"
@@ -189,6 +190,7 @@ def main():
         named = sum(1 for s in doc["slopes"] if s["name"])
         print(f"{rid}: 슬로프 {len(slopes)}(이름 {named}) 리프트 {len(lifts)} → {path.name} {path.stat().st_size // 1024}KB")
         orient(rid)
+        add_pylons(rid)
         time.sleep(2)
 
 

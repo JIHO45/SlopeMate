@@ -674,4 +674,38 @@ struct Terrain3DTests {
         }
         #expect(w.x >= 0 && w.y >= 0 && w.z <= 20 && w.w <= 20)
     }
+
+    /// 공중 리프트: 용평 곤돌라는 지주 25개 + 양 끝(+ 땅에 가까워 더한 지지점)이고, 지지점 사이 직선이 지면 위 4m(과장 배율)를 지킨다.
+    /// 지주가 없는 리프트는 자동 지지점
+    @Test func yongpyongGondolaCable() throws {
+        let t = try #require(Terrain.load(resortId: "yongpyong")), m = try #require(SlopeMap.load(resortId: "yongpyong"))
+        let s = Terrain3D(terrain: t, map: m)
+        let gondola = try #require(m.lifts.first { $0.name == "레인보우 곤돌라" })
+        let c = try #require(s.cable(gondola))
+        #expect(c.count >= 27)
+        for (a, b) in zip(c, c.dropFirst()) {
+            for k in stride(from: Float(0.05), to: 1, by: 0.05) {
+                let p = a + (b - a) * k
+                #expect(p.y - s.height(SIMD2(p.x, p.z)) >= Terrain3D.cableClearance * s.exaggeration - 0.01)
+            }
+        }
+        #expect(c.first!.y < c.last!.y)   // 아래 → 위
+        // 지주 데이터가 없는 공중 리프트(뉴레드)도 자동 지지점으로 땅 위 4m~50m(과장 배율)
+        let noPylons = try #require(m.lifts.first { $0.pylons == nil })
+        let auto = try #require(s.cable(noPylons))
+        for (a, b) in zip(auto, auto.dropFirst()) {
+            for k in stride(from: Float(0.05), to: 1, by: 0.05) {
+                let p = a + (b - a) * k, gap = p.y - s.height(SIMD2(p.x, p.z))
+                #expect(gap >= Terrain3D.cableClearance * s.exaggeration - 0.01 && gap <= Terrain3D.maxSpanHeight * s.exaggeration + 0.01)
+            }
+        }
+    }
+
+    /// 케이블 높이: 가까운 구간에 투영해 직선 보간, within 밖이면 nil
+    @Test func cableHeight() {
+        let c: [SIMD3<Float>] = [SIMD3(0, 10, 0), SIMD3(100, 30, 0)]
+        #expect(Terrain3D.cableHeight([c], at: SIMD2(50, 20)) == 20)
+        #expect(Terrain3D.cableHeight([c], at: SIMD2(50, 70)) == nil)
+        #expect(Terrain3D.cableHeight([c], at: SIMD2(-10, 0)) == 10)
+    }
 }

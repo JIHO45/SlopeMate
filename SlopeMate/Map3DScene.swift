@@ -170,6 +170,10 @@ final class Map3DScene {
     private let view3D: Resort.View3D?
     /// 리프트 양 끝(승·하차장) [위도, 경도]
     private let stations: [[Double]]
+    /// 공중 리프트 지주 기둥·케이블 그림자(liftNode 아래)
+    private let pylonNode = SCNNode(), cableShadowNode = SCNNode(), cableNode = SCNNode()
+    /// 공중 리프트 케이블(map.lifts 순서, 지주 데이터가 없으면 nil). 리프트 선·탄 리프트 경로·재생 점이 이 높이를 따른다
+    private let cables: [[SIMD3<Float>]?]
     private var viewport: CGSize
     private var topInset: CGFloat = 150
     private var bottomInset: CGFloat
@@ -217,7 +221,7 @@ final class Map3DScene {
         m.diffuse.contents = Map3DScene.color(SlopeStyle.hex(l, dark: false))
         return m
     }
-    private let terrainMat = SCNMaterial(), liftMat = Map3DScene.flat(), stationMat = Map3DScene.flat(), startMat = Map3DScene.flat(), endMat = Map3DScene.flat(), routeCasingMat = Map3DScene.flat(), highlightFadedMat = Map3DScene.flat()
+    private let terrainMat = SCNMaterial(), liftMat = Map3DScene.flat(), stationMat = Map3DScene.flat(), startMat = Map3DScene.flat(), endMat = Map3DScene.flat(), routeCasingMat = Map3DScene.flat(), highlightFadedMat = Map3DScene.flat(), pylonMat = Map3DScene.flat(), cableShadowMat = Map3DScene.flat(), cableMat = Map3DScene.flat()
     private let highlightMat = Map3DScene.flat(), casingMat = Map3DScene.flat(), dotMat = Map3DScene.flat()
     /// 승·하차장 점 판(8pt = 6pt 원 + 테두리 1pt). 화면 1pt 길이로 키운다
     private let stationPlane = SCNPlane(width: 8, height: 8)
@@ -255,6 +259,7 @@ final class Map3DScene {
         let all = map.slopes.flatMap { $0.lines.flatMap { $0 } } + map.lifts.filter { !excluded.contains($0.id) }.flatMap(\.line)
         linePoints = fitPoints?.map { space.point(lat: $0.lat, lon: $0.lon) } ?? all.map { space.point(lat: $0[0], lon: $0[1]) }
         stations = map.lifts.flatMap { l in [l.line.first, l.line.last].compactMap { $0 } }
+        cables = map.lifts.map { space.cable($0) }
         limit = Camera3D.home(space, viewport: viewport)
         start = Self.fit(space, points: linePoints, viewport: viewport, top: 150, bottom: viewport.height * 0.25 + 24, limit: limit, view3D: view3D)
         camera = start
@@ -295,6 +300,10 @@ final class Map3DScene {
             slopeNode.addChildNode(n)
         }
         liftNode.renderingOrder = Order.lift
+        pylonNode.renderingOrder = Order.lift
+        cableNode.renderingOrder = Order.lift
+        cableShadowNode.renderingOrder = Order.slope - 1
+        for n in [pylonNode, cableShadowNode, cableNode] { liftNode.addChildNode(n) }
         highlightCasingNode.renderingOrder = Order.highlightCasing
         highlightNode.renderingOrder = Order.highlight
         highlightFadedNode.renderingOrder = Order.highlight
@@ -644,12 +653,25 @@ final class Map3DScene {
             levelNodes[i].geometry = Terrain3D.Ribbon.geometry(ribbons)
             levelNodes[i].geometry?.firstMaterial = levelMats[i]
         }
-        let lifts = map.lifts.map { space.ribbon(line($0.line), width: 1.5 * mpp, lift: lift, dash: (4 * mpp, 4 * mpp)) }
-        liftNode.geometry = Terrain3D.Ribbon.geometry(lifts)
+        // 공중 리프트는 지주 사이 직선 케이블 높이로(지면을 따라 내려가지 않게), 걸린 케이블처럼 실선. 지면형은 점선(2D와 같음)
+        let ground = zip(map.lifts, cables).filter { $0.1 == nil }.map { space.ribbon(line($0.0.line), width: 1.5 * mpp, lift: lift, dash: (4 * mpp, 4 * mpp)) }
+        let aerialRibbons = zip(map.lifts, cables).compactMap { l, c in
+            c.map { c in space.ribbon(line(l.line), width: 1.5 * mpp, lift: lift, heightAt: { Terrain3D.cableHeight([c], at: $0) }) }
+        }
+        liftNode.geometry = Terrain3D.Ribbon.geometry(ground)
         liftNode.geometry?.firstMaterial = liftMat
+        cableNode.geometry = Terrain3D.Ribbon.geometry(aerialRibbons)
+        cableNode.geometry?.firstMaterial = cableMat
+        // 떠 보이게: 지주 기둥(1pt)과 케이블 아래 지면의 옅은 그림자 선(1.5pt). 리프트를 끄면 같이 꺼진다(liftNode 아래)
+        let aerialLifts = zip(map.lifts, cables).compactMap { l, c in c.map { (l, $0) } }
+        pylonNode.geometry = Terrain3D.Ribbon.geometry(aerialLifts.map { space.pylons($0.1, width: 1 * mpp) })
+        pylonNode.geometry?.firstMaterial = pylonMat
+        cableShadowNode.geometry = Terrain3D.Ribbon.geometry(aerialLifts.map { space.ribbon(line($0.0.line), width: 1.5 * mpp, lift: lift) })
+        cableShadowNode.geometry?.firstMaterial = cableShadowMat
         // 승·하차장 점: 판 아래 절반이 비탈에 묻히지 않게 반지름만큼 더 띄운다
         for (n, p) in zip(stationNode.childNodes, stations) { n.simdPosition = space.point(lat: p[0], lon: p[1], lift: lift + 4 * mpp) }
 
+        let aerial = cables.compactMap { $0 }
         // 경로: 조각마다 옅은 전체(알파 0.3배)와 진한 앞부분 두 겹. 꺾인 곳은 둥글게(Chaikin 2회)
         // S19 하강 3pt(테두리 5pt)·탄 리프트 2.5pt(4pt), S6 하강 2.5pt(4.5pt)·탄 리프트 1.5pt(3pt)(차분하게, 고른 하강은 강조로 덧그림)
         routeNode.childNodes.forEach { $0.removeFromParentNode() }
@@ -660,7 +682,9 @@ final class Map3DScene {
             case .other: (2, nil)
             }
             let pts = seg.points.map { (lat: $0.lat, lon: $0.lon) }
-            func ribbon(_ width: Float) -> Terrain3D.Ribbon { space.ribbon(pts, width: width * mpp, lift: lift, dash: dash, smooth: 2) }
+            // 탄 리프트 구간은 가까운(60m 안) 공중 케이블 높이로
+            let air: ((SIMD2<Float>) -> Float?)? = seg.kind == .lift && !aerial.isEmpty ? { Terrain3D.cableHeight(aerial, at: $0) } : nil
+            func ribbon(_ width: Float) -> Terrain3D.Ribbon { space.ribbon(pts, width: width * mpp, lift: lift, dash: dash, smooth: 2, heightAt: air) }
             let r = ribbon(w)
             // 하강·탄 리프트 아래 테두리(숲 위에서도 보이게). 재생 중에도 전체
             if seg.kind != .other, let g = ribbon(w + (seg.kind == .run ? 2 : 1.5)).geometry() {
@@ -821,8 +845,10 @@ final class Map3DScene {
         } else {
             highlightFadedNode.isHidden = true
         }
-        if let now = playback, let p = route.lazy.compactMap({ $0.position(at: now) }).first {
-            let q = space.point(lat: p.lat, lon: p.lon, lift: max(2, ribbonMPP))
+        if let now = playback, let (seg, p) = route.lazy.compactMap({ s in s.position(at: now).map { (s, $0) } }).first {
+            var q = space.point(lat: p.lat, lon: p.lon, lift: max(2, ribbonMPP))
+            // 리프트 위에서는 케이블 높이(점이 공중 선 위에 있게)
+            if seg.kind == .lift, let y = Terrain3D.cableHeight(cables.compactMap { $0 }, at: SIMD2(q.x, q.z)) { q.y = y }
             dot = q
             dotNode.simdPosition = q
             dotNode.isHidden = false
@@ -846,6 +872,11 @@ final class Map3DScene {
         terrainMat.setValue(SCNVector3(w.tintHigh.x, w.tintHigh.y, w.tintHigh.z), forKey: "tintHigh")
         let lift = Self.color(dark ? 0xC4D3DA : 0x34474E)
         liftMat.diffuse.contents = lift
+        pylonMat.diffuse.contents = lift
+        cableMat.diffuse.contents = lift
+        pylonMat.transparency = 0.6
+        cableShadowMat.diffuse.contents = UIColor.black
+        cableShadowMat.transparency = dark ? 0.3 : 0.18
         stationMat.diffuse.contents = Self.stationImage(fill: lift, border: Self.color(dark ? 0x0B161B : 0xFFFFFF))
         casingMat.diffuse.contents = c.dot
         // S6 하루 경로 테두리도 경로처럼 낮춘다(흰 테두리가 탄 리프트를 도드라지게 하지 않게)
