@@ -1,11 +1,18 @@
 import UIKit
 
-/// 지도 표시 설정. DayMapView가 @AppStorage("mapShowSlopes")·("mapShowLifts")로 기억한다
+/// 지도 표시 설정. DayMapView가 @AppStorage("mapShowSlopes")·("mapShowSlopes3D", 기본 끔)·("mapShowLifts")로 기억한다
 nonisolated struct MapLayers: Equatable, Sendable {
     var slopes = true
     var lifts = true
     /// 공유 동영상: 슬로프·리프트 선 없음
     static let none = MapLayers(slopes: false, lifts: false)
+
+    /// 3D 난이도 선(mapShowSlopes3D) 첫 값: 예전에 직접 고른 값(mapShowSlopes)이 있으면 한 번만 이어받는다. 그 뒤로는 2D·3D 따로
+    static func migrate3D(_ d: UserDefaults = .standard) {
+        guard !d.bool(forKey: "mapShowSlopes3DMigrated") else { return }
+        d.set(true, forKey: "mapShowSlopes3DMigrated")
+        if d.object(forKey: "mapShowSlopes3D") == nil, let v = d.object(forKey: "mapShowSlopes") as? Bool { d.set(v, forKey: "mapShowSlopes3D") }
+    }
 }
 
 /// 슬로프 난이도 단계와 색 (07-visual-design "S6 지도 난이도 색 v1")

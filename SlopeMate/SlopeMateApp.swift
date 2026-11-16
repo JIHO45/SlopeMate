@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     /// 시스템이 종료한 앱을 위치 이벤트로 다시 실행하면, 여기서 바로 세션과 수신을 복원해야 한다(WWDC23 10180).
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        MapLayers.migrate3D()
         do {
             let recorder = Recorder(db: try AppDatabase(path: AppDatabase.defaultPath()))
             recorder.handleLaunch(locationRelaunch: launchOptions?[.location] != nil)

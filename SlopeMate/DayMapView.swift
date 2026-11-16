@@ -39,6 +39,8 @@ struct DayMapView: View {
     @State private var flownIn = false
     // 지도 표시 메뉴(리조트·날짜와 상관없이 기기에 기억)와 누른 슬로프 말풍선
     @AppStorage("mapShowSlopes") private var showSlopes = true
+    /// 3D는 슬로프가 눈길로 보이므로 난이도 선을 기본으로 끈다(내 경로가 먼저 보이게). 2D와 따로 기억한다
+    @AppStorage("mapShowSlopes3D") private var showSlopes3D = false
     @AppStorage("mapShowLifts") private var showLifts = true
     @State private var picked: SlopePick.Hit?
     @State private var balloonSize: CGSize = .zero
@@ -74,6 +76,7 @@ struct DayMapView: View {
     private var hasRuns: Bool { !day.runs.isEmpty }
     private var clock: PlayClock { data?.clock ?? PlayClock([]) }
     private var layers: MapLayers { MapLayers(slopes: showSlopes, lifts: showLifts) }
+    private var layers3D: MapLayers { MapLayers(slopes: showSlopes3D, lifts: showLifts) }
     private var drawing: DayMapDrawing {
         DayMapDrawing(map: map, route: hasRuns ? data?.route ?? [] : [], dark: dark,
                       terrain: Terrain.layer(map, dark: dark), layers: layers)
@@ -99,9 +102,9 @@ struct DayMapView: View {
             if is3D, let scene3D {
                 Map3DView(scene: scene3D, now: now, highlight: (selected ?? playingRun).map { day.runs[$0] }, dark: dark,
                           bottomInset: sheetHeight + 24, reduceMotion: reduceMotion,
-                          layers: layers, flyIn: !flownIn && !reduceMotion,
+                          layers: layers3D, flyIn: !flownIn && !reduceMotion,
                           onReady: { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { ready3D = true } },
-                          onTap: { picked = showSlopes ? $0 : nil })
+                          onTap: { picked = showSlopes3D ? $0 : nil })
                     .ignoresSafeArea()
                     .opacity(ready3D ? 1 : 0)
                     .accessibilityElement()
@@ -112,6 +115,10 @@ struct DayMapView: View {
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
         .overlay { balloon }
+        .overlay(alignment: .topTrailing) {
+            MapLayersButton(slopes: is3D ? $showSlopes3D : $showSlopes, lifts: $showLifts)
+                .padding(.top, 8).padding(.trailing, 16)
+        }
         .overlay(alignment: .bottomTrailing) {
             Text(drawing.terrain == nil ? "© OpenStreetMap" : "© OpenStreetMap · Copernicus DEM").font(.caption).foregroundStyle(Color.secondaryText)
                 .dynamicTypeSize(...DynamicTypeSize.xxLarge) // 출처 표시가 지도를 가리지 않게
@@ -122,7 +129,6 @@ struct DayMapView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { layersMenu }
             if data != nil, drawing.terrain != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     if preparing3D {
@@ -183,6 +189,7 @@ struct DayMapView: View {
         // 말풍선은 화면 좌표에 고정: 지도가 움직이면(손짓·따라가기·시트 높이) 닫는다. 슬로프를 끄면 닫는다
         .onChange(of: [zoom, pinch, pan.width, pan.height, drag.width, drag.height, sheetHeight]) { picked = nil }
         .onChange(of: showSlopes) { if !showSlopes { picked = nil } }
+        .onChange(of: showSlopes3D) { if !showSlopes3D { picked = nil } }
         .onDisappear { making?.cancel() }
     }
 
@@ -228,41 +235,6 @@ struct DayMapView: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
-    }
-
-    /// 지도 표시 메뉴 v1: 슬로프·리프트 켬·끔과 난이도 범례. 이용권·고도 파일과 상관없다
-    private var layersMenu: some View {
-        Menu {
-            Toggle("슬로프", isOn: $showSlopes)
-            Toggle("리프트", isOn: $showLifts)
-            Section("난이도") {
-                ForEach(SlopeStyle.Level.allCases, id: \.self) { level in
-                    let word = SlopeStyle.label(level) ?? "정보 없음"
-                    Label { Text(word) } icon: { Image(uiImage: Self.legendDot(level, dark: dark)) }
-                        .accessibilityLabel("난이도 색 \(word)")
-                }
-            }
-        } label: { Image(systemName: "map") }
-            .accessibilityLabel("지도 표시")
-    }
-
-    /// 범례 색 점. 메뉴가 아이콘을 한 색으로 칠하지 않게 원래 색으로
-    private static func legendDot(_ level: SlopeStyle.Level, dark: Bool) -> UIImage {
-        let hex = SlopeStyle.hex(level, dark: dark)
-        let casing = SlopeStyle.casing(level, dark: dark)
-        func ui(_ v: UInt32) -> UIColor {
-            UIColor(red: CGFloat(v >> 16 & 0xFF) / 255, green: CGFloat(v >> 8 & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1)
-        }
-        return UIGraphicsImageRenderer(size: CGSize(width: 12, height: 12)).image { ctx in
-            let r = CGRect(x: 1, y: 1, width: 10, height: 10)
-            ui(hex).setFill()
-            ctx.cgContext.fillEllipse(in: r)
-            if let casing {
-                ui(casing).setStroke()
-                ctx.cgContext.setLineWidth(1)
-                ctx.cgContext.strokeEllipse(in: r.insetBy(dx: 0.5, dy: 0.5))
-            }
-        }.withRenderingMode(.alwaysOriginal)
     }
 
     // MARK: 3D 보기
@@ -492,5 +464,74 @@ struct DayMapView: View {
 private struct SheetBackground: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26, *) { content } else { content.presentationBackground(.regularMaterial) }
+    }
+}
+
+/// 지도 표시 버튼 v3(S6·S19 공통): 지도 오른쪽 위에 44pt 유리 원 두 개를 세로로. 누르면 바로 켬·끔(위: 슬로프 난이도 선, 아래: 리프트).
+/// 켜진 원은 강조색 아이콘, 꺼진 원은 흐린 아이콘에 사선. 이용권·고도 파일과 상관없다
+struct MapLayersButton: View {
+    @Binding var slopes: Bool
+    @Binding var lifts: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            toggle("슬로프 난이도 선", on: $slopes, icon: MapLayerIcon.slope)
+            toggle("리프트", on: $lifts, icon: MapLayerIcon.lift)
+        }
+    }
+
+    /// 아이콘 크기는 본문 글씨를 따라 22pt 기준, 큰 글씨는 xxLarge까지(원은 44pt 고정)
+    @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 22
+
+    private func toggle(_ name: String, on: Binding<Bool>, icon: MapLayerIcon) -> some View {
+        Button { on.wrappedValue.toggle() } label: {
+            icon.stroke(style: StrokeStyle(lineWidth: min(iconSize, 30) * 0.1, lineCap: .round, lineJoin: .round))
+                .frame(width: min(iconSize, 30), height: min(iconSize, 30))
+                .overlay {   // 꺼짐: 사선
+                    if !on.wrappedValue { Capsule().frame(width: 2, height: min(iconSize, 30) * 1.2).rotationEffect(.degrees(-45)) }
+                }
+                .frame(width: 44, height: 44)
+                .mapGlassCircle(tint: on.wrappedValue ? Color.accentText : Color.secondaryText)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(name)
+        .accessibilityValue(on.wrappedValue ? "켬" : "끔")
+        .accessibilityAddTraits(on.wrappedValue ? .isSelected : [])
+        .sensoryFeedback(.selection, trigger: on.wrappedValue)
+    }
+}
+
+/// 지도 표시 버튼 아이콘(직접 그림, 44 단위 격자). SF Symbols에는 케이블에 매달린 리프트·산 위 슬로프 모양이 없다
+enum MapLayerIcon: Shape {
+    /// 산 윤곽 안에 굽어 내려오는 슬로프 한 줄
+    case slope
+    /// 비스듬한 케이블 아래 매달린 체어 실루엣
+    case lift
+
+    func path(in rect: CGRect) -> Path {
+        let k = min(rect.width, rect.height) / 44
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * k, y: rect.minY + y * k) }
+        var path = Path()
+        switch self {
+        case .slope:
+            path.addLines([p(4, 36), p(22, 8), p(40, 36)])
+            path.move(to: p(22, 12))
+            path.addCurve(to: p(18, 36), control1: p(30, 20), control2: p(10, 26))
+        case .lift:
+            path.addLines([p(6, 14), p(38, 6)])
+            path.addLines([p(22, 10), p(22, 18), p(15, 18), p(15, 30), p(29, 30), p(31, 36)])
+        }
+        return path
+    }
+}
+
+extension View {
+    /// 지도 위 유리 원(iOS 26). 17.6~25는 흐린 재질 원
+    @ViewBuilder func mapGlassCircle(tint: Color = Color.primaryText) -> some View {
+        if #available(iOS 26, *) {
+            self.foregroundStyle(tint).glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            self.foregroundStyle(tint).background(.regularMaterial, in: Circle())
+        }
     }
 }

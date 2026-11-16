@@ -11,6 +11,21 @@ import UIKit
         return img.cgImage!.dataProvider!.data! as Data
     }
 
+    /// 3D 난이도 선 첫 값: 예전에 직접 고른 값만 한 번 이어받고, 값이 없으면 기본(끔). 두 번째부터는 따로
+    @Test func migrate3D() throws {
+        let d = try #require(UserDefaults(suiteName: "migrate3D-test"))
+        defer { d.removePersistentDomain(forName: "migrate3D-test") }
+        d.set(true, forKey: "mapShowSlopes")
+        MapLayers.migrate3D(d)
+        #expect(d.object(forKey: "mapShowSlopes3D") as? Bool == true)
+        d.set(false, forKey: "mapShowSlopes3D"); d.set(true, forKey: "mapShowSlopes")
+        MapLayers.migrate3D(d)
+        #expect(d.object(forKey: "mapShowSlopes3D") as? Bool == false)
+        d.removePersistentDomain(forName: "migrate3D-test")
+        MapLayers.migrate3D(d)   // 고른 적 없는 사용자
+        #expect(d.object(forKey: "mapShowSlopes3D") == nil)
+    }
+
     func render(_ d: DayMapDrawing) -> Data {
         let size = CGSize(width: 200, height: 300)
         return pixels(size) { d.draw($0, size: size, MapProjection(d.map, rect: CGRect(origin: .zero, size: size)), now: nil) }
