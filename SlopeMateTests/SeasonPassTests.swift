@@ -10,7 +10,16 @@ struct SeasonPassTests {
         return Stats.Day(date: at(d + "T06:00:00"), resortId: resort, runs: Array(repeating: run, count: runs), usedGPSAltitude: false)
     }
     func pass(_ name: String, _ price: Int, order: Int, season: String = "2026-27") -> SeasonPass {
-        SeasonPass(id: UUID(), season: season, name: name, price: price, dayTicketPrice: 100_000, sortOrder: order)
+        SeasonPass(id: UUID(), season: season, name: name, price: price, sortOrder: order)
+    }
+
+    /// 여러 리조트 시즌권: 방문한 리조트 정가로 하루씩, 같은 날 두 곳이면 비싼 쪽 한 번
+    @Test func multiResortTicketValue() {
+        let x = pass("X", 599_000, order: 0)
+        let days = [day("2026-12-05", "high1"), day("2026-12-06", "o2"), day("2026-12-12", "o2"), day("2026-12-12", "high1")]
+        let r = PassValue.compute([(x, ["high1", "o2"])], days: days, season: "2026-27")
+        #expect(r.perPass[x.id]! == PassValue.Value(visits: 3, price: 599_000))
+        #expect(r.ticketValue[x.id] == 111_000 + 82_000 + 111_000)
     }
 
     @Test func perPassAndTotal() {
@@ -19,7 +28,8 @@ struct SeasonPassTests {
         let r = PassValue.compute([(a, ["high1"]), (b, ["o2"])], days: days, season: "2026-27")
         #expect(r.perPass[a.id]! == PassValue.Value(visits: 2, price: 600_000))
         #expect(r.perPass[b.id]! == PassValue.Value(visits: 2, price: 400_000))
-        #expect(r.ticketValue[a.id] == 200_000)
+        #expect(r.ticketValue[a.id] == 222_000)   // 하이원 111,000 × 2
+        #expect(r.ticketValue[b.id] == 164_000)   // 오투 82,000 × 2
         // 12/6은 두 리조트지만 전체로는 1일 → 3일
         #expect(r.total == PassValue.Value(visits: 3, price: 1_000_000))
     }

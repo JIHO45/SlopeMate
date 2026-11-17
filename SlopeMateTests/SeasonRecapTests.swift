@@ -52,9 +52,9 @@ struct SeasonRecapTests {
     }
 
     @Test func passCardOnlyWhenRegistered() {
-        let p = SeasonPass(id: UUID(), season: "2026-27", name: "하이원 시즌권", price: 600_000, dayTicketPrice: 90_000, sortOrder: 0)
+        let p = SeasonPass(id: UUID(), season: "2026-27", name: "하이원 시즌권", price: 600_000, sortOrder: 0)
         let cards = SeasonRecap.cards(days: days, season: "2026-27", passes: [(p, ["high1"])])
-        #expect(cards.last == .pass(name: "하이원 시즌권", visits: 2, perVisit: 300_000, ticket: 180_000))
+        #expect(cards.last == .pass(name: "하이원 시즌권", visits: 2, perVisit: 300_000, ticket: 222_000))
     }
 
     @Test func finalAfterApril30() {

@@ -144,7 +144,6 @@ struct PassEditView: View {
     @State private var season: String
     @State private var name: String
     @State private var price: String
-    @State private var dayPrice: String
     @State private var resorts: Set<String>
     @State private var others: [(pass: SeasonPass, resorts: [String])] = []
     @State private var showErrors = false
@@ -158,14 +157,12 @@ struct PassEditView: View {
         _season = State(initialValue: season)
         _name = State(initialValue: original?.name ?? "")
         _price = State(initialValue: original.map { $0.price.formatted() } ?? "")
-        _dayPrice = State(initialValue: original.map { $0.dayTicketPrice.formatted() } ?? "")
         _resorts = State(initialValue: Set(initialResorts))
     }
 
     private static func amount(_ s: String) -> Int { Int(s.filter(\.isNumber)) ?? 0 }
     private var nameError: Bool { name.trimmingCharacters(in: .whitespaces).isEmpty }
     private var priceError: Bool { Self.amount(price) <= 0 }
-    private var dayPriceError: Bool { Self.amount(dayPrice) <= 0 }
 
     /// 지금 시즌 앞뒤 한 시즌씩
     private var seasons: [String] {
@@ -199,7 +196,6 @@ struct PassEditView: View {
                             .inputBox(error: showErrors && nameError)
                     }
                     moneyField("가격", $price, error: showErrors && priceError)
-                    moneyField("하루 리프트권 가격", $dayPrice, error: showErrors && dayPriceError)
                     resortPicker
                     if original != nil {
                         Button("시즌권 삭제") { confirmDelete = true }
@@ -334,10 +330,10 @@ struct PassEditView: View {
 
     private func save() {
         showErrors = true
-        guard !nameError, !priceError, !dayPriceError, !resorts.isEmpty else { return }
+        guard !nameError, !priceError, !resorts.isEmpty else { return }
         let order = (others.map(\.pass.sortOrder).max() ?? -1) + 1  // 새 시즌권은 맨 아래. 고칠 때는 save가 원래 순서를 지킨다
         let pass = SeasonPass(id: original?.id ?? UUID(), season: season, name: name.trimmingCharacters(in: .whitespaces),
-                              price: Self.amount(price), dayTicketPrice: Self.amount(dayPrice), sortOrder: order)
+                              price: Self.amount(price), sortOrder: order)
         do {
             try db.save(pass, resorts: Array(resorts))
             dismiss()
