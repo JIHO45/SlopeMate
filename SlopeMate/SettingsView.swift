@@ -23,7 +23,7 @@ struct SettingsView: View {
     @State private var buying = false
 
     /// 아직 정하지 않았으면 행을 숨긴다(빈 링크를 내보내지 않음)
-    static let privacyPolicyURL: URL? = URL(string: "https://slopemate-f9a5b.web.app/privacy")
+    static let privacyPolicyURL: URL? = URL(string: "https://woolly-devourer-5d2.notion.site/2be3ed084bab800b8544cbc4a1140929")
     /// 이용약관: Apple 표준 EULA
     static let termsURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
     static let contactEmail: String? = "joe45dev@gmail.com"

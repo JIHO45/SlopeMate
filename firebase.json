@@ -26,6 +26,13 @@
       "**/.git/**"
     ],
     "cleanUrls": true,
+    "redirects": [
+      {
+        "source": "/privacy",
+        "destination": "https://woolly-devourer-5d2.notion.site/2be3ed084bab800b8544cbc4a1140929",
+        "type": 302
+      }
+    ],
     "rewrites": [
       {
         "source": "/i/**",

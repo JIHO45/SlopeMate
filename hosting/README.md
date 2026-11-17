@@ -10,6 +10,6 @@
 
 - `public/.well-known/apple-app-site-association`: Universal Links(앱 ID `CH7CDR7288.com.Joe.SlopeMate`, 경로 `/i/*`). 확장자가 없어 firebase.json에서 `Content-Type: application/json`을 따로 준다. 숨김 파일은 `.DS_Store`·`.git`만 빼고 올라가므로 이 폴더에 다른 숨김 파일을 두지 않는다.
 - `public/invite.html`: `/i/{토큰}` 초대 웹페이지(앱이 없거나 링크가 웹으로 열렸을 때). 로그인 없이 previewInvite를 불러 크루 이름·인원·크루장 이름을 보여 주고, App Store·링크 복사·이름 신고(문의 메일)를 둔다. `noindex`, `Referrer-Policy: no-referrer`.
-- `public/support.html`(`/support`): 앱스토어 지원 URL. `public/privacy.html`(`/privacy`): 개인정보처리방침(초안, M3에서 최종 점검). 앱 설정의 개인정보처리방침 행이 연결된다.
+- `public/support.html`(`/support`): 앱스토어 지원 URL. `/privacy`: Notion의 개인정보처리방침으로 넘긴다(`firebase.json` redirects). 방침 원고는 `docs/privacy-notion.md`, 앱 설정의 개인정보처리방침 행은 Notion 주소를 바로 연다.
 
 형식이 틀린 파일은 앱이 버리고 이전 값을 쓴다. 올리기 전에 앱 테스트(`HostingFilesTests`)로 두 파일이 읽히는지 확인한다.
