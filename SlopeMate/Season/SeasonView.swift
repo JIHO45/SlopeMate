@@ -9,6 +9,8 @@ struct SeasonView: View {
     @State private var season = HomeData.currentSeason()
     @State private var goal: SeasonGoal?
     @State private var editingGoal = false
+    @State private var showTicket = false
+    @State private var pastNote = false
     /// 시트를 열 때 다시 읽은 이번 시즌 (화면이 시즌을 넘겨 살아 있어도 맞게)
     @State private var goalSeason = HomeData.currentSeason()
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -23,6 +25,8 @@ struct SeasonView: View {
             .navigationTitle("시즌")
             .toolbar { ToolbarItem(placement: .topBarTrailing) { seasonMenu } }
             .task(id: season) { await load() }
+            .sheet(isPresented: $showTicket) { SeasonTicketView() }
+            .alert(SeasonRecap.pastSeasonNote, isPresented: $pastNote) { Button("확인", role: .cancel) {} }
         }
     }
 
@@ -91,7 +95,7 @@ struct SeasonView: View {
 
     // MARK: 결산 (S9 v3 이용권 줄)
 
-    /// 방문일 숫자 아래 카드. 결산 줄(이용권이 없으면 첫 카드만 열린다는 설명)과 시즌 목표 줄.
+    /// 방문일 숫자 아래 카드. 결산 줄(이용권이 없으면 자물쇠, 누르면 이용권 화면)과 시즌 목표 줄.
     private func recapCard(_ t: Stats.Totals) -> some View {
         let visitDays = t.visitDays
         let final = SeasonRecap.isFinal(season: season)
@@ -101,15 +105,21 @@ struct SeasonView: View {
                 recapRow(title, note: Text("첫 기록을 남기면 결산을 볼 수 있어요"), chevron: false)
                     .opacity(0.6)
             } else {
-                NavigationLink { SeasonRecapView(days: days, season: season, passes: passes) } label: {
-                    let rest = SeasonRecapView.cards(days: days, season: season, passes: passes).count - 1
-                    let lock = SeasonRecap.lock(season: season, owned: ticket.seasons, current: SeasonTicket.season(purchase: .now))
-                    recapRow(title, note: lock == .open || rest == 0 ? nil
-                             : Text(Image(systemName: "lock.fill")).font(.caption2)
-                                + Text(lock == .pastSeason ? " 첫 카드 · \(SeasonRecap.pastSeasonNote)" : " 첫 카드 · 나머지 \(rest)장은 시즌 이용권"),
-                             chevron: true)
+                let lock = SeasonRecap.lock(season: season, owned: ticket.seasons, current: SeasonTicket.season(purchase: .now))
+                if lock == .open {
+                    NavigationLink { SeasonRecapView(days: days, season: season, passes: passes) } label: {
+                        recapRow(title, note: nil, chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    // 이용권이 없으면 결산 대신 이용권 화면 (2026-11-17)
+                    Button { if lock == .pastSeason { pastNote = true } else { showTicket = true } } label: {
+                        recapRow(title, note: Text(lock == .pastSeason ? SeasonRecap.pastSeasonNote : "시즌 이용권으로 볼 수 있어요"),
+                                 chevron: false, locked: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(title), 시즌 이용권 필요")
                 }
-                .buttonStyle(.plain)
             }
             goalRow(t)
         }
@@ -234,7 +244,7 @@ struct SeasonView: View {
             .accessibilityElement()
     }
 
-    private func recapRow(_ title: String, icon: String = "rectangle.portrait.on.rectangle.portrait", note: Text?, chevron: Bool) -> some View {
+    private func recapRow(_ title: String, icon: String = "rectangle.portrait.on.rectangle.portrait", note: Text?, chevron: Bool, locked: Bool = false) -> some View {
         HStack(spacing: 12) {
             IconCircle(systemName: icon, size: 36)
             VStack(alignment: .leading, spacing: 2) {
@@ -242,6 +252,7 @@ struct SeasonView: View {
                 if let note { note.font(.footnote).foregroundStyle(Color.secondaryText) }
             }
             Spacer(minLength: 0)
+            if locked { Image(systemName: "lock.fill").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText).accessibilityHidden(true) }
             if chevron { Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText) }
         }
         .foregroundStyle(Color.primaryText)

@@ -145,10 +145,10 @@ struct DayMapView: View {
                         // 잠금 표시 S6 v1: 오른쪽 위 모서리에 걸친 18pt 자물쇠 배지
                         Button { resume = .threeD; unlock() } label: {
                             Image(systemName: "view.3d").overlay(alignment: .topTrailing) {
-                                Image(systemName: "lock").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.secondaryText)
+                                Image(systemName: "lock").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.primaryText)
                                     .frame(width: 18, height: 18)
                                     .background(Color.card, in: Circle())
-                                    .overlay(Circle().strokeBorder(Color.cardBorder))
+                                    .overlay(Circle().strokeBorder(Color.secondaryText))
                                     .offset(x: 13, y: -13)
                             }
                         }
