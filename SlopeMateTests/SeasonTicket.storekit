@@ -12,12 +12,12 @@
   "identifier": "5C0B7E2A-3D1F-4A6B-9C8D-2E4F6A8B0C1D",
   "nonRenewingSubscriptions": [
     {
-      "displayPrice": "9900",
+      "displayPrice": "4900",
       "familyShareable": false,
       "internalID": "6755000001",
       "localizations": [
         {
-          "description": "산 날이 속한 시즌의 4월 30일까지 3D 보기, 고화질 동영상, 하강 상세, 시즌 목표, 시즌 결산을 엽니다. 자동 갱신 없음.",
+          "description": "구입한 시즌 동안 3D 지도, 고화질 동영상, 하강 상세, 시즌 결산",
           "displayName": "시즌 이용권",
           "locale": "ko_KR"
         }

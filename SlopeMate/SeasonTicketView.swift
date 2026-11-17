@@ -100,8 +100,10 @@ struct SeasonTicketView: View {
                     .foregroundStyle(price == nil ? Color.primaryText : Color.accentText)
                 Text(Self.untilText(expiry)).font(.title2.weight(.semibold))
                 Text("자동으로 갱신되지 않아요").font(.title3).foregroundStyle(Color.secondaryText)
+                if let note = Self.firstSeasonNote(expiry, price: price) { Text(note).font(.title3).foregroundStyle(Color.secondaryText) }
             }
         } else {
+            VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Self.seasonText(expiry)).font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText)
@@ -122,6 +124,10 @@ struct SeasonTicketView: View {
                     Text("자동으로 갱신되지 않아요").font(.footnote).foregroundStyle(Color.secondaryText)
                 }
                 .multilineTextAlignment(.trailing)
+            }
+            if let note = Self.firstSeasonNote(expiry, price: price) {
+                Text(note).font(.footnote).foregroundStyle(Color.secondaryText)
+            }
             }
             .padding(.vertical, 16).padding(.horizontal, 20)
             .background(Color.surface, in: RoundedRectangle(cornerRadius: 24))
@@ -392,6 +398,11 @@ extension SeasonTicketView {
     static func seasonText(_ expiry: Date) -> String {
         let y = seoul.component(.year, from: expiry.addingTimeInterval(-1))
         return String(format: "%d-%02d 시즌", y - 1, y % 100)
+    }
+
+    /// 첫 시즌(2026-27)을 파는 동안만, 원화 가격일 때만 보이는 안내. 다음 시즌 가격은 decisions 2026-11-17
+    static func firstSeasonNote(_ expiry: Date, price: String?) -> String? {
+        seasonText(expiry) == "2026-27 시즌" && price?.hasSuffix("원") == true ? "첫 시즌 가격이에요. 다음 시즌부터 9,900원" : nil
     }
 
     /// 원화는 시안처럼 "9,900원", 그 밖의 통화는 StoreKit 표기 그대로.
