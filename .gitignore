@@ -13,3 +13,6 @@ tools/dem/.venv/
 
 # graphify 지식 그래프
 graphify-out/
+
+# 슬로프 칠하기 원본(62MB PDF 등, 저장소에 넣지 않음)
+paint/
