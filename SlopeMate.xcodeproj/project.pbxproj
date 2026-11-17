@@ -626,7 +626,8 @@
 				INFOPLIST_FILE = SlopeMate/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "스키장에서 하강 횟수와 거리를 기록하려면 위치가 필요해요. 위치 기록은 이 iPhone에만 저장되고 SlopeMate 서버로 보내지 않아요.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "기압계로 고도를 재면 리프트와 하강을 더 정확히 구분할 수 있어요. 고도 기록도 이 iPhone에만 저장돼요.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "기압계로 고도를 재서 리프트와 하강을 더 정확히 구분하고, 차를 탄 구간을 기록에서 빼요. 이 정보도 이 iPhone에만 저장돼요.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "공유 이미지와 동영상을 사진 앱에 저장할 때만 써요. 사진을 읽지는 않아요.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -668,7 +669,8 @@
 				INFOPLIST_FILE = SlopeMate/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "스키장에서 하강 횟수와 거리를 기록하려면 위치가 필요해요. 위치 기록은 이 iPhone에만 저장되고 SlopeMate 서버로 보내지 않아요.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "기압계로 고도를 재면 리프트와 하강을 더 정확히 구분할 수 있어요. 고도 기록도 이 iPhone에만 저장돼요.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "기압계로 고도를 재서 리프트와 하강을 더 정확히 구분하고, 차를 탄 구간을 기록에서 빼요. 이 정보도 이 iPhone에만 저장돼요.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "공유 이미지와 동영상을 사진 앱에 저장할 때만 써요. 사진을 읽지는 않아요.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -709,7 +711,8 @@
 				INFOPLIST_FILE = SlopeMate/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "스키장에서 하강 횟수와 거리를 기록하려면 위치가 필요해요. 위치 기록은 이 iPhone에만 저장되고 SlopeMate 서버로 보내지 않아요.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "기압계로 고도를 재면 리프트와 하강을 더 정확히 구분할 수 있어요. 고도 기록도 이 iPhone에만 저장돼요.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "기압계로 고도를 재서 리프트와 하강을 더 정확히 구분하고, 차를 탄 구간을 기록에서 빼요. 이 정보도 이 iPhone에만 저장돼요.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "공유 이미지와 동영상을 사진 앱에 저장할 때만 써요. 사진을 읽지는 않아요.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

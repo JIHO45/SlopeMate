@@ -474,7 +474,7 @@ struct PermissionView: View {
         head("location.fill", "기록하려면 위치가 필요해요", "기록 중에만 위치를 써서 하강 횟수와 거리를 재요. GPS 기록은 우리 서버로 보내지 않습니다.", dim: false)
         RowCard {
             permission("location", "위치 · 정확한 위치", required: true, "위치로 하강 횟수와 이동 거리를 기록해요.")
-            permission("figure.skiing.downhill", "동작 및 피트니스", required: false, "고도를 정확히 재려고 기압계를 씁니다. 허용하지 않아도 기록은 돼요.")
+            permission("figure.skiing.downhill", "동작 및 피트니스", required: false, "기압계로 고도를 재고, 차를 탄 구간을 기록에서 빼요. 허용하지 않아도 기록은 돼요.")
         }
         .padding(.horizontal, 16)
     }
