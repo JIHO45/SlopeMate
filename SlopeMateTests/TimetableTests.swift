@@ -108,4 +108,16 @@ struct TimetableTests {
     @Test func bundledDecodes() {
         _ = Timetable.all
     }
+
+    /// 내장 시간표(2026-27 공식 안내): 비발디 월요일 심야 휴무와 2월 8일 예외, 알펜시아 야간 운영 기간
+    @Test func bundledVivaldiAndAlpensia() {
+        let all = Timetable.all
+        #expect(kind("2026-12-22T20:00:00", all, resort: "vivaldi") == .night)
+        #expect(kind("2026-12-23T01:00:00", all, resort: "vivaldi") == .lateNight)      // 화요일 영업일
+        #expect(kind("2026-12-22T01:00:00", all, resort: "vivaldi") == .unclassified)   // 월요일 영업일 심야 휴무
+        #expect(kind("2027-02-09T01:00:00", all, resort: "vivaldi") == .lateNight)      // 2월 8일(월)은 정상 운영
+        #expect(kind("2026-12-10T19:00:00", all, resort: "alpensia") == .unclassified)  // 야간은 12월 19일부터
+        #expect(kind("2026-12-20T19:00:00", all, resort: "alpensia") == .night)
+        #expect(kind("2027-02-20T10:00:00", all, resort: "alpensia") == .day)
+    }
 }
