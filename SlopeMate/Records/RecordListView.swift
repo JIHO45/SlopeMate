@@ -173,6 +173,19 @@ enum RecordFormat {
     static func monthDay(_ d: Date) -> String { md.string(from: d) }
     static func monthDayWeekday(_ d: Date) -> String { mdw.string(from: d) }
     static func time(_ d: Date) -> String { hm.string(from: d) }
+    /// "15분", "1시간", "1시간 20분". 1분 미만은 1분
+    static func duration(_ sec: TimeInterval) -> String {
+        let m = max(1, Int((sec / 60).rounded()))
+        return m < 60 ? "\(m)분" : m % 60 == 0 ? "\(m / 60)시간" : "\(m / 60)시간 \(m % 60)분"
+    }
+    /// 하루의 기록 시간 글자. 한 번이면 "22:28~23:55 기록". 여러 번이면 껐다 켠 사이를 뺀 합계 "기록 2회 · 총 15분"과
+    /// 첫 시작~마지막 종료(작은 글씨용). 기록 중 수신이 끊긴 시간은 빼지 않는다(목록의 "기록 없음" 행과 숫자가 어긋나지 않게)
+    static func recorded(_ spans: [DateInterval]) -> (line: String, range: String?)? {
+        guard let first = spans.map(\.start).min(), let last = spans.map(\.end).max() else { return nil }
+        let range = "\(time(first))~\(time(last))"
+        if spans.count == 1 { return ("\(range) 기록", nil) }
+        return ("기록 \(spans.count)회 · 총 \(duration(spans.reduce(0) { $0 + $1.duration }))", range)
+    }
     static func month(_ d: Date) -> String { ym.string(from: d) }
     /// 이번 시즌이면 "12월", 아니면 "2025년 12월"
     static func monthTitle(_ d: Date) -> String {

@@ -56,6 +56,20 @@ struct RecordQueriesTests {
         #expect(try count(db, "recording_cache") == 2)
     }
 
+    /// 여러 번 기록한 날은 껐다 켠 사이를 뺀 합계와 첫 시작~마지막 종료를 따로 보여 준다
+    @Test func recordedTime() {
+        let t0 = ISO8601DateFormatter().date(from: "2026-12-05T22:28:00+09:00")!
+        func span(_ from: Double, _ to: Double) -> DateInterval { DateInterval(start: t0 + from * 60, end: t0 + to * 60) }
+        #expect(RecordFormat.recorded([]) == nil)
+        let one = RecordFormat.recorded([span(0, 87)])
+        #expect(one?.line == "22:28~23:55 기록" && one?.range == nil)
+        let two = RecordFormat.recorded([span(0, 5), span(77, 87)])
+        #expect(two?.line == "기록 2회 · 총 15분" && two?.range == "22:28~23:55")
+        #expect(RecordFormat.duration(20) == "1분")
+        #expect(RecordFormat.duration(3600) == "1시간")
+        #expect(RecordFormat.duration(80 * 60) == "1시간 20분")
+    }
+
     @Test func josa() {
         #expect(RecordFormat.josa("하이원", "은", "는") == "은")
         #expect(RecordFormat.josa("곤지암 리조트", "은", "는") == "는")

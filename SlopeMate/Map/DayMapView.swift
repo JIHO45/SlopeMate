@@ -10,7 +10,7 @@ struct DayMapView: View {
     let data: DayData?
     let gaps: [Gap]
     let ratings: [Int: SnowRating]
-    let span: (Date, Date)?
+    let spans: [DateInterval]
 
     @Environment(\.colorScheme) private var scheme
     @Environment(SeasonTicket.self) private var ticket
@@ -71,8 +71,8 @@ struct DayMapView: View {
     @State private var pendingDetail: Int?
     @State private var detail: Int?
 
-    init(db: AppDatabase, day: Stats.Day, map: SlopeMap, data: DayData?, gaps: [Gap], ratings: [Int: SnowRating], span: (Date, Date)?) {
-        (self.db, self.day, self.map, self.data, self.gaps, self.ratings, self.span) = (db, day, map, data, gaps, ratings, span)
+    init(db: AppDatabase, day: Stats.Day, map: SlopeMap, data: DayData?, gaps: [Gap], ratings: [Int: SnowRating], spans: [DateInterval]) {
+        (self.db, self.day, self.map, self.data, self.gaps, self.ratings, self.spans) = (db, day, map, data, gaps, ratings, spans)
         _detent = State(initialValue: day.runs.isEmpty ? .fraction(0.5) : .fraction(0.25))
     }
 
@@ -402,7 +402,7 @@ struct DayMapView: View {
                 }
                 .scrollIndicators(.hidden)
             } else {
-                ScrollView { DayNoRuns(span: span).padding(.bottom, 24) }
+                ScrollView { DayNoRuns(spans: spans).padding(.bottom, 24) }
             }
         }
         .padding(.horizontal, 16)

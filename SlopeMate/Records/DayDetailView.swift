@@ -8,7 +8,7 @@ struct DayDetailView: View {
     @State private var data: DayData?
     @State private var gaps: [Gap] = []
     @State private var ratings: [Int: SnowRating] = [:]
-    @State private var span: (Date, Date)?
+    @State private var spans: [DateInterval] = []
     @State private var failed = false
     @State private var attempt = 0
 
@@ -29,7 +29,7 @@ struct DayDetailView: View {
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
             } else if let map = SlopeMap.cached(resortId: day.resortId), map.isDrawable {
-                DayMapView(db: db, day: shown, map: map, data: data, gaps: gaps, ratings: ratings, span: span)
+                DayMapView(db: db, day: shown, map: map, data: data, gaps: gaps, ratings: ratings, spans: spans)
             } else {
                 list
             }
@@ -42,7 +42,7 @@ struct DayDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if shown.runs.isEmpty {
-                    DayNoRuns(span: span)
+                    DayNoRuns(spans: spans)
                 } else {
                     DaySummary(day: shown)
                         .padding(16)
@@ -77,7 +77,7 @@ struct DayDetailView: View {
         guard let found = try? db.gaps(recs), let all = try? recs.flatMap({ try db.snowRatings($0) }) else { failed = true; return }
         gaps = found.filter { $0.toT! >= $0.fromT.addingTimeInterval(60) } // ponytail: 1분 미만 끊김은 HH:mm로 보이지 않아 뺌
         ratings = SnowPrompt.attach(all, to: d.day.runs)
-        if let first = recs.first?.startedAt, let last = recs.compactMap(\.endedAt).max() { span = (first, last) }
+        spans = recs.compactMap { r in r.endedAt.map { DateInterval(start: r.startedAt, end: max($0, r.startedAt)) } }
         data = d
     }
 
@@ -296,16 +296,20 @@ struct DayRunList: View {
     }
 }
 
-/// 하강 0회 (B0-추가 v1): 기록한 시간, 원인 3가지, 방문일 안내
+/// 하강 0회 (B0-추가 v2): 기록한 시간, 원인 3가지, 방문일 안내
 struct DayNoRuns: View {
-    let span: (Date, Date)?
+    /// 그 하루의 기록마다 시작~종료
+    let spans: [DateInterval]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("하강이 기록되지 않았어요").font(.title2.weight(.bold))
-                if let span {
-                    Text("\(RecordFormat.time(span.0))~\(RecordFormat.time(span.1)) 기록").font(.subheadline).monospacedDigit().foregroundStyle(Color.secondaryText)
+                if let t = RecordFormat.recorded(spans) {
+                    Text(t.line).font(.subheadline).monospacedDigit().foregroundStyle(Color.secondaryText)
+                    if let range = t.range {
+                        Text(range).font(.footnote).monospacedDigit().foregroundStyle(Color.secondaryText)
+                    }
                 }
             }
             .padding(.leading, 4)
