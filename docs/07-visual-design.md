@@ -313,7 +313,7 @@ Claude Design에 넣을 때는 이 표와 2장 색 값을 글로 주고, 가진 
 | 초급 | novice, easy | `#2E9E4F` | `#4CC46F` |
 | 중급 | intermediate | `#3A4FB8` | `#7C8FF0` |
 | 상급 | advanced | `#D93A3A` | `#FF6B6B` |
-| 최상급 | expert, freeride, extreme | `#111418` | `#111418` + 양쪽 0.5pt 밝은 테두리 `#C4D3DA` |
+| 최상급 | expert, freeride, extreme | `#111418` | `#111418` + 양쪽 0.5pt 테두리 `#8A979D` |
 | 정보 없음 | 값 없음, 그 밖 | `#7C8A90` | `#7C8A90` |
 
 - 2D: 슬로프 선 2.5pt 실선(S6 v3·지형 바탕 v1의 회색 3pt를 바꿈). 면 슬로프는 같은 색 20%로 채우고 테두리를 긋는다.

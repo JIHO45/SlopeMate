@@ -22,7 +22,7 @@ struct MapStyleTests {
         #expect(SlopeStyle.hex(.advanced, dark: false) == 0xD93A3A)
         #expect(SlopeStyle.hex(.expert, dark: true) == 0x111418)
         #expect(SlopeStyle.hex(.unknown, dark: false) == 0x7C8A90)
-        #expect(SlopeStyle.casing(.expert, dark: true) == 0xC4D3DA)
+        #expect(SlopeStyle.casing(.expert, dark: true) == 0x8A979D)
         #expect(SlopeStyle.casing(.expert, dark: false) == nil)
         #expect(SlopeStyle.casing(.advanced, dark: true) == nil)
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0

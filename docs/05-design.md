@@ -382,7 +382,7 @@ Swift Testing. 고도는 기운 평면 격자(`TerrainTests`와 같은 방식), 
 2D와 3D 지도가 같이 쓰는 규칙이다. 결정은 decisions 2026-11-14 "지도 슬로프는 난이도 색 실선", "지도에서 누른 슬로프의 이름", "공유 동영상에는 슬로프·리프트 선을 그리지 않는다". 모양은 07-visual-design 6장 "S6 지도 난이도 색 v1"·"S6 지도 표시 메뉴 v1"·"슬로프 이름 말풍선 v1"·"공유 동영상 v2".
 
 - **난이도 단계:** `SlopeMap.Slope.difficulty`(OSM `piste:difficulty`)를 다섯 단계로 묶는다. novice·easy → 초급, intermediate → 중급, advanced → 상급, expert·freeride·extreme → 최상급, 그 밖과 nil → 정보 없음. 내장 12곳의 슬로프 205개 중 34개가 정보 없음이다.
-- **색:** 밝게/어둡게 순서로 초급 `#2E9E4F`/`#4CC46F`, 중급 `#3A4FB8`/`#7C8FF0`, 상급 `#D93A3A`/`#FF6B6B`, 최상급 `#111418`/`#111418`, 정보 없음 `#7C8A90`/`#7C8A90`. 2D 어둡게의 최상급만 선 아래에 양쪽 0.5pt 넓은 테두리 `#C4D3DA`를 깐다. 3D는 눈 띠 위에 그리므로 어둡게에서도 밝게 값을 쓴다(`dark: false`로 부름).
+- **색:** 밝게/어둡게 순서로 초급 `#2E9E4F`/`#4CC46F`, 중급 `#3A4FB8`/`#7C8FF0`, 상급 `#D93A3A`/`#FF6B6B`, 최상급 `#111418`/`#111418`, 정보 없음 `#7C8A90`/`#7C8A90`. 2D 어둡게의 최상급만 선 아래에 양쪽 0.5pt 넓은 테두리 `#8A979D`를 깐다(밝은 리프트 선과 겹쳐 굵어 보여 낮춤). 3D는 눈 띠 위에 그리므로 어둡게에서도 밝게 값을 쓴다(`dark: false`로 부름).
 - **2D 그리기:** `DayMapDrawing`이 슬로프를 단계 색 2.5pt 실선으로 긋는다(회색 3pt를 바꿈). 면 슬로프는 같은 색 알파 0.2로 채우고 테두리를 긋는다. 지형 바탕이 있든 없든 같은 색이다(`Palette.slope`·`slopeOnTerrain`은 슬로프 선에 더 쓰지 않는다). 리프트 점선은 그대로다.
 - **표시 설정:** `MapLayers`(슬로프·리프트 켬·끔). `DayMapView`가 `@AppStorage("mapShowSlopes")`·`@AppStorage("mapShowLifts")`(Bool, 기본 true)로 기기에 기억한다. 리조트·날짜와 상관없는 한 값이고 서버로 보내지 않는다. 2D는 `DayMapDrawing.layers`, 3D는 `Map3DScene.setLayers`로 넘긴다.
     - 슬로프 끔: 2D는 슬로프 선·면 채우기를 그리지 않는다. 3D는 색 선 노드만 숨기고 눈 띠(마스크 텍스처)는 그대로 둔다. 누르기 판정을 하지 않고 떠 있던 말풍선을 닫는다.
@@ -456,7 +456,7 @@ nonisolated enum SlopeStyle {
     /// sRGB hex. 3D 눈 띠 위 선은 dark: false로 부른다
     static func hex(_ level: Level, dark: Bool) -> UInt32
     static func color(difficulty: String?, dark: Bool) -> UIColor
-    /// 2D 어둡게의 최상급만 0xC4D3DA(선 아래 양쪽 0.5pt), 나머지는 nil
+    /// 2D 어둡게의 최상급만 0x8A979D(선 아래 양쪽 0.5pt), 나머지는 nil
     static func casing(_ level: Level, dark: Bool) -> UInt32?
     /// "초급"·"중급"·"상급"·"최상급". unknown은 nil(범례에서는 "정보 없음")
     static func label(_ level: Level) -> String?

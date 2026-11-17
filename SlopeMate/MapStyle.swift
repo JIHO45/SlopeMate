@@ -49,9 +49,9 @@ nonisolated enum SlopeStyle {
                        blue: CGFloat(v & 0xFF) / 255, alpha: 1)
     }
 
-    /// 2D 어둡게의 최상급만 0xC4D3DA(선 아래 양쪽 0.5pt), 나머지는 nil
+    /// 2D 어둡게의 최상급만 0x8A979D(선 아래 양쪽 0.5pt), 나머지는 nil
     static func casing(_ level: Level, dark: Bool) -> UInt32? {
-        dark && level == .expert ? 0xC4D3DA : nil
+        dark && level == .expert ? 0x8A979D : nil
     }
 
     /// "초급"·"중급"·"상급"·"최상급". unknown은 nil(범례에서는 "정보 없음")
