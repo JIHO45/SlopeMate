@@ -14,4 +14,19 @@ struct SlopeMapTests {
     @Test func missingResortIsNil() {
         #expect(SlopeMap.load(resortId: "nowhere") == nil)
     }
+
+    /// 그린 선: 연결된 슬로프는 ID·이름 유지에 그린 선·색, 연결 안 된 선은 새 ID, 그리지 않은 OSM 슬로프는 빠짐
+    @Test func drawnLinesReplaceOSM() {
+        let osm = [SlopeMap.Slope(id: "r-s01", name: "A", difficulty: "easy", osmIds: ["way/1"], lines: [[[0, 0], [1, 1]]], area: nil),
+                   SlopeMap.Slope(id: "r-s02", name: "B", difficulty: "easy", osmIds: ["way/2"], lines: [[[0, 0], [2, 2]]], area: true)]
+        let drawn = [SlopeMap.Drawn(slope: "r-s01", difficulty: "advanced", line: [[0, 0], [0.5, 0.6], [1, 1]]),
+                     SlopeMap.Drawn(slope: "r-s01", difficulty: "advanced", line: [[1, 1], [1.2, 1.5]]),
+                     SlopeMap.Drawn(slope: "r-s01", difficulty: "easy", line: [[5, 5], [6, 6]]),   // 같은 슬로프에 색이 다른 선
+                     SlopeMap.Drawn(slope: nil, difficulty: "expert", line: [[3, 3], [4, 4]])]
+        let out = SlopeMap.drawn(drawn, osm: osm, resortId: "r")
+        #expect(out.map(\.id) == ["r-s01", "r-d01", "r-d02"])
+        #expect(out[0].name == "A" && out[0].difficulty == "advanced" && out[0].lines.count == 2 && out[0].osmIds == ["way/1"])
+        #expect(out[1].name == nil && out[1].difficulty == "easy")
+        #expect(out[2].name == nil && out[2].difficulty == "expert")
+    }
 }
