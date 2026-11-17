@@ -65,7 +65,7 @@ struct SettingsView: View {
             Section("정보") {
                 // R54: S18 시트
                 Button { buying = true } label: {
-                    row("시즌 이용권", value: ticket.isActive ? ticket.expiry.map(SeasonTicketView.untilText) : "없음", chevron: true)
+                    row("시즌 이용권", value: ticket.isActive ? ticket.expiry.map { SeasonTicketView.untilText($0) } : "없음", chevron: true)
                 }
                 if let url = Self.privacyPolicyURL {
                     Link(destination: url) { row("개인정보처리방침", icon: "arrow.up.right") }

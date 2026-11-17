@@ -11,7 +11,7 @@ nonisolated enum DemoSeed {
     }
 
     /// 기록이 하나도 없을 때만 넣는다
-    static func seedIfEmpty(_ db: AppDatabase) {
+    @MainActor static func seedIfEmpty(_ db: AppDatabase) {
         guard (try? db.recordings(since: .distantPast).isEmpty) == true else { return }
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "Asia/Seoul")!

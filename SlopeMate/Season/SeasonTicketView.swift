@@ -18,7 +18,7 @@ struct SeasonTicketView: View {
 
     private var big: Bool { typeSize.isAccessibilitySize }
     private var expiry: Date { Self.shownExpiry(active: ticket.isActive, expiry: ticket.expiry, now: .now) }
-    private var price: String? { ticket.product.map(Self.priceText) }
+    private var price: String? { ticket.product.map { Self.priceText($0) } }
 
     var body: some View {
         Group {

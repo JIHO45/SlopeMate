@@ -595,7 +595,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
                 return maps[id]!
             }
             for rec in (try? db.recordingsNeedingCache(osmStamp: { AppDatabase.osmStamp(map($0)) })) ?? [] {
-                try? db.refreshCache(rec, map: map(rec.resortId))
+                _ = try? db.refreshCache(rec, map: map(rec.resortId))
             }
         }
     }

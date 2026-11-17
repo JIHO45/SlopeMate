@@ -162,11 +162,11 @@ nonisolated extension AppDatabase {
                 let status = try await Task { try await Self.post(body, token: token) }.value
                 // 집계 전에 거부된 것이 확실한 응답(App Check 401, 과부하 429·503)은 되돌리고 이번 차례를 멈춘다
                 if [401, 429, 503].contains(status) {
-                    try? db.markSample(o, from: "sent", to: "pending")
+                    _ = try? db.markSample(o, from: "sent", to: "pending")
                     stop = true
                 }
             } catch {
-                if SampleSend.retryable(error) { try? db.markSample(o, from: "sent", to: "pending") }
+                if SampleSend.retryable(error) { _ = try? db.markSample(o, from: "sent", to: "pending") }
             }
             UIApplication.shared.endBackgroundTask(task)
             if stop { return }

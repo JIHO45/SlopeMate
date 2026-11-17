@@ -609,7 +609,7 @@ final class Map3DScene {
         SCNTransaction.commit()
     }
 
-    private static func line(_ l: [[Double]]) -> [(lat: Double, lon: Double)] { l.map { (lat: $0[0], lon: $0[1]) } }
+    private nonisolated static func line(_ l: [[Double]]) -> [(lat: Double, lon: Double)] { l.map { (lat: $0[0], lon: $0[1]) } }
 
     /// 리본 굵기(m) = 2D pt 값 × 화면 1pt 길이
     private func buildRibbons() {
