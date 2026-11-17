@@ -611,15 +611,9 @@ struct SlopeBalloon: View {
 | `SlopeMate/Map/Map3DView.swift`·`SlopeMate/Map/DayMapView.swift` | 바뀌지 않는다(준비는 `Map3DTerrain` 안). 캐시를 쓰면 읽기·쓰기도 `Map3DTerrain` 쪽 | 없음 |
 | `SlopeMateTests/Terrain3DTests.swift`·`Map3DSceneTests.swift` | 06-verification R50 "3D v5" 단위 테스트 줄, v4 눈 띠·정점 색 기대값 정리(`homePitch34` 포함) | 위 API |
 
-**S19 고해상 패치 (R50, R54, K)**
+**S19 고해상 패치 (R50, R54, K)** — 2.0에서 뺌
 
-S19는 하강 하나에 맞춰 가까이 보므로 리조트 질감(텍셀 2~4m)의 나무가 점으로 보인다. S19를 열면 처음 시점에 보이는 땅만 같은 규칙으로 다시 그려 덮는다. 결정은 decisions 2026-11-15 "S19 고해상 패치".
-
-- **범위:** `Map3DScene.detailWindow()`가 처음 시점(날아 들어오기가 끝난 자리, 화면 크기가 정해진 뒤)에서 화면 전체(시트 뒤 포함) 7×9 점의 광선을 지형까지 걷고(`Camera3D.ground`, 거리의 1/32씩 3배까지), 닿은 곳을 감싸는 격자 범위 + 2칸을 고른다. 하늘에 닿는 광선은 뺀다.
-- **질감:** `Terrain3D.groundTexture(window:)`가 그 범위만 긴 변 2048로 그린다. 높이·눈 띠·베이스 눈밭·스키장 구역·음영 규칙은 리조트 질감과 같다. 나무만 다르다. 7m 칸마다 하나, 별 모양 수관(9갈래 ±14%, 5갈래 ±6%), 꼭대기가 밝고 층마다 결, 그림자는 해 반대쪽으로 반지름의 2.6배 길이(두 칸 떨어진 나무까지 본다).
-- **덮기:** 셰이더가 UV 사각형(`detailRect`) 안에서 패치를 샘플해 섞는다. 가장자리 6%에서 리조트 질감으로 넘어간다. 패치가 오기 전에는 리조트 질감만 보이고, 오면 `detailMix`를 0.6초에 0 → 1로 올린다.
-- **시점:** 3D가 처음 보일 때(`onReady`) `loadDetail()`을 한 번 부른다. 메인 스레드 밖에서 만들고 준비되면 덮는다. 캐시는 없다(열 때마다 만든다). 화면을 닫아도 만들던 것은 끝까지 돌고 결과만 버린다.
-- **측정:** 시뮬레이터 Debug에서 3D가 보인 뒤 덮일 때까지 약 20~40초(참고값, 용평 하강 1). 실기기 Release 시간·메모리는 아직 재지 않았다.
+S19는 리조트 질감을 그대로 쓴다. 처음 시점에 보이는 땅만 다시 그려 덮던 패치(`loadDetail`)는 뺐다(decisions 2026-11-17 "S19 고해상 패치 빼기"). 범위를 고르는 `Map3DScene.detailWindow()`와 `Terrain3D.groundTexture(window:)`는 코드에 남아 있고 테스트만 쓴다.
 - **범위 밖:** S6 확대, 공유 영상 따라가기 카메라(결정 대기).
 
 ### 서버 (Firestore)

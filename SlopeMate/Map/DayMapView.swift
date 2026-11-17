@@ -93,11 +93,12 @@ struct DayMapView: View {
     private var sheetHeight: CGFloat { sheetSize ?? size.height * (detent == .fraction(0.5) ? 0.5 : 0.25) }
     private var lock: SeasonRecap.Lock { Self.lock(day: day.date, owned: ticket.seasons) }
 
-    /// 그 하루 기록 시즌의 이용권으로 연다(decisions 2026-11-14). 시즌 밖 날짜(5~10월)는 이번 시즌으로 본다
-    static func lock(day: Date, owned: Set<String>, now: Date = .now) -> SeasonRecap.Lock {
-        if DemoSeed.on { return .open }
+    /// 그 하루 기록 시즌의 이용권으로 연다(decisions 2026-11-14). 시즌 밖 날짜(5~10월)는 그날 산 이용권의 시즌(다가오는 시즌)으로 본다.
+    /// 보는 때(now)와 상관없이 같은 기록은 같은 시즌. demo: 미리보기(-SMDemo)면 연다(테스트는 false)
+    static func lock(day: Date, owned: Set<String>, now: Date = .now, demo: Bool = DemoSeed.on) -> SeasonRecap.Lock {
+        if demo { return .open }
         let current = SeasonTicket.season(purchase: now)
-        return SeasonRecap.lock(season: Stats.season(of: day) ?? current, owned: owned, current: current)
+        return SeasonRecap.lock(season: Stats.season(of: day) ?? SeasonTicket.season(purchase: day), owned: owned, current: current)
     }
 
     var body: some View {
@@ -105,7 +106,7 @@ struct DayMapView: View {
             // 3D는 미리 그리기가 끝날 때까지 투명하게 깔고 2D를 보이다가 겹쳐 바꾼다
             if !(is3D && ready3D) { canvas.transition(.opacity) }
             if is3D, let scene3D {
-                Map3DView(scene: scene3D, now: now, highlight: (selected ?? playingRun).map { day.runs[$0] }, dark: dark,
+                Map3DView(scene: scene3D, now: now, highlight: (selected ?? playingRun).flatMap { day.runs.indices.contains($0) ? day.runs[$0] : nil }, dark: dark,
                           bottomInset: sheetHeight + 24, reduceMotion: reduceMotion,
                           layers: layers3D, flyIn: !flownIn && !reduceMotion,
                           onReady: { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { ready3D = true } },
@@ -191,7 +192,7 @@ struct DayMapView: View {
         }
         .onChange(of: scheme, initial: true) { darkState = scheme == .dark }
         // 경로가 바뀌면(다시 읽기) 3D 장면은 다음에 켤 때 다시 만든다
-        .onChange(of: data?.route) { detail = nil; is3D = false; ready3D = false; scene3D = nil; flownIn = false; picked = nil }
+        .onChange(of: data?.route) { old, _ in if old != nil { selected = nil }; detail = nil; is3D = false; ready3D = false; scene3D = nil; flownIn = false; picked = nil }
         // 말풍선은 화면 좌표에 고정: 지도가 움직이면(손짓·따라가기·시트 높이) 닫는다. 슬로프를 끄면 닫는다
         .onChange(of: [zoom, pinch, pan.width, pan.height, drag.width, drag.height, sheetHeight]) { picked = nil }
         .onChange(of: showSlopes) { if !showSlopes { picked = nil } }
@@ -204,7 +205,7 @@ struct DayMapView: View {
         GeometryReader { geo in
             Canvas { ctx, size in
                 let fit = fitRect(size)
-                let d = drawing, t = transform(fit), now = now, h = selected.map { day.runs[$0] }
+                let d = drawing, t = transform(fit), now = now, h = selected.flatMap { day.runs.indices.contains($0) ? day.runs[$0] : nil }
                 ctx.withCGContext { cg in d.draw(cg, size: size, MapProjection(map, rect: fit), transform: t, now: now, highlight: h) }
             }
             .gesture(MagnifyGesture()

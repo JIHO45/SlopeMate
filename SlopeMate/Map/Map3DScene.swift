@@ -283,10 +283,6 @@ final class Map3DScene {
         terrainMat.shaderModifiers = [.fragment: Self.terrainShader]
         let es = space.edgeScale
         terrainMat.setValue(SCNVector3(es.x, es.y, 0), forKey: "edgeScale")
-        // 고해상 패치(S19 loadDetail): 붙기 전에는 UV 밖 자리라 쓰지 않는다
-        terrainMat.setValue(SCNMaterialProperty(contents: UIColor.white), forKey: "detailTex")
-        terrainMat.setValue(SCNVector4(2, 2, 3, 3), forKey: "detailRect")
-        terrainMat.setValue(NSNumber(value: 0), forKey: "detailMix")
         terrain.geometry.firstMaterial = terrainMat
         terrainNode.geometry = terrain.geometry
         terrainNode.renderingOrder = Order.terrain
@@ -593,30 +589,6 @@ final class Map3DScene {
         return SIMD4(lo.x, lo.y, hi.x, hi.y)
     }
 
-    private var detailLoading = false
-
-    /// S19: 처음 시점에 보이는 땅만 2048 질감으로 다시 그려(나무 모양·그림자) 지형 질감 위에 0.6초에 걸쳐 덮는다. 몇 초 걸려 메인 스레드 밖에서.
-    /// 화면 크기가 정해진 뒤(onReady) 한 번만 부른다.
-    /// ponytail: 캐시 없음(열 때마다 만든다), 화면을 닫아도 만들던 것은 끝까지 돈다(결과만 버림). 느리면 하강별 캐시·중간 취소
-    func loadDetail() async {
-        guard !detailLoading, let win = detailWindow() else { return }
-        detailLoading = true
-        let (space, map) = (space, map)
-        let image = await Task.detached(priority: .utility) { space.groundTexture(map: map, mesh: space.mesh(), window: win, canopy: .load(resortId: map.resortId)).image }.value
-        guard let image, !Task.isCancelled else { return }
-        let t = space.terrain
-        let p = SCNMaterialProperty(contents: image)
-        p.mipFilter = .linear
-        terrainMat.setValue(p, forKey: "detailTex")
-        terrainMat.setValue(SCNVector4(win.y / Float(t.cols - 1), win.x / Float(t.rows - 1), win.w / Float(t.cols - 1), win.z / Float(t.rows - 1)), forKey: "detailRect")
-        terrainMat.setValue(NSNumber(value: 1), forKey: "detailMix")
-        let fade = CABasicAnimation(keyPath: "detailMix")
-        fade.fromValue = 0
-        fade.toValue = 1
-        fade.duration = 0.6
-        terrainMat.addAnimation(fade, forKey: "detailFade")
-    }
-
     private func applyCamera(animated: Bool, duration: CFTimeInterval = 0.25) {
         let mpp = camera.metersPerPoint(viewportHeight: viewport.height)
         // 목표점을 시트 위 보이는 영역 가운데로: 카메라를 화면 세로 방향으로 평행 이동
@@ -921,18 +893,8 @@ final class Map3DScene {
         float3 edgeScale;
         float fogStart;
         float fogEnd;
-        float4 detailRect;
-        float detailMix;
-        texture2d<float> detailTex;
         #pragma body
         float3 c = _surface.diffuse.rgb;
-        // 고해상 패치(detailRect: UV u0, v0, u1, v1) 안이면 그 질감. 패치 가장자리 6%에서 섞는다
-        float2 du = (_surface.diffuseTexcoord - detailRect.xy) / (detailRect.zw - detailRect.xy);
-        float din = min(min(du.x, 1.0 - du.x), min(du.y, 1.0 - du.y));
-        if (din > 0.0) {
-            constexpr sampler ds(filter::linear, mip_filter::linear, address::clamp_to_edge, max_anisotropy(8));
-            c = mix(c, detailTex.sample(ds, du).rgb, smoothstep(0.0, 0.06, din) * detailMix);
-        }
         float lum = dot(c, float3(0.2126, 0.7152, 0.0722));
         c *= mix(tintLow, tintHigh, smoothstep(0.03, 0.8, lum));
         float4 clip = scn_frame.projectionTransform * float4(_surface.position, 1.0);

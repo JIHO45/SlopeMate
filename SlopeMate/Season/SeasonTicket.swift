@@ -11,7 +11,7 @@ import StoreKit
         case pending
         /// 구입은 됐지만 서명을 확인하지 못함. 구입 복원으로 다시 확인
         case unverified
-        /// 구입 복원했지만 이 Apple 계정에 유효한 이용권이 없음
+        /// 구입 복원했지만 이 Apple 계정에 환불되지 않은 이용권이 하나도 없음(지난 시즌 것 포함)
         case nothingToRestore
         /// 시스템 오류 문구
         case failed(String)
@@ -100,7 +100,8 @@ import StoreKit
         do {
             try await AppStore.sync()
             await refresh()
-            status = isActive ? .idle : wasPending ? .pending : .nothingToRestore
+            // 이번 시즌 결제가 대기 중이면 대기 안내를 유지한다. 지난 시즌 이용권만 있어도 그 시즌 기록이 열리므로 복원된 것으로 본다
+            status = isActive ? .idle : wasPending ? .pending : seasons.isEmpty ? .nothingToRestore : .idle
         } catch StoreKitError.userCancelled {
             status = wasPending ? .pending : .idle
         } catch {

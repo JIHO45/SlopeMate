@@ -9,25 +9,29 @@ struct DayMapLockTests {
     let now = ISO8601DateFormatter().date(from: "2026-12-10T12:00:00+09:00")!
 
     @Test func bySeasonOfDay() {
-        #expect(DayMapView.lock(day: at("2026-12-05"), owned: [], now: now) == .ticket)
-        #expect(DayMapView.lock(day: at("2026-12-05"), owned: ["2026-27"], now: now) == .open)
+        #expect(DayMapView.lock(day: at("2026-12-05"), owned: [], now: now, demo: false) == .ticket)
+        #expect(DayMapView.lock(day: at("2026-12-05"), owned: ["2026-27"], now: now, demo: false) == .open)
         // 지난 시즌: 그 시즌 이용권이 있으면 열리고, 없으면 S18 대신 안내. 이번 시즌 이용권으로는 안 열림
-        #expect(DayMapView.lock(day: at("2026-02-01"), owned: ["2025-26"], now: now) == .open)
-        #expect(DayMapView.lock(day: at("2026-02-01"), owned: ["2026-27"], now: now) == .pastSeason)
+        #expect(DayMapView.lock(day: at("2026-02-01"), owned: ["2025-26"], now: now, demo: false) == .open)
+        #expect(DayMapView.lock(day: at("2026-02-01"), owned: ["2026-27"], now: now, demo: false) == .pastSeason)
     }
 
-    /// 경계: 4/30은 지난 시즌, 5/1·7월(시즌 밖)은 이번 시즌, 11/1은 새 시즌
+    /// 경계: 4/30은 지난 시즌, 5/1·7월(시즌 밖)은 그날 산 이용권의 시즌(다가오는 2026-27), 11/1은 새 시즌
     @Test func boundaries() {
-        #expect(DayMapView.lock(day: at("2026-04-30"), owned: [], now: now) == .pastSeason)
-        #expect(DayMapView.lock(day: at("2026-04-30"), owned: ["2025-26"], now: now) == .open)
-        #expect(DayMapView.lock(day: at("2026-05-01"), owned: [], now: now) == .ticket)
-        #expect(DayMapView.lock(day: at("2026-05-01"), owned: ["2026-27"], now: now) == .open)
-        #expect(DayMapView.lock(day: at("2026-11-01"), owned: ["2026-27"], now: now) == .open)
-        #expect(DayMapView.lock(day: at("2026-11-01"), owned: ["2025-26"], now: now) == .ticket)
+        #expect(DayMapView.lock(day: at("2026-04-30"), owned: [], now: now, demo: false) == .pastSeason)
+        #expect(DayMapView.lock(day: at("2026-04-30"), owned: ["2025-26"], now: now, demo: false) == .open)
+        #expect(DayMapView.lock(day: at("2026-05-01"), owned: [], now: now, demo: false) == .ticket)
+        #expect(DayMapView.lock(day: at("2026-05-01"), owned: ["2026-27"], now: now, demo: false) == .open)
+        #expect(DayMapView.lock(day: at("2026-11-01"), owned: ["2026-27"], now: now, demo: false) == .open)
+        #expect(DayMapView.lock(day: at("2026-11-01"), owned: ["2025-26"], now: now, demo: false) == .ticket)
         // 7월 기록을 7월에 보면 이용권 시즌(달력 기준 2026-27)
         let july = at("2026-07-20")
-        #expect(DayMapView.lock(day: at("2026-07-15"), owned: ["2026-27"], now: july) == .open)
-        #expect(DayMapView.lock(day: at("2026-07-15"), owned: ["2025-26"], now: july) == .ticket)
+        #expect(DayMapView.lock(day: at("2026-07-15"), owned: ["2026-27"], now: july, demo: false) == .open)
+        #expect(DayMapView.lock(day: at("2026-07-15"), owned: ["2025-26"], now: july, demo: false) == .ticket)
+        // 1년 뒤에 봐도 같은 시즌(2026-27): 그 이용권으로 열리고, 없으면 지난 시즌 안내
+        let later = at("2027-07-20")
+        #expect(DayMapView.lock(day: at("2026-07-15"), owned: ["2026-27"], now: later, demo: false) == .open)
+        #expect(DayMapView.lock(day: at("2026-07-15"), owned: ["2027-28"], now: later, demo: false) == .pastSeason)
     }
 
     /// 워터마크를 켜면 프레임이 바뀌고, 바뀐 자리는 가장 긴 합계 줄(아래 96pt부터)보다 위

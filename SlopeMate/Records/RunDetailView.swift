@@ -56,9 +56,13 @@ struct RunDetailView: View {
         (self.db, self.day, self.index, self.route, self.map, self.prepared3D) = (db, day, index, route, map, prepared3D)
         let r = RunDetail.route(route, run: day.runs[index])
         (_runRoute, _clock) = (State(initialValue: r), State(initialValue: PlayClock(r)))
-        // 미리보기·스크린숏: -SMRunDetailDetent small|medium|large
+        // 미리보기·스크린숏(DEBUG): -SMRunDetailDetent small|medium|large
+        #if DEBUG
         let a = ProcessInfo.processInfo.arguments
         let start = a.firstIndex(of: "-SMRunDetailDetent").flatMap { a.indices.contains($0 + 1) ? a[$0 + 1] : nil }
+        #else
+        let start: String? = nil
+        #endif
         _detent = State(initialValue: start == "large" ? Self.large : start == "medium" ? Self.medium : Self.small)
     }
 
@@ -109,7 +113,6 @@ struct RunDetailView: View {
                                   try? await Task.sleep(for: .seconds((reduceMotion ? 0 : Map3DView.flyDuration) + RunDetail.entryHold))
                                   if !started { playing = true }
                               }
-                              Task { await scene3D.loadDetail() } // 화면 크기가 정해진 뒤 보이는 땅만 고해상(나무 모양)
                           })
                     .ignoresSafeArea()
                     .opacity(ready3D ? 1 : 0)
