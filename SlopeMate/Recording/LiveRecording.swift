@@ -34,7 +34,10 @@ import Foundation
         activity = new
         last = state
         lastPush = now
-        if let old { Task { await old.end(nil, dismissalPolicy: .immediate) } }
+        // 새 카드 말고는 모두 끝낸다: 옛 카드와 8시간이 지나 끝난(stale) 카드도(못 찾아 old가 nil이어도 남지 않게)
+        for a in Activity<Attributes>.activities where a.id != new.id {
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
+        }
     }
 
     /// 하강 수·멈춤이 바뀌면 바로, 거리만 바뀌면 30초에 한 번 소리 없이 갱신한다.

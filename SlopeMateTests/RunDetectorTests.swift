@@ -10,6 +10,7 @@ struct Track {
     var seq = 0
     var baro = true
     var baroZero = 0.0
+    var vAcc = 5.0
     var pts: [Point] = []
     let rec = UUID()
 
@@ -22,7 +23,7 @@ struct Track {
         }
     }
     mutating func add(speed: Double) {
-        pts.append(Point(recordingId: rec, t: t, lat: lat, lon: 128.8, hAcc: 5, gpsAlt: alt + 700, vAcc: 5, speed: speed,
+        pts.append(Point(recordingId: rec, t: t, lat: lat, lon: 128.8, hAcc: 5, gpsAlt: alt + 700, vAcc: vAcc, speed: speed,
                          baroAlt: baro ? alt - baroZero : nil, baroT: baro ? t : nil, seq: seq))
     }
     /// 수신 재시작: 기압 상대고도가 0부터 다시 시작
@@ -56,6 +57,126 @@ struct RunDetectorTests {
         #expect(s.runs.count == 2)
         #expect(abs(s.runs[0].drop - 300) < 5) // 2초 샘플 경계 오차
         #expect(abs(s.drop - 600) < 5)
+    }
+
+    /// 바닥에서 하강을 마친 채(20m 오르기 전) 끊기고, 기록 없이 리프트를 타고 올라가 다시 받으면 두 하강을 합치지 않는다.
+    @Test func restartAfterLiftDoesNotMerge() {
+        var tr = Track()
+        tr.lap()
+        tr.t += 600; tr.alt += 300 // 끊긴 동안 리프트로 300m
+        tr.restart()
+        tr.go(180, climb: -300, speed: 10)
+        let s = RunDetector.detect(tr.pts)
+        #expect(s.runs.count == 2)
+        #expect(s.runs.allSatisfy { abs($0.drop - 300) < 5 })
+    }
+
+    /// 하강 중 재시작 직후 기압 첫 값이 늦게 와(앞 점들이 GPS만) 있어도 하강 1회로 합친다.
+    @Test func restartBeforeFirstBaroMerges() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)
+        tr.restart()
+        tr.baro = false
+        tr.go(4, climb: -7, speed: 10)
+        tr.baro = true
+        tr.go(86, climb: -143, speed: 10)
+        #expect(RunDetector.detect(tr.pts).runs.count == 1)
+    }
+
+    /// GPS 고도를 믿을 수 없으면(수직 정확도 나쁨) 공백 길이로 판단: 30초면 합치고 10분이면 합치지 않는다.
+    @Test func restartWithoutGPSAltitudeUsesGap() {
+        for (gap, runs) in [(0.0, 1), (600.0, 2)] {
+            var tr = Track()
+            tr.vAcc = 30
+            tr.go(300, climb: 300, speed: 3)
+            tr.go(90, climb: -150, speed: 10)
+            tr.t += gap
+            tr.restart()
+            tr.go(90, climb: -150, speed: 10)
+            #expect(RunDetector.detect(tr.pts).runs.count == runs)
+        }
+    }
+
+    /// 끊기기 전 마지막 구간의 GPS 고도를 믿을 수 없으면 그보다 오래된(더 높은) 점과 비교하지 않는다:
+    /// 끊긴 10분 동안 60m 올라갔으면 하강 2회.
+    @Test func restartDoesNotCompareStaleGPSAltitude() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(60, climb: -100, speed: 10)
+        tr.vAcc = 30
+        tr.go(60, climb: -100, speed: 10)
+        tr.t += 600; tr.alt += 60
+        tr.restart()
+        tr.vAcc = 5
+        tr.go(90, climb: -150, speed: 10)
+        #expect(RunDetector.detect(tr.pts).runs.count == 2)
+    }
+
+    /// 공백 2분은 마지막으로 받은 점부터 잰다: 슬로프에서 140초 쉬다가 32초 끊겨도 하강 1회.
+    @Test func restartGapCountsFromLastReceivedPoint() {
+        var tr = Track()
+        tr.vAcc = 30
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)
+        tr.go(140, climb: 5, speed: 0.5) // 쉬는 동안 조금 올라 최저점은 쉬기 전
+        tr.restart()
+        tr.go(90, climb: -150, speed: 10)
+        #expect(RunDetector.detect(tr.pts).runs.count == 1)
+    }
+
+    /// 재시작 뒤 기압이 돌아오기 전 GPS로 내려온 구간(20초에 40m)과 뒤의 기압 구간은 같은 하강이다.
+    @Test func restartGPSDescentThenBaroIsOneRun() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)
+        tr.restart()
+        tr.baro = false
+        tr.go(20, climb: -40, speed: 10)
+        tr.baro = true
+        tr.go(70, climb: -110, speed: 10)
+        let s = RunDetector.detect(tr.pts)
+        #expect(s.runs.count == 1)
+        #expect(s.drop > 280) // 계열 경계 2초 샘플 사이의 고도차는 세지 않는다
+    }
+
+    /// 끊기지 않고 고도 출처만 바뀌어도 사이에 상승이 있으면 다른 하강: GPS 100m 하강 → 기압 100m 상승 → GPS 100m 하강은 2회.
+    @Test func climbBetweenAltitudeSourcesDoesNotMerge() {
+        var tr = Track()
+        tr.baro = false
+        tr.go(60, climb: -100, speed: 10)
+        tr.baro = true
+        tr.go(100, climb: 100, speed: 3)
+        tr.baro = false
+        tr.go(60, climb: -100, speed: 10)
+        let s = RunDetector.detect(tr.pts)
+        #expect(s.runs.count == 2)
+        #expect(s.ascents.count == 1)
+    }
+
+    /// 끊기기 전에 오른 만큼도 센다: 최저점에서 18m 오른 뒤 끊기고 18m 더 올라 내려오면(합계 36m) 하강 2회.
+    @Test func climbSplitAcrossRestartDoesNotMerge() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(180, climb: -300, speed: 10)
+        tr.go(60, climb: 18, speed: 1)
+        tr.t += 300; tr.alt += 18
+        tr.restart()
+        tr.go(180, climb: -300, speed: 10)
+        #expect(RunDetector.detect(tr.pts).runs.count == 2)
+    }
+
+    /// 재시작 뒤 기압 첫 값 전의 GPS 조각이 실제 상승이면 앞 하강과 합치지 않는다.
+    @Test func restartThenClimbBeforeBaroDoesNotMerge() {
+        var tr = Track()
+        tr.go(300, climb: 300, speed: 3)
+        tr.go(90, climb: -150, speed: 10)
+        tr.restart()
+        tr.baro = false
+        tr.go(40, climb: 40, speed: 3)
+        tr.baro = true
+        tr.go(90, climb: -150, speed: 10)
+        #expect(RunDetector.detect(tr.pts).runs.count == 2)
     }
 
     /// R49: 차량 구간 안에 점이 하나도 없어도 앞뒤를 잇지 않는다. 산 위에서 차를 타고 내려온 고도차는 하강이 아니다.

@@ -4,7 +4,7 @@ import Foundation
 /// 안드로이드도 같은 규칙과 같은 재생 파일로 같은 결과를 내야 한다(R48).
 nonisolated enum RunDetector {
     /// 판정 기준 버전. 판정·슬로프 매칭·리프트 대기 규칙이나 기준값을 바꾸면 올린다 → 저장된 하루 경로·합계를 다시 계산(R50).
-    static let rulesVersion = 1
+    static let rulesVersion = 4
 
     /// 현장 데이터로 조정할 기준값 (06-verification 2장).
     struct Params {
@@ -18,6 +18,8 @@ nonisolated enum RunDetector {
         var climbStartBand = 5.0 // m, 상승 최저점 + 이 높이 안의 마지막 점부터 "실제로 오르는 중" (R10)
         var stationRadius = 50.0 // m, 탑승장 반경 (R10)
         var maxWait = 30 * 60.0  // s, 이보다 오래 머물면 줄이 아닌 체류로 보고 버림 (R10)
+        var maxRestartGap = 2 * 60.0 // s, 재시작 경계에서 GPS 고도를 믿을 점이 없을 때 이 안에 다시 받아야 하강을 잇는다
+        var boundaryWindow = 10.0    // s, 재시작 경계의 고도 비교에 쓰는 뒤 하강 점은 하강 시작에서 이 안의 것만
     }
 
     struct Run: Equatable, Codable {
@@ -59,8 +61,6 @@ nonisolated enum RunDetector {
     /// map: 있으면 하강마다 슬로프를 붙인다(R9). 재시작으로 나뉜 조각을 합친 뒤 한 번 맞춘다.
     static func detect(_ points: [Point], vehicle: [DateInterval] = [], map: SlopeMap? = nil, params p: Params = Params()) -> Summary {
         var summary = Summary()
-        // (하강, 계열 첫 샘플에서 시작, 구간 끝까지 하강 중, 차량 구간 번호, 하강에 쓴 정제된 점)
-        var pieces: [(run: Run, openStart: Bool, openEnd: Bool, part: Int, pts: [Point])] = []
         let vehicle = vehicle.sorted { $0.start < $1.start }
         let kept = clean(points, p).filter { pt in !vehicle.contains { $0.start <= pt.t && pt.t <= $0.end } }
         // 차량 구간 번호: 점보다 앞에서 끝난 차량 구간 수
@@ -69,19 +69,22 @@ nonisolated enum RunDetector {
             var part: Int, seq: Int
             static func < (a: Key, b: Key) -> Bool { (a.part, a.seq) < (b.part, b.seq) }
         }
+        // (하강, 고도 계열 첫 샘플에서 시작, 계열 끝까지 하강 중, 차량 구간·seq, 하강에 쓴 정제된 점, 그 seq에서 받은 점 전체)
+        var pieces: [(run: Run, openStart: Bool, openEnd: Bool, key: Key, pts: [Point], group: [Point])] = []
         let groups = Dictionary(grouping: kept) { Key(part: part($0.t), seq: $0.seq) }
         for key in groups.keys.sorted() {
             let pts = groups[key]!
             let series = altitudeSeries(pts, p)
-            for (i, se) in series.enumerated() {
+            for se in series {
                 let (found, openEnd) = descents(se.samples, p)
                 // 기압 첫 값이 오기 전 몇 개 점만 GPS인 경우는 경고하지 않는다
                 if se.gps && !found.isEmpty { summary.usedGPSAltitude = true }
                 for (j, (a, b)) in found.enumerated() {
+                    // 계열(GPS 앞 조각·기압·GPS 뒤 조각)마다 열림을 따로 본다. 같은 seq의 이웃 계열은 아래에서 바로 잇는다
                     pieces.append((stats(pts, from: a, to: b, p),
-                                   openStart: i == 0 && a.t == se.samples[0].t,
-                                   openEnd: i == series.count - 1 && j == found.count - 1 && openEnd, part: key.part,
-                                   pts: pts.filter { $0.t >= a.t && $0.t <= b.t }))
+                                   openStart: a.t == se.samples[0].t,
+                                   openEnd: j == found.count - 1 && openEnd, key: key,
+                                   pts: pts.filter { $0.t >= a.t && $0.t <= b.t }, group: pts))
                 }
                 for c in climbs(se.samples, found, openEnd: openEnd) where c.hi.alt - c.lo.alt >= p.minClimb {
                     summary.ascents.append(ascent(c, se.samples, pts, map: map, p))
@@ -89,10 +92,15 @@ nonisolated enum RunDetector {
             }
         }
         // 하강 중 재시작: 앞 seq 끝까지 이어진 하강과 다음 seq 처음부터의 하강은 1회로 합친다(R4 중복 금지).
-        // 고도차는 각 seq 안에서만 계산해 더한다.
-        var merged: [(run: Run, openEnd: Bool, part: Int, pts: [Point])] = []
+        // 같은 seq 안에서 고도 출처만 바뀐 경우(기압 첫 값 전 GPS로 내려온 구간 → 기압 구간)는 끊긴 적이 없으니 바로 잇는다.
+        // 단, 두 하강 사이 계열에서 상승(minClimb 이상)이 검출됐으면 서로 다른 하강이다.
+        // 고도차는 각 계열 안에서만 계산해 더한다.
+        var merged: [(run: Run, openEnd: Bool, key: Key, pts: [Point], group: [Point])] = []
         for pc in pieces {
-            if let last = merged.last, last.openEnd, pc.openStart, last.part == pc.part {
+            if let last = merged.last, last.openEnd, pc.openStart, last.key.part == pc.key.part,
+               last.key == pc.key
+                ? !summary.ascents.contains(where: { $0.start >= last.run.end && $0.end <= pc.run.start })
+                : continues(last.group, since: last.pts.last?.t, pc.group, run: pc.pts, p) {
                 var r = last.run
                 r.end = pc.run.end
                 r.distance += pc.run.distance
@@ -100,9 +108,9 @@ nonisolated enum RunDetector {
                 r.maxSpeed = max(r.maxSpeed, pc.run.maxSpeed)
                 r.movingTime += pc.run.movingTime
                 r.avgSpeed = r.movingTime > 0 ? r.distance / r.movingTime : 0
-                merged[merged.count - 1] = (r, pc.openEnd, pc.part, last.pts + pc.pts)
+                merged[merged.count - 1] = (r, pc.openEnd, pc.key, last.pts + pc.pts, pc.group)
             } else {
-                merged.append((pc.run, pc.openEnd, pc.part, pc.pts))
+                merged.append((pc.run, pc.openEnd, pc.key, pc.pts, pc.group))
             }
         }
         summary.runs = merged.map { m in
@@ -111,6 +119,21 @@ nonisolated enum RunDetector {
             return r
         }
         return summary
+    }
+
+    /// 재시작 경계를 넘어 하강이 이어지는지. a: 앞 seq에서 받은 점, lo: 앞 하강의 최저점 시각, b: 뒤 seq에서 받은 점, run: 뒤 하강의 점.
+    /// 기압 상대고도는 seq마다 0부터라 GPS 고도로 descents()와 같은 기준을 건다: 뒤 하강 시작이 앞 하강 최저점 뒤로
+    /// 받은 가장 낮은 고도보다 minClimb 이상 높으면 그 사이에 올라간 것(리프트)이라 잇지 않는다. 끊기기 전에 오른 만큼도 센다.
+    /// 최저점보다 앞의 점(더 높다)과 뒤 하강 시작에서 boundaryWindow 밖의 점(더 내려왔다)은 상승을 가리므로 쓰지 않는다.
+    /// 믿을 만한 점이 없으면 마지막으로 받은 점과 다시 받은 첫 점 사이가 maxRestartGap 안일 때만 잇는다.
+    static func continues(_ a: [Point], since lo: Date?, _ b: [Point], run: [Point], _ p: Params) -> Bool {
+        guard let end = a.last, let lo, let resumed = b.first, let start = run.first else { return false }
+        let ok = { (x: Point) in x.vAcc > 0 && x.vAcc <= p.maxVAcc }
+        if let x = a.filter({ $0.t >= lo && ok($0) }).map(\.gpsAlt).min(),
+           let y = run.first(where: { ok($0) && $0.t.timeIntervalSince(start.t) <= p.boundaryWindow }) {
+            return y.gpsAlt - x < p.minClimb
+        }
+        return resumed.t.timeIntervalSince(end.t) <= p.maxRestartGap
     }
 
     // MARK: 상승·리프트 대기 (R10)

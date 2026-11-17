@@ -63,12 +63,15 @@ nonisolated enum ForgottenStop {
 
     // MARK: 기기
 
+    /// 조회가 끝날 때까지 살아 있어야 응답이 온다(임시로 만들면 해제돼 응답 없이 멈출 수 있음)
+    private static let motion = CMMotionActivityManager()
+
     /// 기록 구간의 차량 구간. 동작 권한이 없거나 조회에 실패하면 nil(기존 값을 지우지 않는다).
     static func queryVehicle(from: Date, to: Date) async -> [DateInterval]? {
         guard CMMotionActivityManager.isActivityAvailable(),
               CMMotionActivityManager.authorizationStatus() == .authorized else { return nil }
         return await withCheckedContinuation { cont in
-            CMMotionActivityManager().queryActivityStarting(from: from, to: to, to: OperationQueue()) { acts, error in
+            motion.queryActivityStarting(from: from, to: to, to: OperationQueue()) { acts, error in
                 guard let acts, error == nil else { return cont.resume(returning: nil) }
                 // 신뢰도 낮음은 차량으로 보지 않는다
                 let list = acts.map { (start: $0.startDate, automotive: $0.automotive && $0.confidence != .low) }

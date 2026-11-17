@@ -178,6 +178,8 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
             recording = rec
             points = []
             vehicle = []
+            autoResumedGap = nil
+            autoResumedFrom = nil
             seq = 0
             loadToday()
             beginUpdates()
@@ -190,8 +192,6 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
 
     func stop() {
         guard let rec = recording else { return }
-        autoResumedGap = nil
-        autoResumedFrom = nil
         stopUpdates()
         do { try db.end(rec, at: .now, reason: "user") } catch {
             // 끝난 표시를 못 남겨도 위치점은 남아 있다. 다음 실행 때 끊긴 기록으로 처리된다.
@@ -218,14 +218,24 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         ForgottenStop.setFarSent(rec, nil)
         ForgottenStop.setIdleDeadline(rec, nil)
         if recording?.id == rec.id {
+            // 끝난 기록의 저장된 결과가 준비될 때까지는 방금까지 보이던 합계를 유지한다
+            earlierToday = today
             recording = nil
             points = []
             vehicle = []
+            autoResumedGap = nil
+            autoResumedFrom = nil
             status = .idle
         }
-        loadToday()
-        refreshVehicle(rec)
-        refreshCaches()
+        // 방금 끝난 기록의 하루 계산(전체 위치점 판정·경로)은 메인 스레드 밖에서 만든 뒤 합계를 다시 읽는다
+        let db = db
+        Task { [weak self] in
+            await Task.detached(priority: .userInitiated) { _ = try? db.cache(rec, map: SlopeMap.load(resortId: rec.resortId)) }.value
+            guard let self else { return }
+            self.loadToday()
+            self.refreshVehicle(rec)
+            self.refreshCaches()
+        }
     }
 
     /// 영업일 끝이 지난 기록은 마지막 위치점 시각으로 끝낸다(R49).
@@ -395,10 +405,14 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
                 // 끝난 표시도 못 남겼으면 다음 실행 때 자동으로 이어가지 않게 표시해 둔다
                 UserDefaults.standard.set(rec.id.uuidString, forKey: Self.storageFailedKey)
             }
+            // finished()와 같이 60분 알림 예약과 기록별 알림 표시를 지운다
+            ForgottenStop.scheduleIdle(at: nil)
+            ForgottenStop.setFarSent(rec, nil)
+            ForgottenStop.setIdleDeadline(rec, nil)
             recording = nil
             points = []
+            loadToday() // 여기서 읽기도 실패하면 상태를 바꾸므로 저장 공간 안내보다 먼저 부른다
             status = .failed("저장하지 못해 기록을 멈췄어요. 마지막으로 저장된 기록은 ‘하루 기록 보기’에서 확인할 수 있어요. 기기 저장 공간이 부족해요. 공간을 비운 뒤 다시 시작하세요")
-            loadToday()
         }
     }
 
@@ -455,7 +469,8 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
                 }
                 .reduce(RunDetector.Summary(), +)
         } catch {
-            status = .failed("기록을 읽지 못했어요. \(error.localizedDescription)")
+            // 기록 중에는 합계를 못 읽어도 위치 저장은 계속한다(R4). .failed면 save()가 점을 버린다.
+            if recording == nil { status = .failed("기록을 읽지 못했어요. \(error.localizedDescription)") }
         }
     }
 
