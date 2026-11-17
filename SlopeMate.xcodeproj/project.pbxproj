@@ -82,7 +82,7 @@
 		D8AFCAF130A1F9000093CFE5 /* Exceptions for "SlopeMate" folder in "SlopeMateWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				RecordingActivityAttributes.swift,
+				Recording/RecordingActivityAttributes.swift,
 			);
 			target = D8AFCA1C30A1F3C00093CFE5 /* SlopeMateWidgetExtension */;
 		};

@@ -205,9 +205,9 @@ S6의 지도 층을 3D 지형으로 바꿔 볼 수 있다. 결정과 기각한 �
 
 | 묶음 | 파일 | 맡는 일 | 기대는 것 |
 | --- | --- | --- | --- |
-| 3D-A | `SlopeMate/Terrain3D.swift` (새 파일) | 좌표 변환, 지형 높이, 메시 배열, 리본 배열, 배열 → `SCNGeometry` | `Terrain`, `SlopeMap`, `MapProjection.angle` |
-| 3D-B | `SlopeMate/Map3DScene.swift` (새 파일) | `Camera3D`(순수 계산), 장면: 지형·선·점 노드, 재질·조명·안개, 재생·강조 갱신, 카메라 놓기 | 3D-A API, `DayMapDrawing.Palette`, `RouteSegment`, `RunDetector.Run` |
-| 3D-C | `SlopeMate/Map3DView.swift` (새 파일), `SlopeMate/DayMapView.swift` | `SCNView` 감싸기·손짓·따라가기, 전환 버튼, 장면 준비, 시트·재생·강조 연결, 공유 설명, 접근성 | 3D-A·3D-B API |
+| 3D-A | `SlopeMate/Map/Terrain3D.swift` (새 파일) | 좌표 변환, 지형 높이, 메시 배열, 리본 배열, 배열 → `SCNGeometry` | `Terrain`, `SlopeMap`, `MapProjection.angle` |
+| 3D-B | `SlopeMate/Map/Map3DScene.swift` (새 파일) | `Camera3D`(순수 계산), 장면: 지형·선·점 노드, 재질·조명·안개, 재생·강조 갱신, 카메라 놓기 | 3D-A API, `DayMapDrawing.Palette`, `RouteSegment`, `RunDetector.Run` |
+| 3D-C | `SlopeMate/Map/Map3DView.swift` (새 파일), `SlopeMate/Map/DayMapView.swift` | `SCNView` 감싸기·손짓·따라가기, 전환 버튼, 장면 준비, 시트·재생·강조 연결, 공유 설명, 접근성 | 3D-A·3D-B API |
 | 3D-D | `SlopeMateTests/Terrain3DTests.swift` (새 파일) | 3D-A와 `Camera3D` 단위 테스트(06-verification R50) | 3D-A API, `Camera3D` |
 
 3D-A (`Terrain3D.swift`)
@@ -429,11 +429,11 @@ Swift Testing. 고도는 기운 평면 격자(`TerrainTests`와 같은 방식), 
 
 | 묶음 | 파일 | 맡는 일 | 기대는 것 |
 | --- | --- | --- | --- |
-| (0) | `SlopeMate/MapStyle.swift` (새 파일), `SlopeMateTests/MapStyleTests.swift` (새 파일) | `MapLayers`, `SlopeStyle`, `SlopePick`과 단위 테스트 | `SlopeMap` |
+| (0) | `SlopeMate/Map/MapStyle.swift` (새 파일), `SlopeMateTests/MapStyleTests.swift` (새 파일) | `MapLayers`, `SlopeStyle`, `SlopePick`과 단위 테스트 | `SlopeMap` |
 | (a) | `tools/dem/build.py`, `Resources/maps/dem-*.json` | 여백 최소 1,500m·한 변 400칸 상한으로 12곳 다시 만들기 | 없음 |
-| (b) | `SlopeMate/Terrain3D.swift`, `SlopeMateTests/Terrain3DTests.swift` | 과장, 원형 `edge`, `WinterPalette`, `colors`(바닥 눈·그림자·골 음영), 거리 마스크, `forestTexture`, `ribbon`(폭 고정·`smooth`). 이 테스트 파일의 `Camera3D` 기대값(34도)도 함께 고침 | (a) 파일 |
-| (c) | `SlopeMate/Map3DScene.swift`, `SlopeMate/Map3DView.swift`, `SlopeMateTests/Map3DSceneTests.swift` (새 파일) | 조명·하늘·질감 입히기, 셰이더, 카메라 34도, 난이도 색 선, 승·하차장 점, 경로 번짐·테두리, `setLayers`, 미리 데우기·`flyIn`, 3D 누르기 | (0), (b) API |
-| (d) | `SlopeMate/DayMap.swift`, `SlopeMate/DayMapView.swift`, `SlopeMate/ShareVideo.swift`, `SlopeMate/SlopeBalloon.swift` (새 파일) | 2D 난이도 색·`layers`, 2D 누르기, 지도 표시 메뉴, 말풍선, `Map3DView` 새 인자 연결, 동영상에서 선 빼기 | (0), (c)의 `Map3DView` 인자 |
+| (b) | `SlopeMate/Map/Terrain3D.swift`, `SlopeMateTests/Terrain3DTests.swift` | 과장, 원형 `edge`, `WinterPalette`, `colors`(바닥 눈·그림자·골 음영), 거리 마스크, `forestTexture`, `ribbon`(폭 고정·`smooth`). 이 테스트 파일의 `Camera3D` 기대값(34도)도 함께 고침 | (a) 파일 |
+| (c) | `SlopeMate/Map/Map3DScene.swift`, `SlopeMate/Map/Map3DView.swift`, `SlopeMateTests/Map3DSceneTests.swift` (새 파일) | 조명·하늘·질감 입히기, 셰이더, 카메라 34도, 난이도 색 선, 승·하차장 점, 경로 번짐·테두리, `setLayers`, 미리 데우기·`flyIn`, 3D 누르기 | (0), (b) API |
+| (d) | `SlopeMate/Map/DayMap.swift`, `SlopeMate/Map/DayMapView.swift`, `SlopeMate/Records/ShareVideo.swift`, `SlopeMate/Map/SlopeBalloon.swift` (새 파일) | 2D 난이도 색·`layers`, 2D 누르기, 지도 표시 메뉴, 말풍선, `Map3DView` 새 인자 연결, 동영상에서 선 빼기 | (0), (c)의 `Map3DView` 인자 |
 
 (0) `MapStyle.swift`
 
@@ -606,9 +606,9 @@ struct SlopeBalloon: View {
 
 | 파일 | 맡는 일 | 기대는 것 |
 | --- | --- | --- |
-| `SlopeMate/Terrain3D.swift` | 질감 생성(위 1~5, 순수 계산, SceneKit 없음), `WinterPalette`의 v5 색. `colors`·거리 마스크·`forestTexture` 정리 | `Terrain`, `SlopeMap` |
-| `SlopeMate/Map3DScene.swift` | `Map3DTerrain`이 질감 한 장을 들고 있음(`Terrain3D.cachedGroundTexture`로 받음), 재질에 입히기, 모드 전환(셰이더 색조), 셰이더 수정자에서 눈 띠 삭제, 처음 시점 거리, 아래 안개·하늘 흰 띠 | 질감 생성 API |
-| `SlopeMate/Map3DView.swift`·`SlopeMate/DayMapView.swift` | 바뀌지 않는다(준비는 `Map3DTerrain` 안). 캐시를 쓰면 읽기·쓰기도 `Map3DTerrain` 쪽 | 없음 |
+| `SlopeMate/Map/Terrain3D.swift` | 질감 생성(위 1~5, 순수 계산, SceneKit 없음), `WinterPalette`의 v5 색. `colors`·거리 마스크·`forestTexture` 정리 | `Terrain`, `SlopeMap` |
+| `SlopeMate/Map/Map3DScene.swift` | `Map3DTerrain`이 질감 한 장을 들고 있음(`Terrain3D.cachedGroundTexture`로 받음), 재질에 입히기, 모드 전환(셰이더 색조), 셰이더 수정자에서 눈 띠 삭제, 처음 시점 거리, 아래 안개·하늘 흰 띠 | 질감 생성 API |
+| `SlopeMate/Map/Map3DView.swift`·`SlopeMate/Map/DayMapView.swift` | 바뀌지 않는다(준비는 `Map3DTerrain` 안). 캐시를 쓰면 읽기·쓰기도 `Map3DTerrain` 쪽 | 없음 |
 | `SlopeMateTests/Terrain3DTests.swift`·`Map3DSceneTests.swift` | 06-verification R50 "3D v5" 단위 테스트 줄, v4 눈 띠·정점 색 기대값 정리(`homePitch34` 포함) | 위 API |
 
 **S19 고해상 패치 (R50, R54, K)**

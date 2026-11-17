@@ -435,6 +435,20 @@
 
 **실기기 확인** (사용자, 아이폰에서. 시뮬레이터로 못 하는 것만 모음. 기능을 다 붙인 뒤 심사 제출 빌드 전에 한 번에 진행)
 
+**전체 코드 점검** (2026-11-17, Fable 6개가 폴더별로 읽음. 높음 2건, 출시를 막는 크래시·개인정보 위반 없음)
+
+- [x] 소스 폴더 나누기: `SlopeMate/` 아래 App·Recording·Home·Records·Map·Season·Crew, 위젯 타깃 예외 경로, 05-design 경로 (decisions 2026-11-17) (2026-11-17) — 이동 뒤 앱·테스트 타깃 빌드 통과, 테스트 271개 중 `DayMapLockTests` 2개만 실패(내 스킴에 `-SMDemo`가 켜져 잠금이 열림, 이동과 무관)
+- [ ] 제출 전 고침(높음): 기록 중 홈 "오늘 기록" 카드가 끝난 기록만 읽어 하강 0회로 보임 → 기록 중이면 S5 열기 (`HomeView`, R5)
+- [ ] 제출 전 고침(높음): S19 고해상 패치(`Map3DScene.loadDetail`)가 숲 지도 뒤로 효과 없이 2048² 질감을 매번 다시 만듦 → 2.0에서 호출 빼기 (R52, K)
+- [ ] 제출 전 고침(중간, 기록 R4·R49): 기록 중 읽기 오류가 `status = .failed`로 저장을 멈춤(`Recorder.loadToday`), 재시작 경계 하강 합치기 조건(`RunDetector` 공백 상한·기압 없는 첫 점, rulesVersion 올림), `CMMotionActivityManager` 임시 객체(`ForgottenStop`), 8시간 뒤 Live Activity 카드 둘, 자동 재개 배너가 다음 기록에 남음, 저장 실패 종료 때 60분 알림 남음
+- [ ] 제출 전 고침(중간, 그 밖): 크루 탭을 열기 전에는 합계 동기화 안 됨(`crews.follow`를 `RootView`로, R15), 날씨 캐시 만료 뒤 조회 실패 때 남은 값 쓰기(R33), 기록 종료 직후 메인 스레드 하루 판정, 하루 삭제 뒤 `summary.sync()`, S6 읽기 실패 상태, 복원 판정을 `seasons.isEmpty`로·시즌 밖 기록 잠금 기준(R54), DayCache 키에 그린 선 파일 반영(rulesVersion), `day.runs[selected]` 범위 검사
+- [ ] 제출 전 확인(프로젝트 설정): iPhone 가로 방향 선언 빼기, 위젯 버전 1.0 → 2.0, 앱 스킴 공유(Archive가 Release인지)
+- [ ] 서버: `syncSummary` 호출 간격·가입 크루 수 상한, 쓰지 않는 `summary_at` 지우기, `setDisplayName`을 앱에 붙일지 지울지 (R15, R17)
+- [ ] 죽은 코드 지우기(약 550줄): `Terrain3D` 절차적 숲·베이스 눈밭·면 슬로프 채움, 2D 음영·등고선(질감 오기 전 바탕을 단색으로 할지 결정), `SeasonTicketView` 미리보기 자리 표시 약 140줄, `owns(season:)`, `homePageURL`, UI 테스트 템플릿 — 2.0 뒤로 미뤄도 됨
+- [ ] 중복 합치기: 색(구분선 6곳, 경고 노랑 9곳, 위험 글씨 6곳)을 `Theme`로, 한국 달력 11곳을 `HomeData.seoul`로, 시각·속도 포맷터를 `RecordFormat`으로, 잠금 판정 3곳을 `ticket.lock(season:)`으로 — 2.0 뒤로 미뤄도 됨
+- [ ] 파일 다듬기: 뷰 파일에 얹힌 공용 코드(`HomeView` 아래 확장, `RecordFormat`, `WeatherFormat`) 떼기, `StartFlowViews`의 첫 실행 화면을 App/으로, `Timetable`·`Database` 위치, `Terrain3D` 질감 부분·`Camera3D`·`CrewScreens` 설정 부분 나누기 — 죽은 코드 지운 뒤
+- [ ] 루트 정리(사용자 결정): `.claude/worktrees/` 2.7GB 워크트리 6개, `paint/` 110MB 미추적, `SlopeMateScreenShot/1~3.png`(날씨 앱), `AGENTS.md`·`.codex/` 중복, `notes/`
+
 - [ ] 공유 이미지(R31): 지도형 공유 메뉴 → 이미지 → 공유 시트, 목록형 "이미지로 공유", 사진에 저장한 이미지에 위치 정보가 없는지(사진 앱 정보), 가장 큰 글씨에서 메뉴 (B8)
 - [ ] 익명 표본(R12): 실기기 App Attest 토큰 받기, 하루 기록 뒤 표본이 집계에 오르는지, 비행기 모드에서 pending 유지 (G)
 - [ ] 첫 기록 순서(B9): 실기기에서 S4 계속 → 위치 → 동작 및 피트니스 창이 S4 안에서 차례로 뜨고 그다음 동의 → S5인지(시뮬레이터는 동작 기록이 없어 동작 창이 기록 중에 뜸), 이미 권한이 있으면 S4 없이 동의
