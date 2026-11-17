@@ -7,12 +7,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.dirname(HERE)
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
-SHOTS = [  # (파일, 원본 화면, 회색 줄, 굵은 줄)
-    ("1.png", "s5_recording.png", "주머니에 넣고 타기만 하세요", "몇 번 탔는지 알아서 기록해요"),
-    ("2.png", "s6_map.png", "오늘 탄 길을", "지도에서 다시 봐요"),
-    ("3.png", "s9_season.png", "시즌권 본전, 뽑았는지 궁금하다면", "1회 방문당 금액을 알려줘요"),
-    ("4.png", "s8_list.png", "다녀온 날이 차곡차곡", "시즌 기록이 한곳에 모여요"),
-    ("5.png", "weather.png", "출발하기 전에", "날씨와 예상 설질을 확인해요"),
+SHOTS = [  # (파일, 원본 화면, 회색 줄, 굵은 줄, 배지)
+    ("1.png", "s6_3d.png", "내가 탄 산을", "3D 지도로 돌려 봐요", "시즌 이용권"),
+    ("2.png", "s5_recording.png", "주머니에 넣고 타기만 하세요", "몇 번 탔는지 알아서 기록해요", ""),
+    ("3.png", "s6_map.png", "오늘 탄 길을", "지도에서 다시 봐요", ""),
+    ("4.png", "s9_season.png", "시즌권 본전, 뽑았는지 궁금하다면", "1회 방문당 금액을 알려줘요", ""),
+    ("5.png", "weather.png", "출발하기 전에", "날씨와 예상 설질을 확인해요", ""),
 ]
 
 BASE_CSS = """
@@ -36,15 +36,16 @@ def phone(img, left, top, width, extra=""):
             f'<div class="screen" style="background-image:url(../raw/{img})">'
             f'<div class="island" style="width:{iw}px;height:{ih}px;top:{it}px"></div></div></div>')
 
-def shot(img, gray, bold):
+def shot(img, gray, bold, badge=""):
     w = 1100
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{BASE_CSS}
 body {{ width:1320px; height:2868px; }}
 .copy {{ position:absolute; top:250px; width:100%; text-align:center; }}
 .g {{ font-size:58px; font-weight:600; color:var(--sub); letter-spacing:-1px; }}
 .h {{ margin-top:22px; font-size:96px; font-weight:800; letter-spacing:-3px; line-height:1.15; }}
+.badge {{ display:inline-block; margin-top:30px; padding:12px 30px; border-radius:999px; background:var(--accent); color:#fff; font-size:40px; font-weight:700; letter-spacing:-1px; }}
 </style></head><body>
-<div class="copy"><div class="g">{gray}</div><div class="h">{bold}</div></div>
+<div class="copy"><div class="g">{gray}</div><div class="h">{bold}</div>{f'<div><span class="badge">{badge}</span></div>' if badge else ""}</div>
 {phone(img, (1320 - w) // 2, 640, w)}
 </body></html>"""
 
@@ -55,27 +56,27 @@ def crop(img, x, y, w, h, scale, left, top, rot, radius=40):
             f'background:url(../raw/{img}) {-x*scale}px {-y*scale}px / {1320*scale if img!="share_image.png" else 1080*scale}px auto no-repeat;"></div>')
 
 def hero():
-    # 헤더 자산은 5244x2950(1.778)와 3840x1646(2.333) 두 비율로 다 쓰여서, 세로로 자를 때
-    # 위아래 약 160px씩(2400x1350 기준) 잘릴 수 있다. 중요한 내용은 y=160~1190 안에 둔다.
+    # 헤더 자산은 쓰이는 곳마다 다르게 잘린다. 아이폰 제품 페이지 실측(2026-11-17, 2400x1350 기준):
+    # 보이는 곳은 x 552~1844, y 0~850이고 위쪽 모서리(y 200~360)는 뒤로·공유 버튼이 덮는다.
+    # 내용은 x 640~1800, y 370~820 안에 모은다(휴대폰 아래쪽은 잘려도 됨).
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{BASE_CSS}
-body {{ width:2400px; height:1350px; }}
-.copy {{ position:absolute; left:170px; top:400px; }}
-.h {{ font-size:112px; font-weight:800; letter-spacing:-4px; line-height:1.2; }}
+body {{ width:2400px; height:1350px; background:radial-gradient(ellipse 800px 560px at 1450px 560px, #fff 0%, var(--bg) 100%); }}
+.copy {{ position:absolute; left:640px; top:385px; }}
+.h {{ font-size:78px; font-weight:800; letter-spacing:-3px; line-height:1.2; }}
 .h em {{ font-style:normal; color:var(--accent); }}
-.s {{ margin-top:44px; font-size:46px; font-weight:500; color:var(--sub); line-height:1.5; letter-spacing:-1px; }}
+.s {{ margin-top:30px; font-size:36px; font-weight:500; color:var(--sub); line-height:1.5; letter-spacing:-1px; }}
 </style></head><body>
 <div class="copy">
   <div class="h">스키장에서<br><em>기록 시작</em>만 누르세요</div>
   <div class="s">하강 횟수와 거리는 알아서 세고,<br>시즌권 1회 방문당 금액까지 알려줘요</div>
 </div>
-{crop("share_image.png", 0, 150, 540, 1200, 0.55, 1110, 300, -8)}
-{crop("s6_map.png", 0, 450, 1320, 1600, 0.3, 1940, 220, 7, 36)}
-{phone("s2_home.png", 1460, 170, 480)}
-{crop("s9_season.png", 50, 509, 1220, 280, 0.46, 1770, 820, -4, 26)}
+{crop("s6_3d.png", 0, 330, 1320, 1560, 0.17, 1590, 390, 6, 22)}
+{phone("s2_home.png", 1330, 215, 300)}
+{crop("s9_season.png", 50, 1360, 1220, 280, 0.25, 1500, 690, -4, 16)}
 </body></html>"""
 
-def render(html, png, w, h):
-    subprocess.run([CHROME, "--headless", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
+def render(html, png, w, h, scale=1):
+    subprocess.run([CHROME, "--headless", "--disable-gpu", "--hide-scrollbars", f"--force-device-scale-factor={scale}",
                     f"--window-size={w},{h}", f"--screenshot={png}", "file://" + html],
                    check=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     # 알파 제거: JPEG를 거쳐 PNG로 (App Store는 알파 채널을 받지 않음)
@@ -86,11 +87,21 @@ def render(html, png, w, h):
 
 def main():
     os.makedirs(f"{HERE}/html", exist_ok=True)
-    jobs = [(name, shot(img, g, b), 1320, 2868) for name, img, g, b in SHOTS] + [("hero.png", hero(), 2400, 1350)]
+    jobs = [(name, shot(img, g, b, badge), 1320, 2868) for name, img, g, b, badge in SHOTS] + [("hero.png", hero(), 2400, 1350)]
     for name, html, w, h in jobs:
         path = f"{HERE}/html/{name.replace('.png', '.html')}"
         open(path, "w").write(html)
         render(path, f"{OUT}/{name}", w, h)
         print(name)
+    # 15.5·15.9cm(6.3형) 자리용 1206x2622: 비율이 거의 같아(0.4603 대 0.4600) 줄이기만 한다
+    os.makedirs(f"{OUT}/6.3", exist_ok=True)
+    for name, *_ in SHOTS:
+        subprocess.run(["sips", "-z", "2622", "1206", f"{OUT}/{name}", "--out", f"{OUT}/6.3/{name}"], check=True, stdout=subprocess.DEVNULL)
+    print("6.3/")
+    # 헤더 자산 규격: 같은 배너를 크게 렌더한 뒤 5244x2950으로 맞춘다
+    big = f"{OUT}/hero_5244x2950.png"
+    render(f"{HERE}/html/hero.html", big, 2400, 1350, 2.2)
+    subprocess.run(["sips", "-z", "2950", "5244", big], check=True, stdout=subprocess.DEVNULL)
+    print("hero_5244x2950.png")
 
 main()
