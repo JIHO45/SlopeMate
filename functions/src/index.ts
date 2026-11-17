@@ -18,6 +18,8 @@ setGlobalOptions({ region: "asia-northeast3", maxInstances: 10 });
 export const MAX_MEMBERS = 50;
 /** 새로 만들 때만 세는 상한. 나갈 때 자동 승계로 넘겨받는 것은 막지 않는다(decisions 2026-11-10). */
 export const MAX_OWNED = 5;
+/** 한 사람이 속할 수 있는 크루 수(만든 것 포함). 합계를 올릴 때마다 속한 크루 수만큼 문서를 쓰므로 상한을 둔다. */
+export const MAX_JOINED = 20;
 
 const crews = db.collection("crews");
 const invites = db.collection("invites");
@@ -72,8 +74,8 @@ const summaries = db.collection("season_summaries");
 function summaryFields(sum: DocumentSnapshot | undefined) {
   return sum?.exists
     ? { season: sum.get("season"), visit_days: sum.get("visit_days"), runs: sum.get("runs"), distance_km: sum.get("distance_km"),
-        resort_days: sum.get("resort_days"), summary_at: sum.get("updated_at") }
-    : { season: currentSeason(), visit_days: 0, runs: 0, distance_km: 0, resort_days: {}, summary_at: null };
+        resort_days: sum.get("resort_days") }
+    : { season: currentSeason(), visit_days: 0, runs: 0, distance_km: 0, resort_days: {} };
 }
 
 function memberDoc(uid: string, user: DocumentSnapshot, sum?: DocumentSnapshot) {
@@ -113,6 +115,8 @@ export const createCrew = onCall(async (req) => {
     const sum = await tx.get(summaries.doc(`${uid}_${currentSeason()}`));
     const owned = await tx.get(crews.where("owner_uid", "==", uid).count());
     if (owned.data().count >= MAX_OWNED) throw new HttpsError("resource-exhausted", "owned-limit");
+    const joined = await tx.get(db.collectionGroup("members").where("uid", "==", uid).count());
+    if (joined.data().count >= MAX_JOINED) throw new HttpsError("resource-exhausted", "joined-limit");
     const crew = crews.doc();
     const token = newToken();
     tx.set(crew, { name, owner_uid: uid, member_count: 1, invite_token: token, created_at: FieldValue.serverTimestamp() });
@@ -156,10 +160,12 @@ export const joinCrew = onCall(async (req) => {
     const me = await tx.get(crewRef.collection("members").doc(uid));
     if (!crew.exists) throw new HttpsError("not-found", "invite");
     const ban = await tx.get(crewRef.collection("bans").doc(uid));
+    const joined = await tx.get(db.collectionGroup("members").where("uid", "==", uid).count());
     if (me.exists) return { crewId: crewRef.id };
     // 크루장이 내보낸 사람은 크루장이 차단을 풀기 전까지 새 링크로도 다시 들어오지 못한다(R16)
     if (ban.exists) throw new HttpsError("permission-denied", "kicked");
     if (crew.get("member_count") >= MAX_MEMBERS) throw new HttpsError("resource-exhausted", "full");
+    if (joined.data().count >= MAX_JOINED) throw new HttpsError("resource-exhausted", "joined-limit");
     tx.set(me.ref, memberDoc(uid, user, sum));
     tx.update(crewRef, { member_count: FieldValue.increment(1) });
     return { crewId: crewRef.id };
@@ -336,7 +342,8 @@ export const syncSummary = onCall(async (req) => {
     if (old.exists && (old.get("computed_at") as number) >= computedAt) return { applied: false, crews: mine.size };
     const values = { visit_days: visitDays, runs, distance_km: distanceKm, resort_days: resortDays };
     tx.set(ref, { uid, season, ...values, computed_at: computedAt, updated_at: FieldValue.serverTimestamp() });
-    for (const m of mine.docs) tx.update(m.ref, { season, ...values, summary_at: FieldValue.serverTimestamp() });
+    // summary_at(올린 시각)은 크루원에게 보일 이유가 없어 더 쓰지 않는다(R17). 예전에 쓴 값은 다음 합계 때 지운다
+    for (const m of mine.docs) tx.update(m.ref, { season, ...values, summary_at: FieldValue.delete() });
     return { applied: true, crews: mine.size };
   });
 });

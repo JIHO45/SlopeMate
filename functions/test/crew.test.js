@@ -90,6 +90,23 @@ test("정원 경계 동시 가입: 47명인 크루에 6명 → 3명 성공·3명
   assert.equal((await call("previewInvite", { token: crew.token })).result.full, true);
 });
 
+test("속한 크루 20개 상한: 21번째 가입과 만들기는 거부, 이미 속한 크루는 그대로 열림", async () => {
+  const u = await newUser();
+  const tokens = [];
+  for (let o = 0; o < 4; o++) {
+    const owner = await newUser(`크루장${o}`);
+    for (let i = 0; i < 5; i++) tokens.push((await call("createCrew", { name: "주말반" }, owner)).result.token);
+  }
+  for (const token of tokens) assert.ok((await call("joinCrew", { token }, u)).result);
+  const extra = await crewWith(await newUser());
+  const denied = await call("joinCrew", { token: extra.token }, u);
+  assert.equal(denied.error.status, "RESOURCE_EXHAUSTED");
+  assert.equal(denied.error.message, "joined-limit");
+  assert.equal((await call("createCrew", { name: "하나 더" }, u)).error.message, "joined-limit");
+  assert.ok((await call("joinCrew", { token: tokens[0] }, u)).result.crewId);
+  assert.equal((await snapshot(extra.crewId)).crew.member_count, 1);
+});
+
 test("같은 사람이 동시에 두 번 가입해도 1명", async () => {
   const crew = await crewWith(await newUser());
   const u = await newUser();
@@ -238,6 +255,7 @@ test("합계: 크루 멤버 문서에 복사, 오래된 값·같은 값은 무�
     const m = (await db.doc(`crews/${c.crewId}/members/${u.uid}`).get()).data();
     assert.equal(m.visit_days, 3); assert.equal(m.runs, 18); assert.equal(m.distance_km, 18.8);
     assert.deepEqual(m.resort_days, { high1: 2, yongpyong: 1 }); assert.equal(m.season, currentSeason());
+    assert.ok(!("summary_at" in m)); // 올린 시각은 크루원에게 보이지 않는다(R17)
   }
   // 같은 값을 다시 보내도, 더 이른 시각의 값이 늦게 와도 바뀌지 않는다
   assert.equal((await call("syncSummary", sum({ computed_at: t }), u)).result.applied, false);

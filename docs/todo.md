@@ -463,7 +463,10 @@
 - [x] 기록 중 홈 "오늘 기록" 카드를 누르면 기록 중 화면(S5)이 열림 — 사용자 확인 (R5, D) (2026-11-18)
 - [x] 고친 뒤 화면 확인(시뮬레이터 또는 실기기): S6·S19 3D가 뜨는지(지형 셰이더에서 패치 인자를 뺌, 실행 중 컴파일), S6 읽기 실패 "다시 시도" (R50, R52, R5, R4) (2026-11-18) — 사용자 확인
 - [ ] 지난 시즌 이용권만 복원됐을 때 안내 한 줄("지난 시즌 이용권을 복원했어요") — 지금은 아무 말 없이 구입 화면이 남음. 첫 시즌에는 안 생김 (R54)
-- [ ] 서버: `syncSummary` 호출 간격·가입 크루 수 상한, 쓰지 않는 `summary_at` 지우기, `setDisplayName`을 앱에 붙일지 지울지 (R15, R17)
+- [x] 서버: 속한 크루 20개 상한(`joinCrew`·`createCrew`, 오류 `joined-limit`), 멤버 문서의 `summary_at` 그만 쓰고 다음 합계 때 지움, 앱 참여 화면에 상한 안내 (R14, R15, R17) (2026-11-18) — 함수 테스트 49개 통과, 앱 빌드 통과
+- [ ] 위 서버 변경 배포 — 사용자 (`firebase deploy --only functions`). 배포 뒤 합계를 한 번 올리면 예전 `summary_at`이 지워지는지 콘솔에서 확인 (R17)
+- [ ] 서버: `syncSummary` 호출 간격 제한 — 앱이 연달아 부르는 경우(앱 켤 때·기록 종료·크루 변경)와 같이 봐야 해서 출시 뒤 (R15)
+- [ ] `setDisplayName`: 이름 바꾸기 화면을 넣을지 다음 업데이트 때 결정, 2.0은 함수만 둠 (R13)
 - [ ] 죽은 코드 지우기(약 550줄): `Terrain3D` 절차적 숲·베이스 눈밭·면 슬로프 채움, 2D 음영·등고선(질감 오기 전 바탕을 단색으로 할지 결정), `SeasonTicketView` 미리보기 자리 표시 약 140줄, `owns(season:)`, `homePageURL`, UI 테스트 템플릿, `Map3DScene.detailWindow()`·`Terrain3D.groundTexture(window:)`와 그 테스트 — 2.0 뒤로 미뤄도 됨
 - [ ] 중복 합치기: 색(구분선 6곳, 경고 노랑 9곳, 위험 글씨 6곳)을 `Theme`로, 한국 달력 11곳을 `HomeData.seoul`로, 시각·속도 포맷터를 `RecordFormat`으로, 잠금 판정 3곳을 `ticket.lock(season:)`으로 — 2.0 뒤로 미뤄도 됨
 - [ ] 파일 다듬기: 뷰 파일에 얹힌 공용 코드(`HomeView` 아래 확장, `RecordFormat`, `WeatherFormat`) 떼기, `StartFlowViews`의 첫 실행 화면을 App/으로, `Timetable`·`Database` 위치, `Terrain3D` 질감 부분·`Camera3D`·`CrewScreens` 설정 부분 나누기 — 죽은 코드 지운 뒤

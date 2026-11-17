@@ -229,6 +229,7 @@ struct JoinCrewSheet: View {
     @SwiftUI.State private var state = State.loading
     @SwiftUI.State private var busy = false
     @SwiftUI.State private var kicked = false
+    @SwiftUI.State private var tooMany = false
     @SwiftUI.State private var failed = false
 
     var body: some View {
@@ -309,7 +310,9 @@ struct JoinCrewSheet: View {
         .task { await load() }
         // 화면이 실제로 열렸으니 받아 둔 초대를 비운다
         .onAppear { if crews.pendingInvite == token { crews.pendingInvite = nil } }
-        .alert("참여하지 못했어요", isPresented: $failed) { Button("확인", role: .cancel) {} } message: { Text(failMessage) }
+        .alert("참여하지 못했어요", isPresented: $failed) { Button("확인", role: .cancel) {} } message: {
+            Text(tooMany ? "크루는 20개까지 참여할 수 있어요. 다른 크루에서 나간 뒤 다시 시도해 주세요." : failMessage)
+        }
     }
 
     private var invalid: Bool { if case .invalid = state { true } else { false } }
@@ -337,6 +340,7 @@ struct JoinCrewSheet: View {
         } catch {
             switch CrewAPI.code(error) {
             case (.notFound?, _): state = .invalid
+            case (.resourceExhausted?, "joined-limit"): tooMany = true; failed = true
             case (.resourceExhausted?, _): var q = p; q.full = true; state = .ready(q)
             case (.permissionDenied?, "kicked"): kicked = true
             default: failed = true
