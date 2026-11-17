@@ -232,3 +232,19 @@ struct ReplayTests {
 }
 
 final class Anchor {}
+
+/// `-SMDemo` 합성 기록: 12곳 모두 리프트 3번 타고 하강 3번으로 잡힌다
+struct DemoSeedTests {
+    @Test(arguments: Resort.all.map(\.id)) func demoRoute(resortId: String) throws {
+        let map = try #require(SlopeMap.load(resortId: resortId)), terrain = try #require(Terrain.load(resortId: resortId))
+        let id = UUID(), t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let pts = DemoSeed.route(map: map, terrain: terrain)
+        let base = try #require(pts.first).alt
+        let points = pts.enumerated().map { k, p in
+            Point(id: nil, recordingId: id, t: t0.addingTimeInterval(Double(k) * 2), lat: p.lat, lon: p.lon, hAcc: 5, gpsAlt: p.alt,
+                  vAcc: 5, speed: p.speed, baroAlt: p.alt - base, baroT: t0.addingTimeInterval(Double(k) * 2), seq: 0)
+        }
+        let s = RunDetector.detect(points, map: map)
+        #expect(s.runs.count == min(3, map.lifts.count), "\(resortId) 하강 \(s.runs.count)")
+    }
+}

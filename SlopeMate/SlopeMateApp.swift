@@ -34,7 +34,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         MapLayers.migrate3D()
         do {
-            let recorder = Recorder(db: try AppDatabase(path: AppDatabase.defaultPath()))
+            let db = try AppDatabase(path: DemoSeed.on ? DemoSeed.path() : AppDatabase.defaultPath())
+            if DemoSeed.on { DemoSeed.seedIfEmpty(db) }
+            let recorder = Recorder(db: db)
             recorder.handleLaunch(locationRelaunch: launchOptions?[.location] != nil)
             self.recorder = recorder
         } catch {

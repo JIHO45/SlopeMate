@@ -95,6 +95,7 @@ struct DayMapView: View {
 
     /// 그 하루 기록 시즌의 이용권으로 연다(decisions 2026-11-14). 시즌 밖 날짜(5~10월)는 이번 시즌으로 본다
     static func lock(day: Date, owned: Set<String>, now: Date = .now) -> SeasonRecap.Lock {
+        if DemoSeed.on { return .open }
         let current = SeasonTicket.season(purchase: now)
         return SeasonRecap.lock(season: Stats.season(of: day) ?? current, owned: owned, current: current)
     }
