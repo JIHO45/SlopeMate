@@ -457,17 +457,32 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
 
     // MARK: 오늘
 
-    private func loadToday() {
+    /// retry: 저장된 결과가 없는 끝난 기록을 메인 스레드 밖에서 계산한 뒤 한 번 더 읽는다
+    private func loadToday(retry: Bool = true) {
         do {
             todayRecordings = try db.recordings(since: BusinessDay.start(of: .now))
+            var missing: [Recording] = []
             earlierToday = try todayRecordings.filter { $0.id != recording?.id }
                 .map { rec in
                     let map = SlopeMap.cached(resortId: rec.resortId)
                     // 끝나지 않은 기록(S7 대기)은 저장된 결과가 없다
-                    return rec.endedAt == nil ? RunDetector.detect(try db.points(rec), vehicle: try db.vehicle(rec), map: map)
-                        : try db.cache(rec, map: map).summary
+                    if rec.endedAt == nil { return RunDetector.detect(try db.points(rec), vehicle: try db.vehicle(rec), map: map) }
+                    // 저장된 결과가 없거나 낡았으면(판정 기준이 바뀐 업데이트 뒤 등) 여기서 계산하지 않는다:
+                    // 앱을 켤 때 메인 스레드에서 하루 전체를 판정하면 실행 제한 시간에 걸려 종료된다
+                    if let c = try db.stored(rec, map: map) { return c.summary }
+                    missing.append(rec)
+                    return RunDetector.Summary()
                 }
                 .reduce(RunDetector.Summary(), +)
+            if retry, !missing.isEmpty {
+                let db = db
+                Task { [weak self] in
+                    await Task.detached(priority: .userInitiated) {
+                        for rec in missing { _ = try? db.cache(rec, map: SlopeMap.load(resortId: rec.resortId)) }
+                    }.value
+                    self?.loadToday(retry: false)
+                }
+            }
         } catch {
             // 기록 중에는 합계를 못 읽어도 위치 저장은 계속한다(R4). .failed면 save()가 점을 버린다.
             if recording == nil { status = .failed("기록을 읽지 못했어요. \(error.localizedDescription)") }

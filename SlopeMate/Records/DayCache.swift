@@ -108,14 +108,19 @@ nonisolated extension AppDatabase {
 
     /// 저장된 결과. 없거나 낡았으면 다시 계산한다. 끝난 기록만.
     func cache(_ rec: Recording, map: SlopeMap?) throws -> DayCache {
+        if let c = try stored(rec, map: map) { return c }
+        return try refreshCache(rec, map: map)
+    }
+
+    /// 저장된 결과가 있고 낡지 않았을 때만. 없으면 nil(다시 계산하지 않는다) — 메인 스레드에서 읽을 때 쓴다
+    func stored(_ rec: Recording, map: SlopeMap?) throws -> DayCache? {
         let data = try queue.read { db in
             try Data.fetchOne(db, sql: """
                 SELECT c.data FROM recording_cache c JOIN recording r ON r.id = c.recordingId
                 WHERE c.recordingId = ? AND c.version = ? AND c.vehicleQueriedAt IS r.vehicleQueriedAt AND c.osmTimestamp = ?
                 """, arguments: [rec.id, RunDetector.rulesVersion, Self.osmStamp(map)])
         }
-        if let data, let c = try? RecordingFile.decoder.decode(DayCache.self, from: data) { return c }
-        return try refreshCache(rec, map: map)
+        return data.flatMap { try? RecordingFile.decoder.decode(DayCache.self, from: $0) }
     }
 
     /// 결과가 없거나 낡은 끝난 기록 (종료 직후 앱이 죽은 경우, 차량 구간 재조회, 기준·지도 변경)
