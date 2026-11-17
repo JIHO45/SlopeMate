@@ -32,6 +32,8 @@ struct DayMapView: View {
     @State private var scene3D: Map3DScene?
     /// 만든 3D 지형. S19가 다시 쓴다(경로와 상관없음)
     @State private var prepared3D: (space: Terrain3D, terrain: Map3DTerrain)?
+    /// 2D 바탕 숲 질감. 준비되기 전에는 음영 바탕
+    @State private var ground: CGImage?
     @State private var preparing3D = false
     /// 3D가 미리 그리기를 끝냄(onReady). 그 전까지 2D를 보이고, 그때 겹쳐 바꾼다
     @State private var ready3D = false
@@ -81,7 +83,7 @@ struct DayMapView: View {
     private var layers3D: MapLayers { MapLayers(slopes: showSlopes3D, lifts: showLifts3D) }
     private var drawing: DayMapDrawing {
         DayMapDrawing(map: map, route: hasRuns ? data?.route ?? [] : [], dark: dark,
-                      terrain: Terrain.layer(map, dark: dark), layers: layers)
+                      terrain: Terrain.layer(map, dark: dark)?.with(ground: ground), layers: layers)
     }
     /// 재생을 시작하거나 옮기기 전에는 nil(경로 전체를 진하게)
     private var now: Date? { started ? clock.time(at: progress) : nil }
@@ -178,6 +180,7 @@ struct DayMapView: View {
         .navigationDestination(item: $detail) { i in RunDetailView(db: db, day: day, index: i, route: data?.route ?? [], map: map, prepared3D: prepared3D) }
         .onChange(of: detail) { if detail == nil { showSheet = true } }
         .task(id: playing) { await play() }
+        .task { ground = await Terrain.ground(map) }
         .onChange(of: progress) { follow() }
         // 보는 중 잠기면(환불 등) 3D는 2D로, S19는 닫기
         .onChange(of: lock) {

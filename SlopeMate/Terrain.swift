@@ -145,6 +145,10 @@ nonisolated struct Terrain {
         let minor, major: CGPath
         /// 등고선 가장자리 마스크(edgeMask). nil이면 자르지 않는다
         var mask: CGImage? = nil
+        /// 숲·눈 지형 질감(3D와 같은 Terrain3D.cachedGroundTexture). 있으면 음영·등고선 대신 이것을 깐다
+        var ground: CGImage? = nil
+
+        func with(ground: CGImage?) -> Layer { var l = self; l.ground = ground; return l }
 
         /// 등고선 경로 좌표(col·cos위도, row) → 화면. 투영이 회전·배율·이동뿐이라 세 점으로 정확히 맞는다
         func gridTransform(_ proj: MapProjection, _ t: CGAffineTransform) -> CGAffineTransform {
@@ -179,6 +183,19 @@ nonisolated struct Terrain {
         layers[key] = .some(layer)
         return layer
     }
+    /// 2D 바탕용 숲·눈 질감. 메시·질감이 무거워 메인 스레드 밖에서 만들고(질감은 파일 캐시, 3D와 같이 씀) 리조트마다 한 번
+    @MainActor static func ground(_ map: SlopeMap) async -> CGImage? {
+        if let hit = grounds[map.resortId] { return hit }
+        if grids[map.resortId] == nil { grids[map.resortId] = .some(load(resortId: map.resortId)) }
+        guard let tr = grids[map.resortId] ?? nil else { return nil }
+        let image = await Task.detached(priority: .utility) {
+            let space = Terrain3D(terrain: tr, map: map)
+            return space.cachedGroundTexture(map: map, mesh: space.mesh(), canopy: .load(resortId: map.resortId))
+        }.value.image
+        grounds[map.resortId] = image
+        return image
+    }
+    @MainActor private static var grounds: [String: CGImage] = [:]
     private struct LayerKey: Hashable { let resortId: String; let dark: Bool }
     @MainActor private static var grids: [String: Terrain?] = [:]
     @MainActor private static var layers: [LayerKey: Layer?] = [:]

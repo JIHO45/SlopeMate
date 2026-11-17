@@ -181,6 +181,8 @@ nonisolated struct DayMapDrawing {
         var bg, lift, fill, text, dot, label, primary: UIColor
         /// 지형 바탕 (S6 지형 바탕 v1): 음영 밝은 면·그늘, 등고선(알파 0.12·0.18로 겹침)
         var hillLight, hillShadow, contour: UIColor
+        /// 숲 질감 위에 덮는 색(밝게: 흰색으로 옅게, 어둡게: 검게 낮춤)과 그 위 리프트 선
+        var groundWash, groundLift: UIColor
         init(dark: Bool) {
             func c(_ l: UInt32, _ d: UInt32) -> UIColor {
                 let v = dark ? d : l
@@ -191,6 +193,8 @@ nonisolated struct DayMapDrawing {
             label = c(0x4A636C, 0x86A0A8); primary = c(0x111418, 0xF4F8FA)
             hillLight = c(0xF7FBFC, 0x1A323B); hillShadow = c(0xD6E5EA, 0x0A171C)
             contour = c(0x1A323B, 0xF7FBFC)
+            groundWash = dark ? UIColor(white: 0, alpha: 0.45) : UIColor(white: 1, alpha: 0.3)
+            groundLift = c(0x24363D, 0xD5E2E6)
         }
     }
 
@@ -221,7 +225,16 @@ nonisolated struct DayMapDrawing {
 
         cg.setFillColor(c.bg.cgColor)
         cg.fill(CGRect(origin: .zero, size: size))
-        if let terrain {
+        if let terrain, let ground = terrain.ground {
+            // 숲·눈 질감(3D와 같은 것, 음영 포함). 질감 가장자리 텍셀이 격자 끝점이라 반 칸 안쪽 사각형에 그린다. 등고선은 그리지 않는다
+            cg.saveGState()
+            cg.concatenate(terrain.imageTransform(proj, t))
+            cg.interpolationQuality = .high
+            cg.draw(ground, in: CGRect(x: 0.5, y: 0.5, width: Double(terrain.terrain.cols - 1), height: Double(terrain.terrain.rows - 1)))
+            cg.restoreGState()
+            cg.setFillColor(c.groundWash.cgColor)
+            cg.fill(CGRect(origin: .zero, size: size))
+        } else if let terrain {
             cg.saveGState()
             cg.concatenate(terrain.imageTransform(proj, t))
             cg.interpolationQuality = .high
@@ -262,12 +275,18 @@ nonisolated struct DayMapDrawing {
                         cg.setFillColor(color.withAlphaComponent(0.2).cgColor)
                         cg.fillPath()
                     }
-                    if let casing { stroke(pts, casing, 3.5) }
+                    if let casing { stroke(pts, casing, terrain?.ground == nil ? 3.5 : 4.5) } // 숲 위에서는 테두리 양쪽 1pt
                     stroke(pts, color, 2.5)
                 }
             }
         }
-        if layers.lifts { for l in map.lifts { stroke(coords(l.line), c.lift, 1.5, dash: [4, 4]) } }
+        // 리프트: 공중(체어·곤돌라)은 얇은 실선(3D 케이블과 같게), 지면(견인식·매직카펫)은 점선
+        if layers.lifts {
+            for l in map.lifts {
+                let aerial = Terrain3D.aerialKinds.contains(l.kind)
+                stroke(coords(l.line), terrain?.ground == nil ? c.lift : c.groundLift, aerial ? 1 : 1.5, dash: aerial ? [] : [4, 4])
+            }
+        }
 
         // 하강은 강조색 실선, 리프트는 점선, 그 밖(걷기·평지)은 옅은 가는 선
         func style(_ k: RouteSegment.Kind) -> (UIColor, CGFloat, [CGFloat], CGFloat) {

@@ -40,6 +40,7 @@ struct RunDetailView: View {
     /// 3D 출발·도착 리프트 이름(장면을 만들 때 한 번 정해 VoiceOver와 같이 쓴다)
     @State private var placeNames: (start: String?, end: String?) = (nil, nil)
     @State private var ready3D = false
+    @State private var ground: CGImage?
     @State private var progress = 0.0
     @State private var playing = false
     @State private var started = false
@@ -75,7 +76,7 @@ struct RunDetailView: View {
     private var dark: Bool { scheme == .dark }
     private var layers: MapLayers { MapLayers(slopes: showSlopes, lifts: showLifts) }
     private var drawing: DayMapDrawing {
-        DayMapDrawing(map: map, route: runRoute, dark: dark, terrain: Terrain.layer(map, dark: dark), layers: layers)
+        DayMapDrawing(map: map, route: runRoute, dark: dark, terrain: Terrain.layer(map, dark: dark)?.with(ground: ground), layers: layers)
     }
     /// 재생을 시작하거나 옮기기 전에는 nil(경로·그래프 전체를 진하게)
     private var now: Date? { started ? clock.time(at: progress) : nil }
@@ -159,6 +160,7 @@ struct RunDetailView: View {
         .task(id: attempt) { await load() }
         .task(id: loaded == nil) { await prepare3D() }
         .task(id: playing) { await play() }
+        .task { ground = await Terrain.ground(map) }
     }
 
     // MARK: 지도
