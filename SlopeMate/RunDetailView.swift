@@ -128,7 +128,7 @@ struct RunDetailView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if sheetHeight < size.height * 0.75 { // 크게에서는 가려짐
-                Text(drawing.terrain == nil ? "© OpenStreetMap" : "© OpenStreetMap · Copernicus DEM").font(.caption).foregroundStyle(Color.secondaryText)
+                Text(drawing.terrain == nil ? "© OpenStreetMap" : scene3D != nil && ready3D ? "© OpenStreetMap · Copernicus DEM · Meta·WRI" : "© OpenStreetMap · Copernicus DEM").font(.caption).foregroundStyle(Color.secondaryText)
                     .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                     .padding(.trailing, 16).padding(.bottom, sheetHeight + 8)
                     .ignoresSafeArea()

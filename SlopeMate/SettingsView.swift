@@ -71,7 +71,7 @@ struct SettingsView: View {
                     Link(destination: url) { row("개인정보처리방침", icon: "arrow.up.right") }
                 }
                 Link(destination: Self.termsURL) { row("이용약관", icon: "arrow.up.right") }
-                NavigationLink { MapSourceView() } label: { row("지도 데이터 출처", value: "OpenStreetMap, Copernicus") }
+                NavigationLink { MapSourceView() } label: { row("지도 데이터 출처", value: "OpenStreetMap, Copernicus, Meta·WRI") }
                 Button { welcome = true } label: { row("처음 안내 다시 보기", chevron: true) }
                 if let mail = Self.contactEmail, let url = URL(string: "mailto:\(mail)") {
                     Link(destination: url) { row("문의", icon: "arrow.up.right") }
@@ -152,7 +152,7 @@ struct SettingsView: View {
     }
 }
 
-/// S17 지도 데이터 출처 (v3). OSM 저작권 표시와 ODbL, Copernicus DEM 출처·면책 문장(라이선스 6조).
+/// S17 지도 데이터 출처 (v3). OSM 저작권 표시와 ODbL, Copernicus DEM 출처·면책 문장(라이선스 6조), 3D 숲의 Meta·WRI 나무 높이 지도(CC BY 4.0, 가공 표시).
 struct MapSourceView: View {
     var body: some View {
         List {
@@ -177,6 +177,17 @@ struct MapSourceView: View {
                     Text("법률 또는 위임에 따라 Copernicus 프로그램을 맡은 기관은 Copernicus WorldDEM-30의 어떤 사용에 대해서도 책임을 지지 않습니다")
                         .font(.subheadline).foregroundStyle(Color.secondaryText)
                     Link("라이선스: Copernicus DEM GLO-30", destination: Terrain.licenseURL)
+                        .font(.subheadline).foregroundStyle(Color.secondaryText)
+                }
+                .padding(.vertical, 6)
+            }
+            .listRowBackground(Color.card)
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("3D 지도의 숲은 Meta와 World Resources Institute의 나무 높이 지도를 줄이고 다듬어 만들었어요.")
+                    Link("© Meta, World Resources Institute — Canopy Height Maps v2", destination: URL(string: "https://registry.opendata.aws/dataforgood-fb-forestsv2/")!)
+                        .font(.body.weight(.semibold)).foregroundStyle(Color.accentText)
+                    Link("라이선스: CC BY 4.0", destination: URL(string: "https://creativecommons.org/licenses/by/4.0/")!)
                         .font(.subheadline).foregroundStyle(Color.secondaryText)
                 }
                 .padding(.vertical, 6)

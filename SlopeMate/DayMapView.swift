@@ -122,7 +122,7 @@ struct DayMapView: View {
                 .padding(.top, 8).padding(.trailing, 16)
         }
         .overlay(alignment: .bottomTrailing) {
-            Text(drawing.terrain == nil ? "© OpenStreetMap" : "© OpenStreetMap · Copernicus DEM").font(.caption).foregroundStyle(Color.secondaryText)
+            Text(drawing.terrain == nil ? "© OpenStreetMap" : is3D ? "© OpenStreetMap · Copernicus DEM · Meta·WRI" : "© OpenStreetMap · Copernicus DEM").font(.caption).foregroundStyle(Color.secondaryText)
                 .dynamicTypeSize(...DynamicTypeSize.xxLarge) // 출처 표시가 지도를 가리지 않게
                 .padding(.trailing, 16).padding(.bottom, sheetHeight + 8)
                 .ignoresSafeArea()
