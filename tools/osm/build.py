@@ -27,6 +27,16 @@ EPS_M = 2.0
 NOT_SLOPES = {
     "way/545967313": "비발디 스노위하우스(눈놀이 시설)",
     "way/1037974232": "웰리힐리 하프파이프 선, 면과 중복",
+    "way/535718863": "지산 실버 정상→큰 슬로프 선, 공식 맵 5번(블루 정상 출발)과 같은 면에 겹침",
+    "way/535718862": "지산 위 선과 5번을 잇는 짧은 선, 공식 맵에 없음",
+}
+# 공식 슬로프 맵과 난이도가 다른 OSM 선. 앱 단계(초급·중급·상급·최상급)로, 공식 '중상급'은 중급.
+DIFFICULTY_FIXES = {
+    "way/535718864": ("advanced", "지산 5번 상급"),
+    "way/535718861": ("expert", "지산 6번 최상급"),
+    "way/535718866": ("intermediate", "지산 7번 중상급"),
+    "way/535718855": ("intermediate", "지산 2·3번 중급(오렌지·뉴오렌지)"),
+    "way/535718856": ("intermediate", "지산 2·3번 중급(오렌지·뉴오렌지)"),
 }
 
 
@@ -127,6 +137,9 @@ def build(resort, spec):
         t = s.pop("tags")
         s["name"] = name_of(t)
         s["difficulty"] = difficulty_of(t)
+        fix = next((DIFFICULTY_FIXES[o][0] for o in s["osm_ids"] if o in DIFFICULTY_FIXES), None)
+        if fix:
+            s["difficulty"] = fix
         if not s.get("area"):
             s.pop("area", None)
     return slopes, lifts, data["osm3s"]["timestamp_osm_base"]
