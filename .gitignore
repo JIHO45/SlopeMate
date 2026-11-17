@@ -16,3 +16,9 @@ graphify-out/
 
 # 슬로프 칠하기 원본(62MB PDF 등, 저장소에 넣지 않음)
 paint/
+
+# Firebase 에뮬레이터 로그
+*-debug.log
+
+# Xcode 공유 스킴(위젯 스킴만 자동 생성됨, 앱 스킴은 xcuserdata)
+SlopeMate.xcodeproj/xcshareddata/
