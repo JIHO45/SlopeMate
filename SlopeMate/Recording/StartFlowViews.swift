@@ -633,7 +633,7 @@ extension AppDatabase {
     }
 
     /// 끝난 기록이 속한 하루 기록(S6)
-    func day(of rec: Recording) -> Stats.Day? {
+    nonisolated func day(of rec: Recording) -> Stats.Day? {
         let date = BusinessDay.start(of: rec.startedAt)
         return (try? HomeData.days(self, since: date))?.first { $0.date == date && $0.resortId == rec.resortId }
     }

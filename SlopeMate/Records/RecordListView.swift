@@ -7,6 +7,8 @@ struct RecordListView: View {
     @State private var days: [Stats.Day]?
     @State private var deleting: Stats.Day?
     @State private var failed = false
+    @Environment(Crews.self) private var crews: Crews?
+    @Environment(SummarySync.self) private var summary: SummarySync?
 
     var body: some View {
         Group {
@@ -83,6 +85,8 @@ struct RecordListView: View {
         do {
             try db.delete(day)
             days?.removeAll { $0.id == day.id }
+            // 지운 하루가 크루 순위 합계에서도 바로 빠지게 (R15)
+            if crews?.ids.isEmpty == false { summary?.sync() }
         } catch {
             failed = true
         }

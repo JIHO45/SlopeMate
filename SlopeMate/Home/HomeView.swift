@@ -130,13 +130,19 @@ struct HomeView: View {
                 guard case .resume(let rec) = p else { return }
                 recorder.answerResume(false)
                 // 묻는 동안 06:00이 지났으면 영업일 끝 안내가 대신 뜬다
-                if recorder.dayEndNotice?.id != rec.id { openDay = recorder.db.day(of: rec) }
+                if recorder.dayEndNotice?.id != rec.id { showDay(of: rec) }
             } openDay: {
                 guard case .dayEnd(let rec) = p else { return }
                 recorder.acknowledgeDayEnd()
-                openDay = recorder.db.day(of: rec)
+                showDay(of: rec)
             }
         }
+    }
+
+    /// 막 끝낸 기록은 캐시가 아직 없을 수 있어(판정이 위치점 전체를 돈다) 메인 밖에서 찾는다
+    private func showDay(of rec: Recording) {
+        let db = recorder.db
+        Task { openDay = await Task.detached(priority: .userInitiated) { db.day(of: rec) }.value }
     }
 
     private enum StartStep: String, Identifiable { case pick; var id: String { rawValue } }
@@ -386,11 +392,14 @@ struct HomeView: View {
             if let day = days.first(where: \.isVisit) ?? days.first {
                 let t = Stats.totals([day])
                 let isToday = BusinessDay.same(day.date, .now)
-                NavigationLink { DayDetailView(db: recorder.db, day: day) } label: {
-                    RecordCard(icon: "clock", label: isToday ? "오늘 기록" : "최근 기록 · \(HomeData.monthDay(day.date))",
-                               value: "\(t.runs)회", sub: "\(RecordFormat.km(t.distance)) · 고도차 \(Int(t.drop).formatted())m")
+                let card = RecordCard(icon: "clock", label: isToday ? "오늘 기록" : "최근 기록 · \(HomeData.monthDay(day.date))",
+                                      value: "\(t.runs)회", sub: "\(RecordFormat.km(t.distance)) · 고도차 \(Int(t.drop).formatted())m")
+                // 기록 중인 하루는 S6가 끝난 기록만 읽어 비어 보인다. 기록 화면(S5)으로
+                if isToday, recorder.recording?.resortId == day.resortId {
+                    Button { showRecording = true } label: { card }.buttonStyle(.plain)
+                } else {
+                    NavigationLink { DayDetailView(db: recorder.db, day: day) } label: { card }.buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             } else {
                 RecordCard(icon: "clock", label: "최근 기록", value: "0회", sub: "불러오는 중").redacted(reason: .placeholder)
             }

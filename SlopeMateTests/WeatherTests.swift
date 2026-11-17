@@ -65,7 +65,7 @@ struct WeatherTests {
         #expect(fake.calls == [a.id, b.id, a.id])
     }
 
-    @Test func failureUsesFreshCacheOrThrows() async throws {
+    @Test func failureUsesCacheOrThrows() async throws {
         let fake = Fake(at("2026-12-10T10:00:00"))
         let c = cache(fake)
         let a = Resort.all[0]
@@ -78,6 +78,9 @@ struct WeatherTests {
         fake.now = at("2026-12-10T10:20:00")
         #expect(try await c.weather(for: a).fetchedAt == at("2026-12-10T10:00:00"))  // 30분 안: 캐시
         fake.now = at("2026-12-10T10:31:00")
-        await #expect(throws: Failed.self) { try await c.weather(for: a) }  // 낡은 캐시는 쓰지 않음
+        #expect(try await c.weather(for: a).fetchedAt == at("2026-12-10T10:00:00"))  // 조회 실패: 낡은 캐시라도
+        #expect(fake.calls == [a.id, a.id, a.id])  // 30분이 지났으니 다시 조회는 했다
+        fake.now = at("2026-12-10T13:01:00")
+        await #expect(throws: Failed.self) { try await c.weather(for: a) }  // 3시간 넘은 캐시는 쓰지 않음
     }
 }

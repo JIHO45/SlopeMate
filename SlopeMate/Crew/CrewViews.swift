@@ -54,7 +54,6 @@ struct CrewTab: View {
             if account.signedIn, let next = afterSignUp { sheet = next }
             afterSignUp = nil
         }) { _ in SignUpView(account: account) }
-        .onChange(of: account.uid, initial: true) { crews.follow(account.uid) }
         // 초대 링크(Universal Links·붙여 넣기): 화면을 실제로 열 수 있을 때 연다. 여러 개가 오면 마지막 것.
         // pendingInvite는 S16이 나타날 때 비운다(가려져서 못 열면 남았다가 가림이 풀릴 때 다시 연다).
         .onChange(of: crews.inviteRequests, initial: true) { openPendingInvite() }

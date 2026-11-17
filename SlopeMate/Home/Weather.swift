@@ -99,16 +99,22 @@ nonisolated enum Weather {
         self.now = now
     }
 
-    /// 30분 안 캐시는 조회 없이 돌려준다. 그래서 조회가 실패하면 쓸 캐시가 없고 오류를 던진다.
+    /// 30분 안 캐시는 조회 없이 돌려준다. 조회가 실패하면 3시간 안 캐시는 돌려주고, 그보다 낡았거나 없으면 오류를 던진다.
     func weather(for resort: Resort) async throws -> WeatherSnapshot {
         let t = now()
-        let cached = snapshots[resort.id].flatMap { t.timeIntervalSince($0.fetchedAt) < Weather.maxAge ? $0 : nil }
-        if let cached { return cached }
+        let old = snapshots[resort.id]
+        if let old, t.timeIntervalSince(old.fetchedAt) < Weather.maxAge { return old }
         if DebugFailures.weatherFails { throw DebugFailures.Injected() }
         if let demo = DebugFailures.demoWeather(t) { return demo }
-        let s = try await fetch(resort, t)
-        snapshots[resort.id] = s
-        return s
+        do {
+            let s = try await fetch(resort, t)
+            snapshots[resort.id] = s
+            return s
+        } catch {
+            // 신호가 약한 슬로프에서 카드가 사라지지 않게. 3시간 넘은 값은 지금 날씨로 보이면 안 되니 버린다
+            if let old, t.timeIntervalSince(old.fetchedAt) < 3 * 3600 { return old }
+            throw error
+        }
     }
 }
 

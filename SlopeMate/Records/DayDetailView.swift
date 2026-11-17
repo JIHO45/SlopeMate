@@ -9,20 +9,33 @@ struct DayDetailView: View {
     @State private var gaps: [Gap] = []
     @State private var ratings: [Int: SnowRating] = [:]
     @State private var span: (Date, Date)?
+    @State private var failed = false
+    @State private var attempt = 0
 
     /// 합계·목록은 경로와 같은 판정 결과로 다시 만든 하루. 읽기 전에는 넘겨받은 것
     private var shown: Stats.Day { data?.day ?? day }
+    private var title: String { "\(RecordFormat.monthDay(day.date)) · \(Resort.name(day.resortId))" }
 
     var body: some View {
         Group {
-            if let map = SlopeMap.cached(resortId: day.resortId), map.isDrawable {
+            if failed {
+                VStack(spacing: 12) {
+                    Text("기록을 읽지 못했어요").font(.subheadline)
+                    Button { attempt += 1 } label: { Text("다시 시도").frame(minHeight: 44) }
+                        .buttonStyle(.bordered).tint(Color.accentText)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.bg)
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+            } else if let map = SlopeMap.cached(resortId: day.resortId), map.isDrawable {
                 DayMapView(db: db, day: shown, map: map, data: data, gaps: gaps, ratings: ratings, span: span)
             } else {
                 list
             }
         }
         .toolbar(.hidden, for: .tabBar)
-        .task { await load() }
+        .task(id: attempt) { await load() }
     }
 
     private var list: some View {
@@ -43,7 +56,7 @@ struct DayDetailView: View {
             .padding(.bottom, 24)
         }
         .background(Color.bg)
-        .navigationTitle("\(RecordFormat.monthDay(day.date)) · \(Resort.name(day.resortId))")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !shown.runs.isEmpty, data != nil {
@@ -56,11 +69,13 @@ struct DayDetailView: View {
     }
 
     private func load() async {
-        guard let recs = try? db.recordings(of: day) else { return }
+        failed = false
+        guard let recs = try? db.recordings(of: day) else { failed = true; return }
         let (db, day, map) = (db, day, SlopeMap.cached(resortId: day.resortId))
-        guard let d = await Task.detached(operation: { try? DayData.load(db, day, recs: recs, map: map) }).value else { return }
-        gaps = ((try? db.gaps(recs)) ?? []).filter { $0.toT! >= $0.fromT.addingTimeInterval(60) } // ponytail: 1분 미만 끊김은 HH:mm로 보이지 않아 뺌
-        let all = recs.flatMap { (try? db.snowRatings($0)) ?? [] }
+        guard let d = await Task.detached(operation: { try? DayData.load(db, day, recs: recs, map: map) }).value else { failed = true; return }
+        // 끊김·설질 평가를 못 읽으면 없는 것처럼 보이지 않게 실패로 둔다
+        guard let found = try? db.gaps(recs), let all = try? recs.flatMap({ try db.snowRatings($0) }) else { failed = true; return }
+        gaps = found.filter { $0.toT! >= $0.fromT.addingTimeInterval(60) } // ponytail: 1분 미만 끊김은 HH:mm로 보이지 않아 뺌
         ratings = SnowPrompt.attach(all, to: d.day.runs)
         if let first = recs.first?.startedAt, let last = recs.compactMap(\.endedAt).max() { span = (first, last) }
         data = d
