@@ -91,6 +91,43 @@ GPS 위치와 이동 경로는 서버로 보내지 않아요. 계정 없이도 �
 | 버전 출시 | 수동으로 출시(개장에 맞춰) |
 | 로그인 필요 | 체크 해제(크루만 Apple로 로그인, 기록은 로그인 없이) |
 
+### 심사 메모 (앱 심사 정보 > 메모)
+
+시즌 이용권 상품의 심사 메모와는 다른 칸이다. 시연 영상은 넣지 않는다.
+
+```text
+SlopeMate 2.0 replaces the previous weather app with a ski tracking app for 12 ski resorts in South Korea. The UI is Korean only. Korean labels are given below.
+
+HOW TO TEST WITHOUT VISITING A RESORT
+- No account is needed for recording. Tabs: 기록 (Record), 시즌 (Season), 크루 (Crew).
+- On first launch tap 다음, choose any resort, then tap 기록 시작 (Start recording) and allow Location and Motion. Recording starts anywhere; the resort is chosen by the user, not detected.
+- To stop, press and hold the stop button (길게 눌러 종료). With VoiceOver on, it shows a confirmation dialog instead.
+- Runs and lifts are detected from altitude change on a ski slope, so a recording made elsewhere ends with 0 runs. The day record, season totals, weather and settings can still be reviewed. The map, playback and run detail need a day with ski runs; they are shown in the App Store screenshots.
+
+BACKGROUND LOCATION
+- Location is used only while the user is recording a ski day, including with the screen locked, to record runs and lifts. A Live Activity shows the recording in progress. Recording stops when the user ends it.
+- GPS tracks stay on the device and are never sent to our server.
+
+SIGN IN WITH APPLE
+- Used only for the Crew tab (season totals ranking among friends). Open 크루 and start creating or joining a crew; the sign-up screen asks for a display name and confirmation of being 14 or older, then shows the Sign in with Apple button.
+
+ACCOUNT DELETION
+- 설정 (gear icon, top right) > 계정 > 계정 삭제. It re-authenticates with Apple, revokes the Sign in with Apple token and deletes the account, season totals and crew membership. Records on the device remain.
+
+USER-GENERATED CONTENT (crew names and display names only; no messaging)
+- Names are filtered for banned words at sign-up and crew creation.
+- Report or block a member: 크루 > open a crew > the … menu on a ranking row (or long press) > 표시 이름 신고 / 차단.
+- Report a crew name: crew settings > 크루 이름·표시 이름 신고.
+- Unblock: 설정 > 차단한 크루원.
+- Reports are reviewed and acted on by the developer. Contact: 설정 > 문의.
+
+IN-APP PURCHASE
+- Season Ticket (non-renewing subscription, com.Joe.SlopeMate.seasonticket). Open 설정 > 시즌 이용권 to buy; 구입 복원 (Restore Purchases) is on the same screen. No account is required to purchase.
+- It unlocks the 3D map, HD video export without watermark, run detail and season recap for the season in which it is purchased (seasons end April 30). These apply to days that contain ski runs.
+```
+
+한국어 문구는 2026-11-18 코드와 대조했다. 화면 문구를 바꾸면 이 메모도 고친다.
+
 ## 시즌 이용권 (비갱신 구독)
 
 | 항목 | 값 |
