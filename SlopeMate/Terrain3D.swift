@@ -458,7 +458,7 @@ nonisolated extension Terrain3D {
     }
 
     /// 질감 만드는 방식(색·폭·나무 등)을 바꾸면 올린다. 캐시 키에 들어간다
-    static let textureVersion: UInt64 = 14
+    static let textureVersion: UInt64 = 15
 
     static let textureCacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("terrain3d", isDirectory: true)

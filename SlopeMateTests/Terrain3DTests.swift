@@ -420,10 +420,10 @@ struct Terrain3DTests {
         #expect(pl + 60 < pr, "패치 숲 \(pl), 눈 \(pr)")
     }
 
-    /// 번들의 용평 숲 파일은 DEM 격자와 크기가 맞는다
-    @Test func bundledCanopyMatchesDEM() throws {
-        let c = try #require(Terrain3D.Canopy.load(resortId: "yongpyong"))
-        let dem = try #require(Bundle.main.url(forResource: "dem-yongpyong", withExtension: "json"))
+    /// 번들의 숲 파일은 12곳 모두 있고 DEM 격자와 크기가 맞는다
+    @Test(arguments: Resort.all.map(\.id)) func bundledCanopyMatchesDEM(resortId: String) throws {
+        let c = try #require(Terrain3D.Canopy.load(resortId: resortId))
+        let dem = try #require(Bundle.main.url(forResource: "dem-\(resortId)", withExtension: "json"))
         let j = try JSONSerialization.jsonObject(with: Data(contentsOf: dem)) as! [String: Any]
         #expect(c.width == ((j["cols"] as! Int) - 1) * c.k && c.height == ((j["rows"] as! Int) - 1) * c.k)
         #expect(c.k >= 10, "칸이 5m(k=6)면 폭 10m 안쪽 숲 띠·군락이 뭉개진다")

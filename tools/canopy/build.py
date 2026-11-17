@@ -3,6 +3,7 @@
 #   나무 높이 판: DEM 칸을 HK배로 나눈 칸(약 15m). 값 = 그 칸 숲 화소 평균 높이 ÷ 2m(0~15 = 0~30m). 그림자 길이·숲 결용.
 # 파일: b'CNP2' + K(u8) + HK(u8) + 숲 판 너비·높이(u16 LE) + raw DEFLATE(숲 판 바이트 + 높이 판 바이트). 앱 Terrain3D.Canopy가 읽는다.
 # 사용: tools/dem/.venv/bin/python tools/canopy/build.py <chm 접두어> SlopeMate/Resources/maps/dem-<id>.json <out.bin> [K=10] [HK=2] [확인용.png]
+#   숲 띠 틈 메우기: GAP_FILL=SlopeMate/Resources/maps/osm-<id>.json GAP_M=30 을 붙인다. 2026-11-17 기준 에덴밸리·용평 빼고 10곳이 30m(docs/decisions.md).
 import json, math, struct, sys, zlib
 import numpy as np
 
@@ -35,6 +36,34 @@ def build(h, meta, dem, K, HK=2):
     hgt = np.clip(np.round(hs / np.maximum(s, 1) / 2), 0, 15).astype(np.uint8)
     return frac, hgt
 
+def fill_gaps(frac, dem, K, slopes, gap_m=15.0, keep_m=6.0):
+    """숲 띠 사이 짧은 틈(약 gap_m 이하)을 숲으로 메운다(닫힘 = 최대 후 최소). OSM 슬로프 선 keep_m 안은 원래 값 유지.
+    원본 위성 모델이 한두 줄 나무 띠를 군데군데 놓쳐 생긴 끊김을 잇는 용도. 긴 틈은 그대로 둔다."""
+    lat_m = dem['step'] * 111320 / K
+    lon_m = lat_m * math.cos(math.radians(dem['north']))
+    def shifts(rad):
+        ry, rx = int(rad / lat_m), int(rad / lon_m)
+        return [(dy, dx) for dy in range(-ry, ry + 1) for dx in range(-rx, rx + 1)
+                if (dy * lat_m) ** 2 + (dx * lon_m) ** 2 <= rad * rad]
+    def morph(a, rad, op):
+        r = max(int(rad / min(lat_m, lon_m)), 1); pad = np.pad(a, r, mode='edge'); out = a.copy()
+        for dy, dx in shifts(rad):
+            out = op(out, pad[r + dy:r + dy + a.shape[0], r + dx:r + dx + a.shape[1]])
+        return out
+    out = np.where(frac == 255, 0, frac).astype(np.uint8)
+    closed = morph(morph(out, gap_m / 2, np.maximum), gap_m / 2, np.minimum)
+    keep = np.zeros(frac.shape, bool)   # 슬로프 선을 칸에 찍고 keep_m만큼 넓힌다
+    for line in slopes:
+        for (a0, o0), (a1, o1) in zip(line, line[1:]):
+            n = int(max(abs(a1 - a0) * 111320 / lat_m, abs(o1 - o0) * 111320 * math.cos(math.radians(a0)) / lon_m) * 2) + 1
+            t = np.linspace(0, 1, n + 1)
+            y = np.round((dem['north'] - (a0 + (a1 - a0) * t)) / dem['step'] * K).astype(int)
+            x = np.round(((o0 + (o1 - o0) * t) - dem['west']) / dem['step'] * K).astype(int)
+            ok = (y >= 0) & (y < frac.shape[0]) & (x >= 0) & (x < frac.shape[1])
+            keep[y[ok], x[ok]] = True
+    keep = morph(keep, keep_m, np.logical_or)
+    return np.where(frac == 255, 255, np.where(keep, out, closed)).astype(np.uint8)
+
 def pack(frac, hgt, K, HK):
     z = zlib.compressobj(9, zlib.DEFLATED, -15); body = z.compress(frac.tobytes() + hgt.tobytes()) + z.flush()
     return b'CNP2' + struct.pack('<BBHH', K, HK, frac.shape[1], frac.shape[0]) + body
@@ -56,6 +85,12 @@ elif __name__ == '__main__':
     meta = json.load(open(pre + '.json')); dem = json.load(open(dem_path))
     h = np.fromfile(pre + '.u8', np.uint8).reshape(meta['height'], meta['width'])
     fr, hg = build(h, meta, dem, K, HK)
+    import os
+    if os.environ.get('GAP_FILL'):   # 시험: GAP_FILL=<osm-<id>.json> 이면 짧은 틈 메우기
+        osm = json.load(open(os.environ['GAP_FILL']))
+        before = np.mean(fr[fr != 255] >= 8)
+        fr = fill_gaps(fr, dem, K, [l for s_ in osm['slopes'] for l in s_['lines'] if len(l) > 1], float(os.environ.get('GAP_M', 15)))
+        print(f'틈 메우기: 숲(≥50%) 칸 {before * 100:.1f}% → {np.mean(fr[fr != 255] >= 8) * 100:.1f}%')
     b = pack(fr, hg, K, HK); open(out, 'wb').write(b)
     print(f'숲 {fr.shape[1]}x{fr.shape[0]} K={K}, 높이 {hg.shape[1]}x{hg.shape[0]} HK={HK} → {len(b) / 1024:.0f} KB (풀면 {(fr.size + hg.size) / 1e6:.1f} MB), 범위 밖 {np.mean(fr == 255) * 100:.1f}%')
     if len(sys.argv) > 6:   # 확인용 PNG(숲 비율 → 진함, 범위 밖 빨강)
