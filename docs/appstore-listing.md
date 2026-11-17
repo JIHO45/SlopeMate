@@ -11,7 +11,8 @@ App Store Connect에 붙여 넣는 글이다. 고칠 때 이 파일을 먼저 �
 | 기본 카테고리 | 스포츠 |
 | 보조 카테고리 | 비움 |
 | 콘텐츠 권한 | 타사 콘텐츠 있음, 사용 권한 있음(OpenStreetMap, Copernicus DEM, Meta·WRI 나무 높이 지도) |
-| 개인정보 처리방침 URL | https://woolly-devourer-5d2.notion.site/2be3ed084bab800b8544cbc4a1140929 |
+| 개인정보 처리방침 URL | https://slopemate-f9a5b.web.app/privacy (Notion 방침으로 넘어감) |
+| 사용자 개인정보 선택 사항 URL | https://slopemate-f9a5b.web.app/privacy |
 
 ## 2.0 버전 페이지
 
