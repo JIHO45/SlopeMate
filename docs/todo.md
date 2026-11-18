@@ -472,7 +472,7 @@
 - [ ] 죽은 코드 지우기(약 550줄): `Terrain3D` 절차적 숲·베이스 눈밭·면 슬로프 채움, 2D 음영·등고선(질감 오기 전 바탕을 단색으로 할지 결정), `SeasonTicketView` 미리보기 자리 표시 약 140줄, `owns(season:)`, `homePageURL`, UI 테스트 템플릿, `Map3DScene.detailWindow()`·`Terrain3D.groundTexture(window:)`와 그 테스트 — 2.0 뒤로 미뤄도 됨
 - [ ] 중복 합치기: 색(구분선 6곳, 경고 노랑 9곳, 위험 글씨 6곳)을 `Theme`로, 한국 달력 11곳을 `HomeData.seoul`로, 시각·속도 포맷터를 `RecordFormat`으로, 잠금 판정 3곳을 `ticket.lock(season:)`으로 — 2.0 뒤로 미뤄도 됨
 - [ ] 파일 다듬기: 뷰 파일에 얹힌 공용 코드(`HomeView` 아래 확장, `RecordFormat`, `WeatherFormat`) 떼기, `StartFlowViews`의 첫 실행 화면을 App/으로, `Timetable`·`Database` 위치, `Terrain3D` 질감 부분·`Camera3D`·`CrewScreens` 설정 부분 나누기 — 죽은 코드 지운 뒤
-- [ ] 루트 정리(사용자 결정): `.claude/worktrees/` 2.7GB 워크트리 6개, `paint/` 110MB 미추적, `SlopeMateScreenShot/1~3.png`(날씨 앱), `AGENTS.md`·`.codex/` 중복, `notes/`
+- [ ] 루트 정리(사용자 결정): ~~`.claude/worktrees/` 2.7GB 워크트리 6개~~(2026-11-18 삭제, 브랜치도 지움), `paint/` 110MB 미추적, `SlopeMateScreenShot/1~3.png`(날씨 앱), `AGENTS.md`·`.codex/` 중복, `notes/`
 
 **실기기 확인** (사용자, 아이폰에서. 시뮬레이터로 못 하는 것만 모음. 기능을 다 붙인 뒤 심사 제출 빌드 전에 한 번에 진행)
 
