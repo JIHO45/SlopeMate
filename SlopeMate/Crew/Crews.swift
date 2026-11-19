@@ -209,7 +209,10 @@ import Foundation
         // 이미 비우는 중이면 그 결과를 기다린다(같은 Firestore를 두 번 종료하지 않게)
         guard !purging else { return }
         purging = true
-        Firestore.firestore().terminate { error in
+        // 종료하면 레지스트리가 인스턴스를 놓는다. 콜백이 붙잡지 않으면 곧바로 해제되며 완료 콜백도 사라진다.
+        let db = Firestore.firestore()
+        db.terminate { error in
+            withExtendedLifetime(db) {}
             guard error == nil else { return self.purgeFinished(ok: false) }
             Firestore.firestore().clearPersistence { error in self.purgeFinished(ok: error == nil) }
         }
