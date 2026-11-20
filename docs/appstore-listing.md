@@ -49,11 +49,11 @@ App Store Connect에 붙여 넣는 글이다. 고칠 때 이 파일을 먼저 �
 
 [시즌 이용권 (앱 내 구입)]
 구입한 시즌 동안 아래 기능을 엽니다. 자동으로 갱신되지 않아요.
-• 3D 지도로 보는 하루 기록
+• 내 경로를 3D 지형 위에서 보고 재생
 • 고화질·워터마크 없는 공유 동영상
 • 하강 상세: 속도·고도 그래프와 같은 슬로프 시즌 비교
 • 시즌 결산 카드
-기록, 하루·시즌 기록, 시즌권 본전, 날씨, 크루는 무료예요.
+기록, 하루·시즌 기록, 리조트 지도(2D·3D), 시즌권 본전, 날씨, 크루는 무료예요.
 
 [내 위치 기록은 내 iPhone에만]
 GPS 위치와 이동 경로는 서버로 보내지 않아요. 계정 없이도 기록 기능을 모두 쓸 수 있습니다. 크루에 가입하면 표시 이름과 시즌 합계(방문일·하강 횟수·거리), 리조트별 방문일 수만 크루원에게 보여요.
@@ -123,7 +123,7 @@ USER-GENERATED CONTENT (crew names and display names only; no messaging)
 
 IN-APP PURCHASE
 - Season Ticket (non-renewing subscription, com.Joe.SlopeMate.seasonticket). Open 설정 > 시즌 이용권 to buy; 구입 복원 (Restore Purchases) is on the same screen. No account is required to purchase.
-- It unlocks the 3D map, HD video export without watermark, run detail and season recap for the season in which it is purchased (seasons end April 30). These apply to days that contain ski runs.
+- It unlocks viewing your own recorded route on the 3D map, HD video export without watermark, run detail and season recap for the season in which it is purchased (seasons end April 30). These apply to days that contain ski runs. Resort maps in 2D and 3D are free.
 ```
 
 한국어 문구는 2026-11-18 코드와 대조했다. 화면 문구를 바꾸면 이 메모도 고친다.
@@ -136,12 +136,12 @@ IN-APP PURCHASE
 | 제품 ID | com.Joe.SlopeMate.seasonticket |
 | 가격 | ₩4,900, 2027-05-01부터 ₩9,900 |
 | 표시 이름 | 시즌 이용권 |
-| 설명 | 구입한 시즌 동안 3D 지도, 고화질 동영상, 하강 상세, 시즌 결산 |
+| 설명 | 구입한 시즌 동안 내 경로 3D, 고화질 동영상, 하강 상세, 시즌 결산 |
 
 심사 메모:
 
 ```text
-Non-renewing subscription. Unlocks 3D map, HD video export without watermark, run detail, and season recap for the season in which it is purchased (seasons end April 30). No auto-renewal. To find it: Season tab > any locked card, or Settings > Season Ticket. Restore Purchases is on the same screen.
+Non-renewing subscription. Unlocks your own route on the 3D map, HD video export without watermark, run detail, and season recap for the season in which it is purchased (seasons end April 30). No auto-renewal. To find it: Season tab > any locked card, or Settings > Season Ticket. Restore Purchases is on the same screen.
 ```
 
 ## 앱이 수집하는 개인정보

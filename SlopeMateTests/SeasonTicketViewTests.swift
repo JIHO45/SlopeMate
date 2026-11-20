@@ -29,13 +29,13 @@ struct SeasonTicketViewTests {
         #expect(SeasonTicketView.priceText(displayPrice: "$6.99", currencyCode: "USD") == "$6.99")
     }
 
-    @Test func firstSeasonNoteOnlyForLaunchSeasonInWon() {
+    @Test func firstSeasonOnlyForLaunchSeasonInWon() {
         let first = SeasonTicket.expiry(purchase: at("2026-11-20T10:00:00"))
         let next = SeasonTicket.expiry(purchase: at("2027-05-01T00:30:00"))
-        #expect(SeasonTicketView.firstSeasonNote(first, price: "4,900원") == "첫 시즌 가격이에요. 다음 시즌부터 9,900원")
-        #expect(SeasonTicketView.firstSeasonNote(next, price: "9,900원") == nil)
-        #expect(SeasonTicketView.firstSeasonNote(first, price: "$3.99") == nil)
-        #expect(SeasonTicketView.firstSeasonNote(first, price: nil) == nil)
+        #expect(SeasonTicketView.isFirstSeason(first, price: "4,900원"))
+        #expect(!SeasonTicketView.isFirstSeason(next, price: "9,900원"))
+        #expect(!SeasonTicketView.isFirstSeason(first, price: "$3.99"))
+        #expect(!SeasonTicketView.isFirstSeason(first, price: nil))
     }
 
     @Test func restoreFailedFallsBackOnGenericMessage() {

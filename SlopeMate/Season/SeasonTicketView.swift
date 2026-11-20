@@ -91,22 +91,40 @@ struct SeasonTicketView: View {
         .accessibilityLabel("닫기")
     }
 
+    private var first: Bool { Self.isFirstSeason(expiry, price: price) }
+
+    /// 첫 시즌 특가 배지. 할인율·취소선은 쓰지 않는다(decisions 2026-11-19)
+    private var firstSeasonBadge: some View {
+        Text("첫 시즌 특가").font(.footnote.weight(.semibold)).foregroundStyle(Color.onAccent)
+            .padding(.horizontal, 10).padding(.vertical, 3)
+            .background(Color.accentFill, in: Capsule())
+    }
+
+    private var nextSeasonNote: Text {
+        Text("다음 시즌부터 \(Text("9,900원").bold())").foregroundStyle(Color.secondaryText)
+    }
+
     @ViewBuilder private var priceBlock: some View {
         if big {
             // 가장 큰 글씨: 얼음색 카드 없이 가격·기간을 세로로
             VStack(alignment: .leading, spacing: 0) {
+                if first { firstSeasonBadge.padding(.bottom, 6) }
                 Text(price ?? "가격을 불러오지 못했어요")
                     .font(price == nil ? .title2.bold() : .largeTitle.bold()).monospacedDigit()
                     .foregroundStyle(price == nil ? Color.primaryText : Color.accentText)
                 Text(Self.untilText(expiry)).font(.title2.weight(.semibold))
                 Text("자동으로 갱신되지 않아요").font(.title3).foregroundStyle(Color.secondaryText)
-                if let note = Self.firstSeasonNote(expiry, price: price) { Text(note).font(.title3).foregroundStyle(Color.secondaryText) }
+                if first { nextSeasonNote.font(.title3) }
             }
         } else {
             VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(Self.seasonText(expiry)).font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText)
+                    if first {
+                        firstSeasonBadge.padding(.bottom, 2)
+                    } else {
+                        Text(Self.seasonText(expiry)).font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText)
+                    }
                     if let price {
                         // "9,900원": 숫자는 크게, "원"은 작게
                         let won = price.hasSuffix("원")
@@ -125,9 +143,7 @@ struct SeasonTicketView: View {
                 }
                 .multilineTextAlignment(.trailing)
             }
-            if let note = Self.firstSeasonNote(expiry, price: price) {
-                Text(note).font(.footnote).foregroundStyle(Color.secondaryText)
-            }
+            if first { nextSeasonNote.font(.footnote) }
             }
             .padding(.vertical, 16).padding(.horizontal, 20)
             .background(Color.surface, in: RoundedRectangle(cornerRadius: 24))
@@ -400,9 +416,9 @@ extension SeasonTicketView {
         return String(format: "%d-%02d 시즌", y - 1, y % 100)
     }
 
-    /// 첫 시즌(2026-27)을 파는 동안만, 원화 가격일 때만 보이는 안내. 다음 시즌 가격은 decisions 2026-11-17
-    static func firstSeasonNote(_ expiry: Date, price: String?) -> String? {
-        seasonText(expiry) == "2026-27 시즌" && price?.hasSuffix("원") == true ? "첫 시즌 가격이에요. 다음 시즌부터 9,900원" : nil
+    /// 첫 시즌(2026-27)을 파는 동안, 원화 가격일 때만 특가 배지·다음 시즌 가격을 보인다. decisions 2026-11-17·11-19
+    static func isFirstSeason(_ expiry: Date, price: String?) -> Bool {
+        seasonText(expiry) == "2026-27 시즌" && price?.hasSuffix("원") == true
     }
 
     /// 원화는 시안처럼 "9,900원", 그 밖의 통화는 StoreKit 표기 그대로.
@@ -435,7 +451,7 @@ struct Feature: Identifiable {
 
 extension SeasonTicketView {
     static let features = [
-        Feature(id: "ticket-3d", title: "3D 보기", detail: "하루 기록 지도를 3D 지형으로 돌려 봐요", short: "하루 기록 지도를 3D 지형으로", icon: "cube"),
+        Feature(id: "ticket-3d", title: "내 경로 3D", detail: "내가 탄 경로를 3D 지형 위에서 돌려 보고 재생해요", short: "내 경로를 3D 지형 위에서", icon: "cube"),
         Feature(id: "ticket-video", title: "고화질 동영상", detail: "1080p, 워터마크 없이 공유해요", short: "1080p, 워터마크 없이 공유", icon: "video"),
         Feature(id: "ticket-run", title: "하강 상세", detail: "내려오는 모습과 지금 속도·고도를 함께 봐요", short: "속도·고도 그래프와 최고 속도", icon: "chart.xyaxis.line"),
         Feature(id: "ticket-recap", title: "시즌 결산", detail: "이번 시즌을 카드로 정리하고 공유해요", short: "이번 시즌을 카드로 정리하고 공유", icon: "rectangle.on.rectangle"),
