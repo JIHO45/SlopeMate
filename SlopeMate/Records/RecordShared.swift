@@ -1,122 +1,5 @@
 import SwiftUI
 
-/// S8 기록 목록 (B4 확정: v1, 빈 상태 v1, 삭제 확인 v2). 하루(영업일 × 리조트) 단위 행, 월별 묶음, 리조트 거르기, 밀어서 삭제.
-struct RecordListView: View {
-    let db: AppDatabase
-    @State var resortId: String? = nil
-    @State private var days: [Stats.Day]?
-    @State private var deleting: Stats.Day?
-    @State private var failed = false
-    @Environment(Crews.self) private var crews: Crews?
-    @Environment(SummarySync.self) private var summary: SummarySync?
-
-    var body: some View {
-        Group {
-            if let days {
-                if days.isEmpty {
-                    RecordEmptyState(systemName: "list.bullet", text: "아직 기록이 없어요")
-                } else {
-                    list(days)
-                }
-            } else {
-                ProgressView()
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.bg)
-        .navigationTitle("지난 기록")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if let days, !days.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) { filterMenu(days) }
-            }
-        }
-        .task { days = await RecordLoader.days(db, finishedOnly: true) }
-        .alert(deleting.map { "\(RecordFormat.monthDay($0.date)) \(Resort.name($0.resortId)) 기록을 지울까요?" } ?? "",
-               isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting) { day in
-            Button("취소", role: .cancel) {}
-            Button("지우기", role: .destructive) { delete(day) }
-        } message: { _ in
-            Text("되돌릴 수 없어요.")
-        }
-        .alert("기록을 지우지 못했어요", isPresented: $failed) { Button("확인") {} }
-    }
-
-    private func list(_ all: [Stats.Day]) -> some View {
-        let shown = all.filter { resortId == nil || $0.resortId == resortId }
-        let months = Dictionary(grouping: shown) { RecordFormat.month($0.date) }
-        return List {
-            ForEach(months.keys.sorted(by: >), id: \.self) { key in
-                Section {
-                    ForEach(months[key]!) { day in
-                        NavigationLink { DayDetailView(db: db, day: day) } label: { RecordRow(day: day) }
-                            .listRowBackground(Color.card)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 12))
-                            .swipeActions { Button("삭제", role: .destructive) { deleting = day } }
-                    }
-                } header: {
-                    Text(RecordFormat.monthTitle(months[key]![0].date))
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText).textCase(nil)
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-    }
-
-    private func filterMenu(_ days: [Stats.Day]) -> some View {
-        let ids = Set(days.map(\.resortId)).sorted { Resort.name($0) < Resort.name($1) }
-        return Menu {
-            Picker("리조트", selection: $resortId) {
-                Text("모든 리조트").tag(String?.none)
-                ForEach(ids, id: \.self) { Text(Resort.name($0)).tag(String?.some($0)) }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text(resortId.map { Resort.name($0) } ?? "모든 리조트")
-                Image(systemName: "chevron.down").font(.caption.weight(.bold))
-            }
-            .font(.subheadline)
-        }
-        .accessibilityLabel("리조트 거르기, \(resortId.map { Resort.name($0) } ?? "모든 리조트")")
-    }
-
-    private func delete(_ day: Stats.Day) {
-        do {
-            try db.delete(day)
-            days?.removeAll { $0.id == day.id }
-            // 지운 하루가 크루 순위 합계에서도 바로 빠지게 (R15)
-            if crews?.ids.isEmpty == false { summary?.sync() }
-        } catch {
-            failed = true
-        }
-    }
-}
-
-private struct RecordRow: View {
-    let day: Stats.Day
-
-    var body: some View {
-        let sessions = RecordFormat.sessionNames(day)
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(RecordFormat.monthDayWeekday(day.date)).font(.subheadline.weight(.semibold))
-                Text(([Resort.name(day.resortId)] + (sessions.isEmpty ? [] : [sessions])).joined(separator: " · "))
-                    .font(.footnote).foregroundStyle(Color.secondaryText)
-            }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("\(day.runs.count)회").font(.subheadline.weight(.semibold))
-                Text(RecordFormat.km(day.runs.reduce(0) { $0 + $1.distance })).font(.footnote).foregroundStyle(Color.secondaryText)
-            }
-            .monospacedDigit()
-        }
-        .foregroundStyle(Color.primaryText)
-        .frame(minHeight: 64)
-        .accessibilityElement(children: .combine)
-    }
-}
-
 /// 빈 상태: 72pt 원 아이콘 + 굵은 한 줄 (S8, S10 빈 상태 v1)
 struct RecordEmptyState<Extra: View>: View {
     var systemName: String
@@ -142,7 +25,7 @@ extension RecordEmptyState where Extra == EmptyView {
     init(systemName: String, text: String) { self.init(systemName: systemName, text: text) { EmptyView() } }
 }
 
-/// S8·S9·S10이 함께 쓰는 하루 기록 목록. 지도는 메인에서 받고, 판정 결과 읽기는 뒤에서 한다.
+/// S8 기록 달력·S9·S10이 함께 쓰는 하루 기록 목록. 지도는 메인에서 받고, 판정 결과 읽기는 뒤에서 한다.
 enum RecordLoader {
     /// 시즌 합계(S9·S10)는 홈과 같이 진행 중인 오늘 기록도 센다.
     /// 기록 목록(S8)은 끝난 기록만: 하루 기록(S6)·삭제가 끝난 기록만 다룬다.
