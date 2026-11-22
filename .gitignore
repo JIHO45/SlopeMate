@@ -22,3 +22,8 @@ paint/
 
 # Xcode 공유 스킴(위젯 스킴만 자동 생성됨, 앱 스킴은 xcuserdata)
 SlopeMate.xcodeproj/xcshareddata/
+
+# 슬로프·숲 대조 그림(tools/canopy/review.py 출력)
+tools/canopy/review/
+tools/canopy/.venv/
+tools/canopy/__pycache__/

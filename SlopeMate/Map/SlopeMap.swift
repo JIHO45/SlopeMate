@@ -51,25 +51,33 @@ nonisolated struct SlopeMap: Decodable {
         return map
     }
 
-    /// 사용자가 그린 슬로프 선(tools/canopy/lines.py, lines-<리조트>.json). 있으면 OSM 선 대신 이것을 그리고 하강을 맞춘다
-    struct Drawn: Decodable { let slope: String?; let difficulty: String; let line: [[Double]] }
+    /// 사용자가 그린 슬로프 선(tools/canopy/lines.py, lines-<리조트>.json). 있으면 OSM 선 대신 이것을 그리고 하강을 맞춘다.
+    /// name: OSM 이름 대신 쓸 이름(사용자 대조, tools/canopy/line_fixes.py). closed: 이번 시즌 미운영이라 숨김(선은 남겨 다시 켤 수 있게)
+    struct Drawn: Decodable {
+        let slope: String?; let difficulty: String; let line: [[Double]]
+        var name: String? = nil
+        var closed: Bool? = nil
+    }
     private struct DrawnFile: Decodable { let lines: [Drawn] }
 
-    /// 그린 선을 슬로프로: 연결된 OSM 슬로프는 그 ID·이름·OSM ID에 그린 선(난이도는 그린 색), 연결 안 된 선은 새 슬로프(<리조트>-dNN).
+    /// 그린 선을 슬로프로: 연결된 OSM 슬로프는 그 ID·이름(선에 name이 있으면 그것)·OSM ID에 그린 선(난이도는 그린 색), 연결 안 된 선은 새 슬로프(<리조트>-dNN, 이름은 선의 name).
+    /// closed 선은 뺀다.
     /// 그리지 않은 OSM 슬로프는 뺀다(그린 리조트는 그린 것이 전부)
     static func drawn(_ lines: [Drawn], osm: [Slope], resortId: String) -> [Slope] {
+        let lines = lines.filter { $0.closed != true }
         var out: [Slope] = []
         for s in osm {
             let all = lines.filter { $0.slope == s.id && $0.line.count > 1 }
             guard let first = all.first else { continue }
             let mine = all.filter { $0.difficulty == first.difficulty }   // 색이 다른 선은 아래에서 이름 없는 슬로프로
-            out.append(Slope(id: s.id, name: s.name, difficulty: first.difficulty, osmIds: s.osmIds, lines: mine.map(\.line), area: nil))
+            out.append(Slope(id: s.id, name: mine.lazy.compactMap(\.name).first ?? s.name, difficulty: first.difficulty, osmIds: s.osmIds,
+                             lines: mine.map(\.line), area: nil))
         }
         let firstColor = Dictionary(lines.compactMap { l in l.slope.map { ($0, l.difficulty) } }, uniquingKeysWith: { a, _ in a })
         let ids = Set(osm.map(\.id))
         let loose = lines.filter { l in l.line.count > 1 && (l.slope.map { !ids.contains($0) || firstColor[$0] != l.difficulty } ?? true) }
         for (i, l) in loose.enumerated() {
-            out.append(Slope(id: "\(resortId)-d\(String(format: "%02d", i + 1))", name: nil, difficulty: l.difficulty, osmIds: [], lines: [l.line], area: nil))
+            out.append(Slope(id: "\(resortId)-d\(String(format: "%02d", i + 1))", name: l.name, difficulty: l.difficulty, osmIds: [], lines: [l.line], area: nil))
         }
         return out
     }
