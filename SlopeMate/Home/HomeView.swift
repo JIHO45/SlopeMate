@@ -406,14 +406,17 @@ struct HomeView: View {
                             Text("지도 기준").font(.footnote).foregroundStyle(Color.secondaryText)
                         }
                         Text("\(c.total)개").font(.largeTitle.bold()).monospacedDigit().foregroundStyle(Color.accentText)
+                            .padding(.leading, -2)   // 큰 글자 왼쪽 글꼴 여백만큼 당겨 아래 줄과 맞춤
                             .padding(.top, 16)
-                        DifficultyBar(counts: c).padding(.top, 10)
+                        // 9개는 제목 아래에 두고, 막대·범례 묶음은 남는 높이의 위아래를 같게(사용자 2026-11-22)
+                        Spacer(minLength: 16)
+                        DifficultyBar(counts: c)
                         DifficultyLegend(counts: c).padding(.top, 10)
                         if c.unknown > 0 {
                             Text("난이도 정보 없는 슬로프 \(c.unknown)개").font(.footnote).foregroundStyle(Color.secondaryText)
                                 .padding(.top, 4)
                         }
-                        Spacer(minLength: 0)
+                        Spacer(minLength: 16)
                     }
                     .homeCard()
                 }
@@ -424,9 +427,11 @@ struct HomeView: View {
         case .pass:
             if let pass {
                 if let v = pass.value {
-                    RecordCard(icon: "ticket", label: pass.label, value: "\(Int(v.perVisit.rounded()).formatted())원", sub: "1회 방문당")
+                    RecordCard(icon: "ticket", label: pass.label, caption: "1회 방문당", value: "\(Int(v.perVisit.rounded()).formatted())원", sub: nil,
+                               stats: [("가격", "\(v.price.formatted())원"), ("방문", "\(v.visits)일")]
+                                   + (pass.ticket.map { [("리프트권이었다면", "\($0.formatted())원")] } ?? []))
                 } else {
-                    RecordCard(icon: "ticket", label: pass.label, value: "방문 전", sub: "방문하면 1회 방문당 금액을 계산해요")
+                    RecordCard(icon: "ticket", label: pass.label, caption: "방문하면 1회 방문당 금액을 계산해요", value: "방문 전", sub: nil)
                 }
             }
         }
@@ -438,10 +443,12 @@ struct HomeView: View {
         let label = "\(Resort.name(id)) 내 기록"
         let visits = "\(Stats.totals(mine).visitDays)일"
         if let day = mine.first(where: \.isVisit) ?? mine.first {
-            let t = Stats.totals([day])
             let isToday = BusinessDay.same(day.date, .now)
-            let card = RecordCard(icon: "clock", label: label, caption: "이번 시즌", value: visits,
-                                  sub: "\(isToday ? "오늘" : HomeData.monthDay(day.date)) · \(t.runs)회 · \(RecordFormat.km(t.distance))")
+            let season = Stats.totals(mine)
+            // 240 높이에 합계 칸까지 넣으려고 최근 날짜는 머리말로, 보조 줄은 뺀다(카드를 누르면 그날로)
+            let card = RecordCard(icon: "clock", label: label, caption: "이번 시즌 · 최근 \(isToday ? "오늘" : HomeData.monthDay(day.date))", value: visits,
+                                  sub: nil,
+                                  stats: [("런", "\(season.runs)회"), ("거리", RecordFormat.km(season.distance)), ("최고 속도", RecordFormat.kmh(season.maxSpeed))])
             // 기록 중인 하루는 S6가 끝난 기록만 읽어 비어 보인다. 기록 화면(S5)으로
             if isToday, recorder.recording?.resortId == day.resortId {
                 Button { showRecording = true } label: { card }.buttonStyle(.plain)
@@ -500,13 +507,15 @@ private extension View {
     }
 }
 
-/// 홈 기록 카드: 제목 바로 아래 16에 (작은 머리말 +) 큰 숫자 + 보조 줄. 남는 높이는 카드 아래로
+/// 홈 기록 카드: 제목 바로 아래 16에 큰 숫자(+ 그 아래 머리말), 합계 칸·보조 줄은 남는 높이의 가운데
 private struct RecordCard: View {
     var icon: String
     var label: String
     var caption: String?
     var value: String
-    var sub: String
+    var sub: String?
+    /// 이번 시즌 합계 칸(이름, 값). 슬로프 카드 막대·범례 자리
+    var stats: [(String, String)] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -515,12 +524,27 @@ private struct RecordCard: View {
                 Text(label).font(.headline).foregroundStyle(Color.primaryText)
             }
             VStack(alignment: .leading, spacing: 2) {
-                if let caption { Text(caption).font(.subheadline).foregroundStyle(Color.secondaryText) }
+                // 큰 숫자를 맨 위에(슬로프 카드 9개와 같은 높이), 머리말은 그 아래
                 Text(value).font(.largeTitle.bold()).monospacedDigit().foregroundStyle(Color.accentText)
-                Text(sub).font(.subheadline).foregroundStyle(Color.secondaryText)
+                    .padding(.leading, -2)   // 큰 글자 왼쪽 글꼴 여백만큼 당겨 머리말·합계 칸과 맞춤
+                if let caption { Text(caption).font(.subheadline).foregroundStyle(Color.secondaryText) }
             }
             .padding(.top, 16)
-            Spacer(minLength: 0)
+            // 슬로프 카드처럼 큰 숫자 아래 남는 높이의 가운데에 보조 줄(사용자 2026-11-22)
+            Spacer(minLength: 16)
+            if !stats.isEmpty {
+                // 큰 숫자보다 한참 작게, 칸 사이는 같은 간격으로 왼쪽부터(슬로프 범례처럼)
+                HStack(alignment: .top, spacing: 24) {
+                    ForEach(stats, id: \.0) { name, v in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(v).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(Color.primaryText)
+                            Text(name).font(.footnote).foregroundStyle(Color.secondaryText)
+                        }
+                    }
+                }
+            }
+            if let sub { Text(sub).font(.subheadline).foregroundStyle(Color.secondaryText) }
+            Spacer(minLength: 16)
         }
         .homeCard()
     }
@@ -530,13 +554,16 @@ private struct RecordCard: View {
 nonisolated struct PassSummary: Equatable {
     var label: String
     var value: PassValue.Value?
+    /// 리프트권으로 샀다면 쓴 금액(시즌권 화면과 같은 값)
+    var ticket: Int? = nil
 
     /// 이 리조트 시즌권 (R58 홈 ④): 이 리조트를 포함하는 시즌권 중 순서가 가장 앞인 것의 1회 방문당. 없으면 nil
     static func forResort(_ resortId: String, passes: [(pass: SeasonPass, resorts: [String])], days: [Stats.Day], season: String) -> PassSummary? {
         guard let p = passes.filter({ $0.pass.season == season && $0.resorts.contains(resortId) })
                 .min(by: { $0.pass.sortOrder < $1.pass.sortOrder }) else { return nil }
         let r = PassValue.compute(passes, days: days, season: season)
-        return PassSummary(label: p.pass.name, value: r.perPass[p.pass.id] ?? nil)
+        let v = r.perPass[p.pass.id] ?? nil
+        return PassSummary(label: p.pass.name, value: v, ticket: v == nil ? nil : r.ticketValue[p.pass.id])
     }
 }
 

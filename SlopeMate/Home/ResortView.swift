@@ -260,10 +260,13 @@ struct ResortPreviewSheet: View {
             ZStack {
                 if is3D {
                     if let snapshot {
-                        // 아래 84pt는 홈 카드 캡션 자리라 위쪽을 맞춰 자른다
-                        Image(uiImage: snapshot).resizable().scaledToFill()
-                            .frame(maxHeight: .infinity, alignment: .top)
-                            .accessibilityLabel("\(Resort.name(resortId)) 3D 지형 지도")
+                        // 아래는 홈 카드 캡션 자리라 위쪽을 맞춰 자른다(그림 자체 frame 정렬은 가운데로 잘려 슬로프 위 끝이 날아갔다)
+                        Color.clear.overlay(alignment: .top) {
+                            Image(uiImage: snapshot).resizable().scaledToFill()
+                        }
+                        .clipped()
+                        .accessibilityElement()
+                        .accessibilityLabel("\(Resort.name(resortId)) 3D 지형 지도")
                     } else if snapshotDone {
                         Text("3D 지도를 준비하지 못했어요").font(.subheadline).foregroundStyle(Color.secondaryText)
                     } else {
