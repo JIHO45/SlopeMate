@@ -319,10 +319,11 @@ struct DayNoRuns: View {
                 VStack(spacing: 0) {
                     ForEach(Array([("building.2", "실내에 있었어요"),
                                    ("antenna.radiowaves.left.and.right.slash", "GPS 신호가 약했어요"),
-                                   ("cablecar", "리프트만 탔어요")].enumerated()), id: \.offset) { i, c in
+                                   (IconCircle.lift, "리프트만 탔어요")].enumerated()), id: \.offset) { i, c in
                         if i > 0 { Divider().overlay(Color.rowSeparator) }
                         HStack(spacing: 12) {
-                            Image(systemName: c.0).foregroundStyle(Color.secondaryText).frame(width: 24).accessibilityHidden(true)
+                            Group { if c.0 == IconCircle.lift { LiftIcon() } else { Image(systemName: c.0) } }
+                                .foregroundStyle(Color.secondaryText).frame(width: 24).accessibilityHidden(true)
                             Text(c.1)
                             Spacer(minLength: 0)
                         }

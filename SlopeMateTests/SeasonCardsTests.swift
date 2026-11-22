@@ -27,6 +27,11 @@ struct SeasonCardsTests {
         #expect(SeasonCards.order(hasGoal: true, canSetGoal: true, passIds: [a, b], final: false) == [.calendar, .goal, .recap, .pass(a), .pass(b), .passTotal])
     }
 
+    @Test func liftWaitAlwaysLast() {
+        #expect(SeasonCards.order(hasGoal: false, canSetGoal: true, passIds: [], final: false, liftWait: true) == [.calendar, .recap, .goalEmpty, .passEmpty, .liftWait])
+        #expect(SeasonCards.order(hasGoal: true, canSetGoal: false, passIds: [a], final: true, liftWait: true) == [.recap, .calendar, .goal, .pass(a), .liftWait])
+    }
+
     @Test func noVisitsHidesRecap() {
         #expect(SeasonCards.order(hasGoal: false, canSetGoal: true, passIds: [], final: false, hasVisits: false) == [.calendar, .goalEmpty, .passEmpty])
         #expect(SeasonCards.order(hasGoal: true, canSetGoal: true, passIds: [a], final: true, hasVisits: false) == [.calendar, .goal, .pass(a)])

@@ -190,7 +190,7 @@ struct RecordingView: View {
             } else if stopped {
                 Label("기록 멈춤", systemImage: "pause.circle").foregroundStyle(Color.secondaryText)
             } else if today.runs.isEmpty {
-                Label("첫 하강을 기다리는 중", systemImage: "cablecar").foregroundStyle(Color.secondaryText)
+                Label { Text("첫 하강을 기다리는 중") } icon: { LiftIcon() }.foregroundStyle(Color.secondaryText)
             } else if let run = today.runs.last, let t = recorder.points.last?.t, run.end >= t.addingTimeInterval(-20) {
                 Label("내려가는 중", systemImage: "arrow.down.right").foregroundStyle(Color.accentText)
             } else {

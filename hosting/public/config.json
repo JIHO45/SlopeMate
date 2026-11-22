@@ -2,5 +2,6 @@
   "slopeNames": [],
   "crewSync": true,
   "samples": true,
-  "placeNames": true
+  "placeNames": true,
+  "liftWait": false
 }

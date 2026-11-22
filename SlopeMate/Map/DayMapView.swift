@@ -67,12 +67,16 @@ struct DayMapView: View {
     // 시즌 이용권 잠금(R54): 3D·동영상 고화질·하강 상세. 잠긴 기능을 눌러 산 뒤 S18이 닫히면 그 기능으로 이어 간다
     @State private var showTicket = false
     @State private var pastNote = false
-    private enum Resume { case threeD, detail(Int) }
+    private enum Resume { case threeD, detail(Int), waits }
     @State private var resume: Resume?
     // S19 하강 상세(R52): S6 시트를 내린 뒤 밀어 넣고, 돌아오면 다시 올린다(decisions 2026-11-15)
     @State private var showSheet = true
     @State private var pendingDetail: Int?
     @State private var detail: Int?
+    // 내 리프트 대기(R32 v2, 서버 설정 liftWait): 합계 아래 한 줄 → S19처럼 시트를 내린 뒤 리프트별 화면
+    @State private var waits = LiftWaitStats.Summary()
+    @State private var pendingWaits = false
+    @State private var showWaits = false
 
     init(db: AppDatabase, day: Stats.Day, map: SlopeMap, data: DayData?, gaps: [Gap], ratings: [Int: SnowRating], spans: [DateInterval]) {
         (self.db, self.day, self.map, self.data, self.gaps, self.ratings, self.spans) = (db, day, map, data, gaps, ratings, spans)
@@ -189,9 +193,18 @@ struct DayMapView: View {
                 }
             }
         }
-        .sheet(isPresented: $showSheet, onDismiss: { if let i = pendingDetail { pendingDetail = nil; detail = i } }) { sheet }
+        .sheet(isPresented: $showSheet, onDismiss: {
+            if let i = pendingDetail { pendingDetail = nil; detail = i } else if pendingWaits { pendingWaits = false; showWaits = true }
+        }) { sheet }
         .navigationDestination(item: $detail) { i in RunDetailView(db: db, day: day, index: i, route: data?.route ?? [], map: map, prepared3D: prepared3D) }
+        .navigationDestination(isPresented: $showWaits) {
+            LiftWaitView(caption: "\(RecordFormat.monthDay(day.date)) · \(Resort.name(day.resortId))", summary: waits)
+        }
         .onChange(of: detail) { if detail == nil { showSheet = true } }
+        .onChange(of: showWaits) { if !showWaits { showSheet = true } }
+        .task(id: data?.route) {
+            waits = ServerConfig.config.liftWait ? LiftWaitStats.summary(LiftWaitStats.day((try? db.allLiftWaits()) ?? [], day)) : .init()
+        }
         .task(id: playing) { await play() }
         .task { ground = await Terrain.ground(map) }
         .onChange(of: progress) { follow() }
@@ -200,6 +213,7 @@ struct DayMapView: View {
             guard lock != .open else { return }
             if is3D { switch3D(false) }
             detail = nil
+            showWaits = false
         }
         .onChange(of: scheme, initial: true) { darkState = scheme == .dark }
         // 경로가 바뀌면(다시 읽기) 3D 장면은 다음에 켤 때 다시 만든다
@@ -271,6 +285,14 @@ struct DayMapView: View {
         showSheet = false
     }
 
+    /// 리프트 대기 줄: 열려 있으면 시트를 내린 뒤 리프트별, 잠겨 있으면 S18·지난 시즌 안내
+    private func openWaits() {
+        playing = false
+        guard lock == .open else { resume = .waits; return unlock() }
+        pendingWaits = true
+        showSheet = false
+    }
+
     /// S18이 닫혔을 때 사서 열렸으면 누른 기능으로
     private func resumeAfterTicket() {
         defer { resume = nil }
@@ -278,6 +300,7 @@ struct DayMapView: View {
         switch resume {
         case .threeD: toggle3D()
         case .detail(let i): openDetail(i)
+        case .waits: openWaits()
         case nil: break
         }
     }
@@ -407,9 +430,15 @@ struct DayMapView: View {
                 .dynamicTypeSize(.xSmall...(small ? .accessibility1 : .accessibility5))
                 .fixedSize(horizontal: false, vertical: true) // 목록에 밀려 세로로 눌리면 합계 글씨가 줄어든다
                 ScrollView {
-                    DayRunList(day: day, gaps: gaps, ratings: ratings, highlight: selected ?? playingRun, pinned: true, onTap: seek,
-                               onDetail: data.map { _ in openDetail }, detailLocked: lock != .open)
-                        .padding(.bottom, 24)
+                    VStack(spacing: 12) {
+                        if waits.count > 0 {
+                            Button { openWaits() } label: { LiftWaitRow(summary: waits, locked: lock != .open) }
+                                .buttonStyle(.plain)
+                        }
+                        DayRunList(day: day, gaps: gaps, ratings: ratings, highlight: selected ?? playingRun, pinned: true, onTap: seek,
+                                   onDetail: data.map { _ in openDetail }, detailLocked: lock != .open)
+                    }
+                    .padding(.bottom, 24)
                 }
                 .scrollIndicators(.hidden)
             } else {
@@ -554,6 +583,16 @@ enum MapLayerIcon: Shape {
             path.addLines([p(22, 10), p(22, 18), p(15, 18), p(15, 30), p(29, 30), p(31, 36)])
         }
         return path
+    }
+}
+
+/// 리프트 아이콘: 지도 표시 버튼과 같은 직접 그린 체어(MapLayerIcon.lift). 글자 크기를 따라 커지고 색은 foregroundStyle
+struct LiftIcon: View {
+    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 22
+    var body: some View {
+        MapLayerIcon.lift.stroke(style: StrokeStyle(lineWidth: min(size, 30) * 0.1, lineCap: .round, lineJoin: .round))
+            .frame(width: min(size, 30), height: min(size, 30))
+            .accessibilityHidden(true)
     }
 }
 

@@ -30,6 +30,41 @@ nonisolated struct SnowRating: Codable, Hashable, FetchableRecord, PersistableRe
     static let databaseTableName = "snow_rating"
 }
 
+/// 내 리프트 대기 합계 (R32, 확정 v2). 하루는 그 영업일·리조트, 시즌은 탑승 영업일의 시즌. 리프트별은 합계가 긴 순.
+/// 일행을 기다린 시간도 들어간다(decisions 2026-11-20).
+nonisolated enum LiftWaitStats {
+    struct Lift: Equatable {
+        var resortId: String, liftId: String
+        var count: Int, total: Double
+        var avg: Double { total / Double(count) }
+    }
+
+    struct Summary: Equatable {
+        var count = 0, total = 0.0
+        var lifts: [Lift] = []
+        var avg: Double { count > 0 ? total / Double(count) : 0 }
+    }
+
+    static func summary(_ waits: [LiftWait]) -> Summary {
+        let groups = Dictionary(grouping: waits) { (w: LiftWait) -> [String] in [w.resortId, w.liftId] }
+        let lifts: [Lift] = groups.values.map { (g: [LiftWait]) -> Lift in
+            Lift(resortId: g[0].resortId, liftId: g[0].liftId, count: g.count, total: g.map(\.waitSec).reduce(0, +))
+        }
+        let sorted = lifts.sorted { (a: Lift, b: Lift) -> Bool in
+            a.total != b.total ? a.total > b.total : (a.resortId, a.liftId) < (b.resortId, b.liftId)
+        }
+        return Summary(count: waits.count, total: waits.map(\.waitSec).reduce(0, +), lifts: sorted)
+    }
+
+    static func day(_ waits: [LiftWait], _ day: Stats.Day) -> [LiftWait] {
+        waits.filter { $0.resortId == day.resortId && BusinessDay.start(of: $0.boardAt) == day.date }
+    }
+
+    static func season(_ waits: [LiftWait], _ season: String) -> [LiftWait] {
+        waits.filter { Stats.season(of: BusinessDay.start(of: $0.boardAt)) == season }
+    }
+}
+
 /// 기록 중 화면의 설질 질문 칸 (R11, 04-flows 설질 평가 칸).
 nonisolated enum SnowPrompt {
     /// 하강 끝에서 이 시간이 지나면 칸을 닫고 답을 받지 않는다
@@ -79,6 +114,11 @@ nonisolated extension AppDatabase {
 
     func liftWaits(_ rec: Recording) throws -> [LiftWait] {
         try queue.read { try LiftWait.filter(Column("recordingId") == rec.id).order(Column("boardAt")).fetchAll($0) }
+    }
+
+    /// 내 리프트 대기(R32)용 전체. 동의와 상관없이 기기에 남은 대기를 모두 쓴다(보내지 않은 것도 내 기록)
+    func allLiftWaits() throws -> [LiftWait] {
+        try queue.read { try LiftWait.order(Column("boardAt")).fetchAll($0) }
     }
 
     /// 동의를 끄면 아직 안 보낸 표본을 버린다(R12)

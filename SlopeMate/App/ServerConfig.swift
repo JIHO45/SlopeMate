@@ -13,9 +13,11 @@ enum ServerConfig {
         var samples: Bool
         /// false면 3D 하강 상세의 리프트 이름표를 숨긴다(오표기 차단 스위치, decisions 2026-11-16). 키가 없는 예전 파일도 켜짐으로 읽는다
         var placeNames: Bool = true
+        /// true면 내 리프트 대기(R32)를 S6·S9·S18에 보인다. R10 오차가 기준 안에 들어온 뒤 켠다. 키가 없는 예전 파일은 꺼짐
+        var liftWait: Bool = false
 
-        init(slopeNames: [String], crewSync: Bool, samples: Bool, placeNames: Bool = true) {
-            (self.slopeNames, self.crewSync, self.samples, self.placeNames) = (slopeNames, crewSync, samples, placeNames)
+        init(slopeNames: [String], crewSync: Bool, samples: Bool, placeNames: Bool = true, liftWait: Bool = false) {
+            (self.slopeNames, self.crewSync, self.samples, self.placeNames, self.liftWait) = (slopeNames, crewSync, samples, placeNames, liftWait)
         }
 
         init(from decoder: Decoder) throws {
@@ -24,6 +26,7 @@ enum ServerConfig {
             crewSync = try c.decode(Bool.self, forKey: .crewSync)
             samples = try c.decode(Bool.self, forKey: .samples)
             placeNames = try c.decodeIfPresent(Bool.self, forKey: .placeNames) ?? true
+            liftWait = try c.decodeIfPresent(Bool.self, forKey: .liftWait) ?? false
         }
     }
 

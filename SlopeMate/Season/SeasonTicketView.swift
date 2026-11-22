@@ -450,11 +450,15 @@ struct Feature: Identifiable {
 }
 
 extension SeasonTicketView {
-    static let features = [
+    static let base = [
         Feature(id: "ticket-3d", title: "내 경로 3D", detail: "내가 탄 경로를 3D 지형 위에서 돌려 보고 재생해요", short: "내 경로를 3D 지형 위에서", icon: "cube"),
         Feature(id: "ticket-video", title: "고화질 동영상", detail: "1080p, 워터마크 없이 공유해요", short: "1080p, 워터마크 없이 공유", icon: "video"),
         Feature(id: "ticket-run", title: "하강 상세", detail: "내려오는 모습과 지금 속도·고도를 함께 봐요", short: "속도·고도 그래프와 최고 속도", icon: "chart.xyaxis.line"),
     ]
+    static let liftWait = Feature(id: "ticket-wait", title: "내 리프트 대기", detail: "리프트마다 기다린 시간을 하루·시즌으로 모아 봐요",
+                                  short: "리프트별 대기 시간", icon: IconCircle.lift)
+    /// 내 리프트 대기(R32)는 서버 설정 liftWait가 켜진 뒤 끝에 더한다(S18 v2)
+    static var features: [Feature] { base + (ServerConfig.config.liftWait ? [liftWait] : []) }
 }
 
 /// 미리보기 그림. 캡처가 없으면 시안의 자리 표시를 도형으로 그린다.
@@ -479,6 +483,7 @@ private struct FeatureArt: View {
                 case "ticket-3d": Slope3D()
                 case "ticket-video": video
                 case "ticket-run": run
+                case "ticket-wait": wait
                 default: recap
                 }
             }
@@ -527,6 +532,37 @@ private struct FeatureArt: View {
             .background(Color.card)
             .overlay(alignment: .top) { Color.rowDivider.frame(height: 1) }
         }
+    }
+
+    /// 리프트별 대기 목록 자리 표시 (S18 v2)
+    private var wait: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("리프트 대기").fontWeight(.semibold)
+                Spacer()
+                Text("\(Text("47분").fontWeight(.semibold).foregroundStyle(Color.primaryText)) · 6회").foregroundStyle(Color.secondaryText)
+            }
+            .padding(.horizontal, 4)
+            VStack(spacing: 0) {
+                waitRow("아테나 리프트", "2회", "21분")
+                Color.rowDivider.frame(height: 1)
+                waitRow("곤돌라 1", "3회", "18분")
+            }
+            .background(Color.card, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.cardBorder))
+        }
+        .font(.system(size: 15)).monospacedDigit().foregroundStyle(Color.primaryText)
+        .padding(.horizontal, 28)
+    }
+
+    private func waitRow(_ name: String, _ count: String, _ time: String) -> some View {
+        HStack(spacing: 10) {
+            Text(name)
+            Spacer()
+            Text(count).foregroundStyle(Color.secondaryText)
+            Text(time).fontWeight(.semibold).frame(width: 44, alignment: .trailing)
+        }
+        .padding(.horizontal, 14).frame(height: 44)
     }
 
     private var recap: some View {

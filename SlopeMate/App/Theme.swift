@@ -70,12 +70,15 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 
-/// 카드 머리의 둥근 아이콘 (기본 48pt, 홈 기록 카드는 36pt, 보조 면)
+/// 카드 머리의 둥근 아이콘 (기본 48pt, 홈 기록 카드는 36pt, 보조 면). systemName이 `IconCircle.lift`면 직접 그린 리프트(LiftIcon)
 struct IconCircle: View {
+    static let lift = "slopemate.lift"
     var systemName: String
     var size: CGFloat = 48
     var body: some View {
-        Image(systemName: systemName)
+        Group {
+            if systemName == Self.lift { LiftIcon() } else { Image(systemName: systemName) }
+        }
             .font(size < 48 ? .body : .title3)
             .foregroundStyle(Color.accentText)
             .frame(width: size, height: size)

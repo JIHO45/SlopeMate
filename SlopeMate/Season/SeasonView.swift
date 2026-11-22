@@ -23,6 +23,11 @@ struct SeasonView: View {
     @State private var totals = Stats.Totals()
     @State private var passValue: PassValue.Result?
     @State private var recapCount = 0
+    /// 내 리프트 대기(R32, 서버 설정 liftWait). 꺼져 있으면 비어 있어 카드가 없다
+    @State private var waits = LiftWaitStats.Summary()
+    @Environment(SeasonTicket.self) private var ticket
+    @State private var showTicket = false
+    @State private var pastNote = false
     @ScaledMetric(relativeTo: .largeTitle) private var bigSize = 64
     @ScaledMetric(relativeTo: .title) private var unitSize = 28
 
@@ -50,6 +55,8 @@ struct SeasonView: View {
                 let t = Stats.totals(Stats.days(days, inSeason: goalSeason))
                 SeasonGoalSheet(season: goalSeason, visitDays: t.visitDays, runs: t.runs, initial: SeasonGoal.load(season: goalSeason))
             }
+            .sheet(isPresented: $showTicket) { SeasonTicketView() }
+            .alert(SeasonRecap.pastSeasonNote, isPresented: $pastNote) { Button("확인", role: .cancel) {} }
         }
     }
 
@@ -71,13 +78,14 @@ struct SeasonView: View {
         totals = Stats.totals(mine)
         passValue = PassValue.compute(passes, days: days, season: season)
         recapCount = SeasonRecapView.cards(days: days, season: season, passes: passes).count
+        waits = ServerConfig.config.liftWait ? LiftWaitStats.summary(LiftWaitStats.season((try? db.allLiftWaits()) ?? [], season)) : .init()
         reorder()
     }
 
     private func reorder() {
         list = SeasonCards.order(hasGoal: goal != nil, canSetGoal: season == HomeData.currentSeason(),
                                  passIds: passes.map(\.pass.id), final: SeasonRecap.isFinal(season: season),
-                                 hasVisits: totals.visitDays > 0)
+                                 hasVisits: totals.visitDays > 0, liftWait: waits.count > 0)
         if page.map(list.contains) != true { page = list.first }
     }
 
@@ -218,6 +226,43 @@ struct SeasonView: View {
                 EmptyCard(icon: "ticket", title: "시즌권 등록", note: "가격을 넣으면 1회 방문당 금액을 계산해요")
             }
             .buttonStyle(.plain)
+        case .liftWait: liftWaitCard
+        }
+    }
+
+    // MARK: 리프트 대기 (R32, 확정 v11 카드 · v2 시즌 리프트별)
+
+    @ViewBuilder private var liftWaitCard: some View {
+        // S6와 같이 미리보기(-SMDemo)면 연다
+        let lock = DemoSeed.on ? .open : SeasonRecap.lock(season: season, owned: ticket.seasons, current: SeasonTicket.season(purchase: .now))
+        if lock == .open {
+            // 가장 오래: 한 번에 평균이 가장 긴 리프트
+            let top = waits.lifts.max { $0.avg != $1.avg ? $0.avg < $1.avg : $0.total < $1.total }
+            NavigationLink { LiftWaitView(caption: "\(season) 시즌", summary: waits, byResort: true) } label: {
+                CardShell(icon: IconCircle.lift, title: "리프트 대기",
+                          footer: top.map { Text("가장 오래 · \(Text("\(Resort.name($0.resortId)) \(LiftWaitView.liftName($0))").fontWeight(.semibold).foregroundStyle(Color.primaryText)) 평균 \(RecordFormat.duration($0.avg))") }) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("이번 시즌 기다린 시간").font(.footnote).foregroundStyle(Color.secondaryText)
+                        Text(RecordFormat.duration(waits.total)).font(.largeTitle.bold()).monospacedDigit().foregroundStyle(Color.accentText)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                        Text(LiftWaitView.countLine(waits.count, avg: waits.avg)).font(.subheadline).foregroundStyle(Color.secondaryText).monospacedDigit()
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button { if lock == .pastSeason { pastNote = true } else { showTicket = true } } label: {
+                CardShell(icon: IconCircle.lift, title: "리프트 대기", accessory: Text("\(Image(systemName: "lock.fill")) 이용권"),
+                          footer: Text("\(Text("시즌 이용권").fontWeight(.semibold).foregroundStyle(Color.primaryText))으로 볼 수 있어요")) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("이번 시즌 기다린 시간").font(.footnote).foregroundStyle(Color.secondaryText)
+                        Text("–시간 –분").font(.largeTitle.bold()).foregroundStyle(Color.secondaryText).opacity(0.5).accessibilityHidden(true)
+                        Text("리프트마다 얼마나 기다렸는지").font(.subheadline).foregroundStyle(Color.secondaryText)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("리프트 대기, 시즌 이용권 필요")
         }
     }
 
