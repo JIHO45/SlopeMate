@@ -32,8 +32,8 @@ final class SlopeMateUITests: XCTestCase {
         tabs.buttons["시즌"].tap()
         app.buttons["시즌권 관리"].firstMatch.tap()
         XCTAssertTrue(app.navigationBars["시즌권"].waitForExistence(timeout: 5))
-        tabs.buttons["기록"].tap()
-        XCTAssertTrue(tabs.buttons["기록"].isSelected)
+        tabs.buttons["홈"].tap()
+        XCTAssertTrue(tabs.buttons["홈"].isSelected)
     }
 
     @MainActor

@@ -468,7 +468,7 @@ struct DayMapView: View {
 }
 
 /// iOS 26부터 시트는 자동으로 유리, 그 전에는 지도가 흐리게 비치는 재질 (07-visual-design 6장)
-private struct SheetBackground: ViewModifier {
+struct SheetBackground: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26, *) { content } else { content.presentationBackground(.regularMaterial) }
     }

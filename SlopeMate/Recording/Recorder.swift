@@ -83,6 +83,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
     static let dayEndKey = "dayEndNotice"
 
     static var lastResortId: String? { UserDefaults.standard.string(forKey: "lastResortId") }
+    static var chosenResortId: String? { UserDefaults.standard.string(forKey: "chosenResortId") }
 
     static var lowStorage: Bool {
         let v = try? URL.homeDirectory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
@@ -175,6 +176,7 @@ final class Recorder: NSObject, CLLocationManagerDelegate {
         do {
             let rec = try db.createRecording(resortId: resortId, at: .now)
             UserDefaults.standard.set(resortId, forKey: "lastResortId")
+            UserDefaults.standard.set(resortId, forKey: "chosenResortId")
             recording = rec
             points = []
             vehicle = []

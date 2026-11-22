@@ -87,5 +87,7 @@ struct SeasonPassTests {
         #expect(AppDatabase.defaultResort(homes: ["high1", "o2"], last: "vivaldi") == "high1") // 한 번 고른 홈 밖 리조트는 기본값 아님
         #expect(AppDatabase.defaultResort(homes: [], last: "vivaldi") == "vivaldi")
         #expect(AppDatabase.defaultResort(homes: [], last: nil) == nil)
+        #expect(AppDatabase.defaultResort(homes: ["high1", "o2"], last: "o2", chosen: "vivaldi") == "vivaldi")
+        #expect(AppDatabase.defaultResort(homes: [], last: nil, chosen: "vivaldi") == "vivaldi")
     }
 }

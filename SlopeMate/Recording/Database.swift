@@ -347,7 +347,9 @@ nonisolated final class AppDatabase: Sendable {
 
     /// 기록 시작 기본 리조트: 마지막으로 기록한 리조트가 홈 리조트면 그것, 아니면 첫 홈 리조트.
     /// 홈에 없는 리조트로 한 번 기록한 것은 기본값이 되지 않는다(R1 "이번 기록에만").
-    nonisolated static func defaultResort(homes: [String], last: String?) -> String? {
+    /// 홈에서 고른 리조트(chosen)가 있으면 그것이 우선(2026-11-20 결정).
+    nonisolated static func defaultResort(homes: [String], last: String?, chosen: String? = nil) -> String? {
+        if let chosen { return chosen }
         if let last, homes.contains(last) { return last }
         return homes.first ?? last
     }

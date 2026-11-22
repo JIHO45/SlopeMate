@@ -32,7 +32,7 @@ struct SettingsView: View {
         List {
             Section("기록") {
                 Button { editingHomes = true } label: {
-                    row("홈 리조트", value: homesText, chevron: true)
+                    row("즐겨찾기", value: homesText, chevron: true)
                 }
                 NavigationLink {
                     SeasonPassListView(db: db, season: HomeData.currentSeason())

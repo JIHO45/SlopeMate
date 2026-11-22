@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// 기록 시작 흐름 (B3 확정, 04-flows 1장): S1 홈 리조트 선택, S3 리조트 고르기, 첫 기록 익명 동의, S4 위치 권한, S7 끊김 복구·영업일 끝 안내.
+// 기록 시작 흐름 (B3 확정, 04-flows 1장): S1 즐겨찾는 리조트 선택, S3 리조트 고르기, 첫 기록 익명 동의, S4 위치 권한, S7 끊김 복구·영업일 끝 안내.
 
 extension Resort {
     /// 목록 묶음(지역)과 아래 줄(도시). 내장 리조트 12곳 (S1·S3 시안).
@@ -40,6 +40,8 @@ private struct ResortRow<Mark: View>: View {
     var name: String
     var detail: String
     var selected: Bool
+    /// S1만: 표시 왼쪽에 미리보기 버튼. 행 버튼 안에 넣지 않고 위에 겹쳐 따로 누르게 한다.
+    var preview: (() -> Void)? = nil
     @ViewBuilder var mark: Mark
     var tap: () -> Void
 
@@ -51,6 +53,7 @@ private struct ResortRow<Mark: View>: View {
                     Text(detail).font(.subheadline).foregroundStyle(Color.secondaryText)
                 }
                 Spacer(minLength: 0)
+                if preview != nil { Color.clear.frame(width: 44, height: 44) }
                 mark
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
@@ -61,6 +64,22 @@ private struct ResortRow<Mark: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityActions { if let preview { Button("미리보기", action: preview) } }
+        .overlay(alignment: .trailing) {
+            if let preview {
+                // 숨긴 표시가 같은 폭을 차지해 행 안의 빈자리에 정확히 놓인다
+                HStack(spacing: 12) {
+                    Button(action: preview) {
+                        Image(systemName: "map").font(.body.weight(.semibold)).foregroundStyle(Color.accentText)
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(name) 미리보기")
+                    mark.hidden()
+                }
+                .padding(.trailing, 16)
+            }
+        }
     }
 }
 
@@ -79,6 +98,7 @@ private struct RowCard<Content: View>: View {
 private struct RegionList<Mark: View>: View {
     var isSelected: (String) -> Bool
     var tap: (String) -> Void
+    var preview: ((String) -> Void)? = nil
     @ViewBuilder var mark: (Bool) -> Mark
 
     var body: some View {
@@ -90,7 +110,7 @@ private struct RegionList<Mark: View>: View {
                     RowCard {
                         ForEach(group.resorts) { r in
                             let on = isSelected(r.id)
-                            ResortRow(name: r.name, detail: r.city, selected: on, mark: { mark(on) }) { tap(r.id) }
+                            ResortRow(name: r.name, detail: r.city, selected: on, preview: preview.map { p in { p(r.id) } }, mark: { mark(on) }) { tap(r.id) }
                         }
                     }
                 }
@@ -164,7 +184,7 @@ private struct SheetHeader: View {
     }
 }
 
-// MARK: S1 홈 리조트 선택 (v3)
+// MARK: S1 즐겨찾는 리조트 선택 (v3)
 
 /// 첫 실행에 한 번, 탭 위 전체 화면. 고른 순서가 S3 목록 순서가 된다. 저장에 성공해야 완료로 남긴다.
 struct HomeSetupView: View {
@@ -174,6 +194,8 @@ struct HomeSetupView: View {
     var done: () -> Void
     @State private var picked: [String] = []
     @State private var saveError: String?
+    @State private var cache = WeatherCache()
+    @State private var previewing: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -182,7 +204,7 @@ struct HomeSetupView: View {
                     .frame(minHeight: 44).padding(.horizontal, 20).padding(.top, 8)
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("자주 가는 리조트").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                Text("즐겨찾는 리조트").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
                 Text("선택한 리조트를 기록 시작 화면에 먼저 보여드려요. 여러 곳을 선택할 수 있어요.")
                     .foregroundStyle(Color.secondaryText)
             }
@@ -212,7 +234,7 @@ struct HomeSetupView: View {
             }
 
             ScrollView {
-                RegionList(isSelected: picked.contains, tap: toggle) { CheckCircle(on: $0) }
+                RegionList(isSelected: picked.contains, tap: toggle, preview: { previewing = $0 }) { CheckCircle(on: $0) }
                     .padding(.horizontal, 16).padding(.vertical, 16)
             }
         }
@@ -221,7 +243,7 @@ struct HomeSetupView: View {
             VStack(spacing: 10) {
                 BottomButton(title: picked.isEmpty ? nil : "\(picked.count)곳 선택 완료") { save(picked) }
                 Button { save([]) } label: {
-                    Text("자주 가는 곳이 없어요").font(.body.weight(.semibold)).foregroundStyle(Color.primaryText)
+                    Text("즐겨찾을 곳이 없어요").font(.body.weight(.semibold)).foregroundStyle(Color.primaryText)
                         .frame(maxWidth: .infinity, minHeight: 52)
                         .background(Color.card, in: Capsule())
                         .overlay(Capsule().strokeBorder(Color.cardBorder))
@@ -234,6 +256,11 @@ struct HomeSetupView: View {
         }
         .background(Color.bg)
         .task { picked = (try? db.homeResorts()) ?? [] }
+        .sheet(isPresented: Binding(get: { previewing != nil }, set: { if !$0 { previewing = nil } })) {
+            if let id = previewing {
+                ResortPreviewSheet(resortId: id, cache: cache, picked: picked.contains(id)) { toggle(id) }
+            }
+        }
         .alert("저장하지 못했어요", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button("확인") {}
         } message: { Text(saveError ?? "") }
@@ -255,10 +282,11 @@ struct HomeSetupView: View {
 
 // MARK: S3 기록 시작 시트 (작은 시트 v2, 전체 목록 v3)
 
-/// 홈 리조트 중 하나(기본: 마지막으로 기록한 리조트)를 고르거나, 전체 목록에서 이번 기록만의 리조트를 고른다.
-/// 홈 리조트가 없으면 전체 목록이 바로 열린다(X로 닫음).
+/// 즐겨찾기 중 하나(기본: preferred, 없으면 마지막으로 기록한 리조트)를 고르거나, 전체 목록에서 이번 기록만의 리조트를 고른다.
+/// preferred가 즐겨찾기 밖이면 맨 위에 더한다. 고를 목록이 비면 전체 목록이 바로 열린다(X로 닫음).
 struct ResortPickSheet: View {
     let homes: [String]
+    var preferred: String? = nil
     var choose: (String) -> Void
     @State private var selected: String?
     @State private var other: String?
@@ -266,11 +294,18 @@ struct ResortPickSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
 
-    init(homes: [String], choose: @escaping (String) -> Void) {
+    init(homes: [String], preferred: String? = nil, choose: @escaping (String) -> Void) {
         self.homes = homes
+        self.preferred = preferred
         self.choose = choose
-        _selected = State(initialValue: AppDatabase.defaultResort(homes: homes, last: Recorder.lastResortId))
-        _all = State(initialValue: homes.isEmpty)
+        _selected = State(initialValue: preferred ?? AppDatabase.defaultResort(homes: homes, last: Recorder.lastResortId))
+        _all = State(initialValue: homes.isEmpty && preferred == nil)
+    }
+
+    /// 작은 시트 목록: 즐겨찾기 밖의 preferred를 맨 위에
+    private var shortList: [String] {
+        guard let preferred, !homes.contains(preferred) else { return homes }
+        return [preferred] + homes
     }
 
     var body: some View {
@@ -284,7 +319,7 @@ struct ResortPickSheet: View {
         .presentationBackground(Color.bg) // 유리 시트 뒤로 기록 시작 카드가 비쳐 글자가 묻힌다
     }
 
-    private var smallHeight: CGFloat { 270 + 64 * CGFloat(min(homes.count, 4)) }
+    private var smallHeight: CGFloat { 270 + 64 * CGFloat(min(shortList.count, 4)) }
 
     private var small: some View {
         VStack(spacing: 12) {
@@ -293,7 +328,7 @@ struct ResortPickSheet: View {
                 VStack(spacing: 12) {
                     SheetHeader(back: false, title: "어디서 타나요?", subtitle: "이번 기록을 남길 리조트를 선택해 주세요.") { dismiss() }
                     RowCard {
-                        ForEach(homes, id: \.self) { id in
+                        ForEach(shortList, id: \.self) { id in
                             let r = Resort.all.first { $0.id == id }
                             ResortRow(name: Resort.name(id), detail: id == Recorder.lastResortId ? "마지막으로 기록한 리조트" : r?.place ?? "",
                                       selected: selected == id, mark: { CheckMark(on: selected == id) }) { selected = id }
@@ -304,7 +339,7 @@ struct ResortPickSheet: View {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 0) {
                                 Text("다른 리조트 찾기").font(.body.weight(.semibold)).foregroundStyle(Color.accentText)
-                                Text("이번 기록에만 적용돼요").font(.subheadline).foregroundStyle(Color.secondaryText)
+                                Text("즐겨찾기에는 추가하지 않아요").font(.subheadline).foregroundStyle(Color.secondaryText)
                             }
                             Spacer(minLength: 0)
                             Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.accentText)
@@ -325,9 +360,9 @@ struct ResortPickSheet: View {
             // 머리말도 목록과 함께 스크롤된다(큰 글씨에서 머리말이 목록 자리를 차지하지 않게)
             ScrollView {
                 VStack(spacing: 12) {
-                    SheetHeader(back: !homes.isEmpty, title: "어디서 타나요?",
-                                subtitle: homes.isEmpty ? "자주 가는 리조트가 없어 전체 목록을 보여드려요" : "이번 기록에만 적용돼요") {
-                        if homes.isEmpty { dismiss() } else { all = false; other = nil }
+                    SheetHeader(back: !shortList.isEmpty, title: "어디서 타나요?",
+                                subtitle: shortList.isEmpty ? "즐겨찾기가 없어 전체 목록을 보여드려요" : "즐겨찾기에는 추가하지 않아요") {
+                        if shortList.isEmpty { dismiss() } else { all = false; other = nil }
                     }
                     RegionList(isSelected: { other == $0 }, tap: { other = $0 }) { CheckMark(on: $0) }
                         .padding(.vertical, 4)
@@ -685,7 +720,7 @@ struct WelcomeView: View {
     }
 }
 
-/// 첫 실행: O1 → S1. S1을 저장하거나 "자주 가는 곳이 없어요"를 누르면 끝(R51)
+/// 첫 실행: O1 → S1. S1을 저장하거나 "즐겨찾을 곳이 없어요"를 누르면 끝(R51)
 struct FirstRunView: View {
     let db: AppDatabase
     var done: () -> Void

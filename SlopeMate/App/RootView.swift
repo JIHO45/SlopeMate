@@ -111,7 +111,7 @@ struct RootView: View {
     private var tabs: some View {
         TabView(selection: $tab) {
             page(HomeView(recorder: recorder, showRecording: $showRecording, setupShown: setup))
-                .tabItem { Label("기록", systemImage: "figure.skiing.downhill") }.tag(Tab.record)
+                .tabItem { Label("홈", systemImage: "house") }.tag(Tab.record)
             page(SeasonView(db: recorder.db))
                 .tabItem { Label("시즌", systemImage: "calendar") }.tag(Tab.season)
             page(CrewTab(account: account, crews: crews, summary: summary, covered: setup))
