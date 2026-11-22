@@ -99,6 +99,12 @@ private struct DayPager: View {
     @State private var stillDone = false
     @State private var showPhoto = false   // ⋯에서 사진을 고르면 붙은 뒤 2장으로
     @Environment(\.colorScheme) private var systemScheme
+    // 이미지로 공유(R31): 3D는 시즌 이용권, 없으면 2D 지도. 경로가 담기면 처음 한 번 알린다
+    @Environment(SeasonTicket.self) private var ticket
+    @AppStorage("shareNoticeShown") private var noticeShown = false
+    @State private var pendingShare: ShareImage.Kind?
+    @State private var sharing = false
+    @State private var showTicket = false
 
     private static let teal = Color(red: 0x0F / 255, green: 0x3D / 255, blue: 0x45 / 255)
     private var resort: String { Resort.name(day.resortId) }
@@ -133,6 +139,27 @@ private struct DayPager: View {
         .onChange(of: photo) { _, p in
             if showPhoto, p != nil { showPhoto = false; withAnimation { page = 1 } }
         }
+        .alert("오늘 경로가 담겨요", isPresented: Binding { pendingShare != nil } set: { if !$0 { pendingShare = nil } }) {
+            Button("취소", role: .cancel) {}
+            Button("계속") { noticeShown = true; if let k = pendingShare { share(k) } }
+        } message: {
+            Text(ShareImage.routeNotice)
+        }
+        .sheet(isPresented: $showTicket) { SeasonTicketView() }
+    }
+
+    private var lock: SeasonRecap.Lock { DayMapView.lock(day: day.date, owned: ticket.seasons) }
+
+    /// 보이는 장 기준: 사진 장이면 사진, 3D 장이면 3D(이용권 없으면 2D 지도)
+    private func kind(_ i: Int) -> ShareImage.Kind { i == 1 && photo != nil ? .photo : lock == .open ? .threeD : .map }
+
+    private func share(_ k: ShareImage.Kind) {
+        if k.hasRoute, !noticeShown { pendingShare = k; return }
+        sharing = true
+        Task {
+            await ShareImage.share(k, day: day, db: db)
+            sharing = false
+        }
     }
 
     /// 4:3 장: 그림 + 아래 유리 띠 + 오른쪽 위 ⋯
@@ -143,7 +170,7 @@ private struct DayPager: View {
             .aspectRatio(4 / 3, contentMode: .fit)
             .overlay { content() }
             .overlay(alignment: .bottom) { caption.environment(\.colorScheme, scheme) }
-            .overlay(alignment: .topTrailing) { menu.padding(10).environment(\.colorScheme, scheme) }
+            .overlay(alignment: .topTrailing) { menu(i).padding(10).environment(\.colorScheme, scheme) }
             .clipShape(RoundedRectangle(cornerRadius: 28))
             .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
             .containerRelativeFrame(.horizontal) { w, _ in w - 28 } // w는 좌우 여백 16을 뺀 폭, 다음 장이 보이게
@@ -233,8 +260,19 @@ private struct DayPager: View {
     private var session: String { RecordFormat.sessionNames(day) }
     private var km: String { RecordFormat.km(day.runs.reduce(0) { $0 + $1.distance }) }
 
-    private var menu: some View {
-        Menu {
+    private func menu(_ i: Int) -> some View {
+        let k = kind(i)
+        return Menu {
+            Section {
+                Button { share(k) } label: {
+                    Label { Text("이미지로 공유")
+                        Text(k == .photo ? "이 사진 위 오늘 요약" : k == .threeD ? "이 3D 그림 위 오늘 요약" : "2D 지도 위 오늘 요약")
+                    } icon: { Image(systemName: "square.and.arrow.up") }
+                }
+                if k == .map, lock == .ticket {
+                    Button { showTicket = true } label: { Label("이용권: 3D 그림으로 공유", systemImage: "lock") }
+                }
+            }
             if photo == nil {
                 Button("사진 붙이기", systemImage: "photo.badge.plus") { showPhoto = true; pickPhoto() }
             } else {
@@ -243,11 +281,14 @@ private struct DayPager: View {
             }
             Button("기록 지우기", systemImage: "trash", role: .destructive, action: delete)
         } label: {
-            Image(systemName: "ellipsis").font(.body.weight(.bold))
-                .frame(width: 44, height: 44)
-                .modifier(MenuCircle())
+            Group {
+                if sharing { ProgressView() } else { Image(systemName: "ellipsis").font(.body.weight(.bold)) }
+            }
+            .frame(width: 44, height: 44)
+            .modifier(MenuCircle())
         }
-        .accessibilityLabel("\(resort) 기록 더 보기")
+        .disabled(sharing)
+        .accessibilityLabel(sharing ? "공유 이미지 만드는 중" : "\(resort) 기록 더 보기")
     }
 }
 

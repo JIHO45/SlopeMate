@@ -123,6 +123,34 @@ import UIKit
     }
 
     private static func render(_ day: Stats.Day, name: String, runs: [RouteSegment], map: SlopeMap, dir: URL) async -> UIImage? {
+        guard let cg = await snapshot(runs: runs, map: map, size: size, top: 0, bottom: size.height * 0.25 + 24, scale: scale) else { return nil }
+        // 렌더 중에 기록을 지웠으면 쓰지 않는다
+        // ponytail: 이 확인과 아래 파일 쓰기 사이에 지우면 파일 하나가 남는다(Caches, 다시 읽히지 않음)
+        guard !Task.isCancelled else { return nil }
+        let image = UIImage(cgImage: cg, scale: scale, orientation: .up)
+        memory.setObject(Entry(name, image), forKey: day.id as NSString)
+        await Task.detached(priority: .utility) {
+            sweep(day, dir: dir)   // 예전 지문 파일 정리
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? image.jpegData(compressionQuality: 0.85)?.write(to: dir.appending(path: name), options: .atomic)
+        }.value
+        return image
+    }
+
+    /// 공유 이미지 3D 판(R31, 이용권): 같은 그림을 4:5로 다시 찍는다. 위는 SlopeMate, 아래는 패널·출처 자리. 캐시하지 않는다
+    static func portrait(_ day: Stats.Day, db: AppDatabase) async -> UIImage? {
+        guard let map = SlopeMap.cached(resortId: day.resortId), map.isDrawable else { return nil }
+        guard let runs = await Task.detached(priority: .userInitiated, operation: { () -> [RouteSegment]? in
+            guard let recs = try? db.recordings(of: day), !recs.isEmpty,
+                  let runs = try? DayData.load(db, day, recs: recs, map: map).route.filter({ $0.kind == .run }), !runs.isEmpty else { return nil }
+            return runs
+        }).value else { return nil }
+        guard let cg = await snapshot(runs: runs, map: map, size: ShareImage.size, top: ShareImage.top, bottom: ShareImage.bottom, scale: 2) else { return nil }
+        return UIImage(cgImage: cg, scale: 2, orientation: .up)
+    }
+
+    /// 밝은 3D 장면에서 하강 경로에 맞춘 한 장. 지형은 마지막 리조트 것을 다시 쓴다
+    private static func snapshot(runs: [RouteSegment], map: SlopeMap, size: CGSize, top: CGFloat, bottom: CGFloat, scale: CGFloat) async -> CGImage? {
         let space: Terrain3D, prepared: Map3DTerrain
         if let t = terrain, t.resortId == map.resortId {
             (space, prepared) = (t.space, t.prepared.stillCopy())
@@ -141,24 +169,13 @@ import UIKit
                                viewport: CGSize(width: size.width, height: size.height * 2),
                                view3D: Resort.all.first { $0.id == map.resortId }?.view3D,
                                fitPoints: runs.flatMap(\.points).map { (lat: $0.lat, lon: $0.lon) })
-        scene.setViewport(size, topInset: 0, bottomInset: size.height * 0.25 + 24, animated: false)
+        scene.setViewport(size, topInset: top, bottomInset: bottom, animated: false)
         scene.setLayers(MapLayers(slopes: true, lifts: false))
         scene.gestureEnded()   // 최종 크기의 1pt 길이로 경로 리본을 다시 만든다
         // 첫 렌더는 Metal 셰이더 컴파일로 오래 걸려 메인 밖에서. 장면은 이 함수 밖에서 아무도 건드리지 않는다
         let job = StillJob(scene: scene.scene, camera: scene.cameraNode,
                            pixels: CGSize(width: size.width * scale, height: size.height * scale))
-        guard let cg = await Task.detached(priority: .utility, operation: { job.render() }).value else { return nil }
-        // 렌더 중에 기록을 지웠으면 쓰지 않는다
-        // ponytail: 이 확인과 아래 파일 쓰기 사이에 지우면 파일 하나가 남는다(Caches, 다시 읽히지 않음)
-        guard !Task.isCancelled else { return nil }
-        let image = UIImage(cgImage: cg, scale: scale, orientation: .up)
-        memory.setObject(Entry(name, image), forKey: day.id as NSString)
-        await Task.detached(priority: .utility) {
-            sweep(day, dir: dir)   // 예전 지문 파일 정리
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try? image.jpegData(compressionQuality: 0.85)?.write(to: dir.appending(path: name), options: .atomic)
-        }.value
-        return image
+        return await Task.detached(priority: .utility, operation: { job.render() }).value
     }
 }
 

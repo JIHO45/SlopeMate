@@ -17,31 +17,23 @@ import UIKit
             run("2026-12-06T17:00:00", "2026-12-06T17:05:00")], usedGPSAltitude: false)
     }
 
-    @Test func sessionsInOrderWithNextDayAndUnclassified() {
-        let kinds: [SessionKind?] = [.day, .day, .night, .lateNight, .lateNight, nil]
-        let runs = day.runs
-        let c = ShareImage.content(day, resort: "하이원") { r in kinds[runs.firstIndex(of: r)!] }
-        #expect(c.date == "2026년 12월 6일 일요일")
-        #expect(c.runs == 6)
-        #expect(c.distance == "7.2")
-        #expect(c.sessions == [
-            .init(name: "주간", time: "09:40~16:20", runs: 2),
-            .init(name: "야간", time: "18:30~18:35", runs: 1),
-            .init(name: "심야", time: "22:40~다음 날 01:30", runs: 2),
-            .init(name: "미분류", time: nil, runs: 1)])
+    @Test func contentIsDateResortRunsDistance() {
+        let c = ShareImage.content(day, resort: "하이원")
+        #expect(c == .init(date: "2026. 12. 6. 일요일", resort: "하이원", runs: 6, distance: "7.2"))
     }
 
-    @Test func noTimetableMeansNoSessionCard() {
-        #expect(ShareImage.content(day, resort: "하이원").sessions.isEmpty)
+    @Test func rendersAt1080x1350WithAndWithoutPicture() throws {
+        let c = ShareImage.content(day, resort: "하이원")
+        let photo = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 300)).image { $0.fill(CGRect(x: 0, y: 0, width: 400, height: 300)) }
+        for image in [ShareImage.render(c, picture: nil, credit: nil), ShareImage.render(c, picture: photo, credit: "© OpenStreetMap contributors")] {
+            let image = try #require(image)
+            #expect(image.size.width * image.scale == 1080)
+            #expect(image.size.height * image.scale == 1350)
+        }
     }
 
-    @Test func sessionStartingAfterMidnightSaysNextDayOnce() {
-        #expect(ShareImage.span(at("2026-12-07T00:10:00"), at("2026-12-07T01:30:00"), day: at("2026-12-06T06:00:00")) == "다음 날 00:10~01:30")
-    }
-
-    @Test func rendersAt1080x1350() throws {
-        let image = try #require(ShareImage.render(ShareImage.content(day, resort: "하이원")))
-        #expect(image.size.width * image.scale == 1080)
-        #expect(image.size.height * image.scale == 1350)
+    @Test func onlyMapPicturesCarryRoute() {
+        #expect(ShareImage.Kind.threeD.hasRoute && ShareImage.Kind.map.hasRoute)
+        #expect(!ShareImage.Kind.photo.hasRoute && !ShareImage.Kind.plain.hasRoute)
     }
 }

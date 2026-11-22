@@ -56,6 +56,9 @@ struct DayMapView: View {
     // 공유
     @AppStorage("shareNoticeShown") private var noticeShown = false
     @State private var notice = false
+    /// 첫 공유 안내 뒤 이어 할 일(경로가 담긴 이미지·동영상)
+    @State private var afterNotice: (() -> Void)?
+    @State private var imageBusy = false
     @State private var showMaking = false
     @State private var making: Task<Void, Never>?
     @State private var makeProgress = 0.0
@@ -159,22 +162,30 @@ struct DayMapView: View {
             }
             if hasRuns, data != nil {
                 ToolbarItem(placement: .topBarTrailing) {
-                    // 공유 고르기 v1: 이미지(R31)·동영상(R50)
+                    // 공유 고르기 v3: 이미지(3D는 이용권, 없으면 2D 지도)·사진 이미지·동영상 (R31, R50)
                     Menu {
-                        Button { playing = false; ShareImage.share(day) } label: {
-                            Label { Text("이미지"); Text("오늘 요약 한 장, 경로 없음") } icon: { Image(systemName: "photo") }
+                        Button { withNotice { shareImage(lock == .open ? .threeD : .map) } } label: {
+                            Label { Text("이미지"); Text(lock == .open ? "3D 그림 위 오늘 요약" : "2D 지도 위 오늘 요약") } icon: { Image(systemName: "photo") }
                         }
-                        Button { noticeShown ? make() : (notice = true) } label: {
+                        if DayPhoto.exists(day) {
+                            Button { shareImage(.photo) } label: {
+                                Label { Text("사진 이미지"); Text("붙인 사진 위 오늘 요약") } icon: { Image(systemName: "photo.on.rectangle") }
+                            }
+                        }
+                        Button { withNotice { make() } } label: {
                             Label { Text("동영상"); Text("오늘 경로 재생\(is3D ? "(2D 지도)" : ""), \(ShareVideo.seconds)초") } icon: { Image(systemName: "video") }
                         }
                         if lock == .ticket {
                             Divider()
                             Button { resume = nil; unlock() } label: {
-                                Label("이용권: 고화질·워터마크 없이", systemImage: "lock")
+                                Label("이용권: 3D 이미지·고화질 동영상", systemImage: "lock")
                             }
                         }
-                    } label: { Image(systemName: "square.and.arrow.up") }
-                        .accessibilityLabel("공유")
+                    } label: {
+                        if imageBusy { ProgressView() } else { Image(systemName: "square.and.arrow.up") }
+                    }
+                    .disabled(imageBusy)
+                    .accessibilityLabel(imageBusy ? "공유 이미지 만드는 중" : "공유")
                 }
             }
         }
@@ -416,10 +427,10 @@ struct DayMapView: View {
         .modifier(SheetBackground())
         // 시트가 떠 있는 동안에는 시트에서 띄워야 보인다
         .alert("오늘 경로가 담겨요", isPresented: $notice) {
-            Button("취소", role: .cancel) {}
-            Button("계속") { noticeShown = true; make() }
+            Button("취소", role: .cancel) { afterNotice = nil }
+            Button("계속") { noticeShown = true; afterNotice?(); afterNotice = nil }
         } message: {
-            Text("동영상 속 지도에 오늘 다닌 경로가 보여요. 받는 사람이 어느 슬로프를 탔는지 알 수 있어요.")
+            Text(ShareImage.routeNotice)
         }
         .sheet(isPresented: $showTicket, onDismiss: resumeAfterTicket) { SeasonTicketView() }
         .alert(SeasonRecap.pastSeasonNote, isPresented: $pastNote) { Button("확인", role: .cancel) {} }
@@ -434,6 +445,20 @@ struct DayMapView: View {
     }
 
     // MARK: 공유
+
+    /// 경로가 담긴 공유는 처음 한 번 알린다
+    private func withNotice(_ go: @escaping () -> Void) {
+        if noticeShown { go() } else { afterNotice = go; notice = true }
+    }
+
+    private func shareImage(_ kind: ShareImage.Kind) {
+        playing = false
+        imageBusy = true
+        Task {
+            await ShareImage.share(kind, day: day, db: db)
+            imageBusy = false
+        }
+    }
 
     private func make() {
         playing = false

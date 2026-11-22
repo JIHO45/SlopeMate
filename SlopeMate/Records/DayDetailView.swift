@@ -61,7 +61,8 @@ struct DayDetailView: View {
         .toolbar {
             if !shown.runs.isEmpty, data != nil {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { ShareImage.share(shown) } label: { Image(systemName: "square.and.arrow.up") }
+                    // 목록형은 지도가 없어 하늘색 바탕 + 패널
+                    Button { Task { await ShareImage.share(.plain, day: shown, db: db) } } label: { Image(systemName: "square.and.arrow.up") }
                         .accessibilityLabel("이미지로 공유")
                 }
             }
