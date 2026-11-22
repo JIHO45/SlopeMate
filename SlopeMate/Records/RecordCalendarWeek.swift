@@ -1,9 +1,7 @@
 import SwiftUI
 
-/// S8 주 보기: 주별 하강 막대, 요일 줄, 고른 날 카드, 사진 칸
+/// S8 주 보기 (v16): 요일 줄, 고른 날 기록마다 넘기는 카드(1장 3D 정지 그림, 2장 대표 사진)
 extension RecordCalendarView {
-    private static let dayCard = Color(red: 0x0F / 255, green: 0x3D / 255, blue: 0x45 / 255)
-
     func weekView(_ every: [Stats.Day]) -> some View {
         let all = Stats.days(every, inSeason: season) // 시즌 밖(10월·5월) 날은 세지 않는다
         let found = RecordCalendar.weeks(season: season)
@@ -11,86 +9,35 @@ extension RecordCalendarView {
         let t = Stats.totals(RecordCalendar.days(all, in: RecordCalendar.weekInterval(week)))
         let i = weeks.firstIndex(of: week) ?? weeks.count - 1
         let recs = records(on: selected, all)
+        let title = Self.dayTitle.string(from: selected)
         return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                navHeader(RecordCalendar.weekRange(week), "\(t.visitDays)일 · \(t.runs)회", unit: "주",
-                          prev: i > 0 ? { pick(week: weeks[i - 1]) } : nil,
-                          next: i < weeks.count - 1 ? { pick(week: weeks[i + 1]) } : nil)
-                bars(weeks, all)
-                dayStrip(all)
-                Text(Self.dayTitle.string(from: selected))
-                    .font(.title3.weight(.bold)).foregroundStyle(Color.primaryText)
-                    .accessibilityAddTraits(.isHeader)
-                if let first = recs.first {
-                    bigCard(first)
-                    ForEach(recs.dropFirst()) { smallCard($0) }
-                    Text("사진").font(.headline).foregroundStyle(Color.primaryText).accessibilityAddTraits(.isHeader)
-                    ForEach(recs) { photoSlot($0, titled: recs.count > 1) }
-                } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    navHeader(RecordCalendar.weekRange(week), "\(t.visitDays)일 · \(t.runs)회", unit: "주",
+                              prev: i > 0 ? { pick(week: weeks[i - 1]) } : nil,
+                              next: i < weeks.count - 1 ? { pick(week: weeks[i + 1]) } : nil)
+                    dayStrip(all)
+                    Text(title)
+                        .font(.title3.weight(.bold)).foregroundStyle(Color.primaryText)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                .padding(.horizontal, 16)
+                if recs.isEmpty {
                     Text("이날은 기록이 없어요")
                         .font(.body.weight(.semibold)).foregroundStyle(Color.secondaryText)
-                        .dashedBox()
-                }
-            }
-            .padding(16)
-        }
-    }
-
-    private func bars(_ weeks: [Date], _ all: [Stats.Day]) -> some View {
-        let counts = weeks.map { Stats.totals(RecordCalendar.days(all, in: RecordCalendar.weekInterval($0))).runs }
-        let top = CGFloat(max(counts.max() ?? 0, 1))
-        let thisWeek = RecordCalendar.weekStart(today)
-        return VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("주별 하강 횟수").font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText)
-                Text("막대를 눌러 주 고르기").font(.footnote).foregroundStyle(Color.secondaryText)
-            }
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .bottom, spacing: 6) {
-                        ForEach(Array(zip(weeks, counts)), id: \.0) { w, n in
-                            let on = w == week
-                            let label = RecordCalendar.weekLabel(w)
-                            Button { pick(week: w) } label: {
-                                VStack(spacing: 4) {
-                                    Text("\(n)회").font(.caption2.weight(.semibold)).monospacedDigit()
-                                        .foregroundStyle(on ? Color.accentText : Color.secondaryText)
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(on ? Color.accentText : Color.accentFill.opacity(0.3))
-                                        .frame(width: 28, height: max(4, 88 * CGFloat(n) / top))
-                                    if w == thisWeek {
-                                        Text("이번 주").font(.caption.weight(.semibold))
-                                    } else {
-                                        Text(label.month).font(.caption2)
-                                        Text(label.week).font(.caption)
-                                    }
-                                }
-                                .foregroundStyle(Color.primaryText)
-                                .frame(minWidth: 48, minHeight: 44)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .anchorPreference(key: SelectedBar.self, value: .bounds) { on ? $0 : nil }
-                            .id(w)
-                            .accessibilityLabel(w == thisWeek ? "이번 주, \(n)회" : "\(label.month) \(label.week), \(n)회")
-                            .accessibilityAddTraits(on ? .isSelected : [])
-                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .aspectRatio(4 / 3, contentMode: .fit)
+                        .overlay(RoundedRectangle(cornerRadius: 28)
+                            .strokeBorder(Color.cardBorder, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+                        .padding(.leading, 16).padding(.trailing, 16 + 28) // 넘기는 카드 한 장과 같은 크기
+                } else {
+                    ForEach(recs) { r in
+                        DayPager(db: db, day: r, title: title, photo: large[r.id],
+                                 pickPhoto: { pickPhoto(r) }, removePhoto: { removePhoto(r) }, delete: { deleting = r })
                     }
                 }
-                .onAppear { proxy.scrollTo(week, anchor: .center) }
-                .onChange(of: week) { _, w in withAnimation { proxy.scrollTo(w, anchor: .center) } }
             }
-        }
-        .card()
-        // 카드 아래 꺾쇠: 고른 막대 밑에서 요일 줄을 가리킨다
-        .overlayPreferenceValue(SelectedBar.self) { a in
-            GeometryReader { g in
-                if let a, (16...g.size.width - 16).contains(g[a].midX) {
-                    Image(systemName: "chevron.down").font(.caption.weight(.bold)).foregroundStyle(Color.accentText)
-                        .position(x: g[a].midX, y: g.size.height + 8)
-                }
-            }
-            .accessibilityHidden(true)
+            .padding(.vertical, 16)
         }
     }
 
@@ -136,114 +83,192 @@ extension RecordCalendarView {
         .padding(.vertical, 8)
         .background(Color.accentFill.opacity(0.12), in: RoundedRectangle(cornerRadius: 20))
     }
+}
 
-    private func subtitle(_ r: Stats.Day) -> String {
-        let s = RecordFormat.sessionNames(r)
-        return ([Resort.name(r.resortId)] + (s.isEmpty ? [] : [s])).joined(separator: " · ")
-    }
+/// 하루 기록 하나의 넘기는 카드 두 장: 1장 3D 정지 그림, 2장 대표 사진(없으면 붙이기 칸)
+private struct DayPager: View {
+    let db: AppDatabase
+    let day: Stats.Day
+    let title: String              // "12월 20일 일요일"
+    let photo: UIImage?
+    let pickPhoto: () -> Void
+    let removePhoto: () -> Void
+    let delete: () -> Void
+    @State private var page: Int? = 0
+    @State private var still: UIImage?
+    @State private var stillDone = false
+    @State private var showPhoto = false   // ⋯에서 사진을 고르면 붙은 뒤 2장으로
+    @Environment(\.colorScheme) private var systemScheme
 
-    private func bigCard(_ r: Stats.Day) -> some View {
-        VStack(spacing: 8) {
-            Text(subtitle(r)).font(.subheadline.weight(.semibold)).opacity(0.85)
-            BigCount(runs: r.runs.count)
-            Text(RecordFormat.km(r.runs.reduce(0) { $0 + $1.distance })).font(.subheadline).opacity(0.85)
-            NavigationLink { DayDetailView(db: db, day: r) } label: {
-                Text("기록 보기").font(.subheadline.weight(.bold)).foregroundStyle(Self.dayCard)
-                    .padding(.horizontal, 24).frame(minHeight: 44)
-                    .background(.white, in: Capsule())
+    private static let teal = Color(red: 0x0F / 255, green: 0x3D / 255, blue: 0x45 / 255)
+    private var resort: String { Resort.name(day.resortId) }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    card(0) { stillPage }
+                    card(1) { photoPage }
+                }
+                .scrollTargetLayout()
             }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
-        }
-        .foregroundStyle(.white)
-        .multilineTextAlignment(.center)
-        .padding(20)
-        .frame(maxWidth: .infinity, minHeight: 240)
-        .background {
-            ZStack(alignment: .bottom) {
-                Self.dayCard
-                Image(systemName: "mountain.2.fill").font(.system(size: 180))
-                    .foregroundStyle(.white.opacity(0.07)).offset(y: 40)
+            .contentMargins(.horizontal, 16, for: .scrollContent)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $page, anchor: .center)
+            .scrollClipDisabled()
+            HStack(spacing: 8) {
+                ForEach(0..<2, id: \.self) { i in
+                    Circle().fill(i == (page ?? 0) ? Color.accentText : Color.cardBorder).frame(width: 7, height: 7)
+                }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 28))
+            .frame(maxWidth: .infinity)
             .accessibilityHidden(true)
         }
+        .task(id: "\(day.id)-\(day.runs.count)") {
+            let img = await DayStill.image(day, db: db)
+            guard !Task.isCancelled else { return } // 취소되면 nil이 오므로 실패 카드로 바꾸지 않는다
+            still = img
+            stillDone = true
+        }
+        .onChange(of: photo) { _, p in
+            if showPhoto, p != nil { showPhoto = false; withAnimation { page = 1 } }
+        }
     }
 
-    private func smallCard(_ r: Stats.Day) -> some View {
-        NavigationLink { DayDetailView(db: db, day: r) } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(subtitle(r)).font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText)
-                    Text("\(r.runs.count)회 · \(RecordFormat.km(r.runs.reduce(0) { $0 + $1.distance }))")
-                        .font(.footnote).foregroundStyle(Color.secondaryText).monospacedDigit()
+    /// 4:3 장: 그림 + 아래 유리 띠 + 오른쪽 위 ⋯
+    private func card(_ i: Int, @ViewBuilder _ content: () -> some View) -> some View {
+        // 3D 그림은 어둡게에서도 밝은 그림, 사진은 아래를 어둡게 하므로 띠·⋯도 그에 맞춘다
+        let scheme: ColorScheme = i == 0 ? .light : photo != nil ? .dark : systemScheme
+        return Color.clear
+            .aspectRatio(4 / 3, contentMode: .fit)
+            .overlay { content() }
+            .overlay(alignment: .bottom) { caption.environment(\.colorScheme, scheme) }
+            .overlay(alignment: .topTrailing) { menu.padding(10).environment(\.colorScheme, scheme) }
+            .clipShape(RoundedRectangle(cornerRadius: 28))
+            .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+            .containerRelativeFrame(.horizontal) { w, _ in w - 28 } // w는 좌우 여백 16을 뺀 폭, 다음 장이 보이게
+            .id(i)
+    }
+
+    @ViewBuilder private var stillPage: some View {
+        if let still = still ?? DayStill.cached(day) {
+            Image(uiImage: still).resizable().scaledToFill()
+                .accessibilityLabel("\(title) \(resort) 경로 3D 그림")
+                .accessibilityAddTraits(.isImage)
+        } else {
+            ZStack {
+                Self.teal
+                Image(systemName: "mountain.2.fill").font(.system(size: 160))
+                    .foregroundStyle(.white.opacity(0.07)).offset(y: 50)
+                    .accessibilityHidden(true)
+                if stillDone {
+                    // 그림을 만들지 못하면 리조트 이름만
+                    Text(resort).font(.title2.weight(.bold)).foregroundStyle(.white).padding(.bottom, 64)
+                } else {
+                    ProgressView().tint(.white).padding(.bottom, 64)
+                        .accessibilityLabel("3D 그림 만드는 중")
                 }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryText)
             }
-            .card()
-            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder private var photoPage: some View {
+        if let photo {
+            Image(uiImage: photo).resizable().scaledToFill()
+                .overlay { // 아래 45% 어둡게
+                    LinearGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .black.opacity(0.55), location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
+                }
+                .accessibilityElement()
+                .accessibilityLabel("\(title) \(resort) 사진")
+                .accessibilityAddTraits(.isImage)
+        } else {
+            Button(action: pickPhoto) {
+                VStack(spacing: 8) {
+                    Image(systemName: "photo.badge.plus").font(.title2).foregroundStyle(Color.onAccent)
+                        .frame(width: 52, height: 52).background(Color.accentFill, in: Circle())
+                        .accessibilityHidden(true)
+                    Text("이날 사진 붙이기").font(.body.weight(.semibold)).foregroundStyle(Color.accentText)
+                    Text("한 장 · 이 기기에만 저장돼요").font(.footnote).foregroundStyle(Color.secondaryText)
+                }
+                .padding(.bottom, 64)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.card)
+                .overlay(RoundedRectangle(cornerRadius: 28)
+                    .strokeBorder(Color.cardBorder, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// 아래 유리 띠 → S6
+    private var caption: some View {
+        NavigationLink { DayDetailView(db: db, day: day) } label: {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(([resort] + (session.isEmpty ? [] : [session])).joined(separator: " · ")).font(.subheadline.weight(.semibold))
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("\(day.runs.count)회").font(.title2.weight(.bold))
+                        Text("· " + km).font(.body)
+                    }
+                    .monospacedDigit()
+                }
+                Spacer(minLength: 4)
+                Text("기록 보기 ›").font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(Color.primaryText)
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .frame(minHeight: 64)
+            .modifier(GlassStrip())
+            .padding(10)
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(resort) \(session) \(day.runs.count)회 \(km), 기록 보기")
+            .accessibilityAddTraits(.isButton)
         }
         .buttonStyle(.plain)
     }
 
-    private func photoSlot(_ r: Stats.Day, titled: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if titled { Text(Resort.name(r.resortId)).font(.footnote).foregroundStyle(Color.secondaryText) }
-            if let img = large[r.id] ?? thumbs[r.id] {
-                Color.clear
-                    .aspectRatio(4 / 3, contentMode: .fit)
-                    .overlay { Image(uiImage: img).resizable().scaledToFill() }
-                    .clipShape(RoundedRectangle(cornerRadius: 24))
-                    .accessibilityElement()
-                    .accessibilityLabel("\(Self.dayTitle.string(from: selected)) \(Resort.name(r.resortId)) 사진")
-                    .accessibilityAddTraits(.isImage)
-                    .overlay(alignment: .topTrailing) {
-                        Menu {
-                            Button("바꾸기", systemImage: "photo") { pickPhoto(r) }
-                            Button("빼기", systemImage: "trash", role: .destructive) { removePhoto(r) }
-                        } label: {
-                            Image(systemName: "ellipsis").font(.body.weight(.bold)).foregroundStyle(Color.primaryText)
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                        .padding(10)
-                        .accessibilityLabel("사진 바꾸기 또는 빼기")
-                    }
+    private var session: String { RecordFormat.sessionNames(day) }
+    private var km: String { RecordFormat.km(day.runs.reduce(0) { $0 + $1.distance }) }
+
+    private var menu: some View {
+        Menu {
+            if photo == nil {
+                Button("사진 붙이기", systemImage: "photo.badge.plus") { showPhoto = true; pickPhoto() }
             } else {
-                Button { pickPhoto(r) } label: {
-                    VStack(spacing: 6) {
-                        Image(systemName: "photo.badge.plus").font(.title2).accessibilityHidden(true)
-                        Text("이날 사진 붙이기").font(.body.weight(.semibold))
-                        Text("한 장 · 이 기기에만 저장돼요").font(.footnote).foregroundStyle(Color.secondaryText)
-                    }
-                    .foregroundStyle(Color.accentText)
-                    .dashedBox(minHeight: 160)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                Button("사진 바꾸기", systemImage: "photo") { showPhoto = true; pickPhoto() }
+                Button("사진 빼기", systemImage: "minus.circle", action: removePhoto)
             }
+            Button("기록 지우기", systemImage: "trash", role: .destructive, action: delete)
+        } label: {
+            Image(systemName: "ellipsis").font(.body.weight(.bold))
+                .frame(width: 44, height: 44)
+                .modifier(MenuCircle())
+        }
+        .accessibilityLabel("\(resort) 기록 더 보기")
+    }
+}
+
+/// 유리 띠 (iOS 26). 17.6~25는 흐린 재질
+private struct GlassStrip: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 20))
+        } else {
+            content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
     }
 }
 
-/// 고른 날 카드의 큰 하강 숫자 (글씨 크기 따라 커진다)
-private struct BigCount: View {
-    let runs: Int
-    @ScaledMetric(relativeTo: .largeTitle) private var size: CGFloat = 64
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 2) {
-            Text("\(runs)").font(.system(size: size, weight: .bold, design: .rounded)).monospacedDigit()
-            Text("회").font(.title3.weight(.semibold))
+/// ⋯ 원: 그림 위라 17.6~25에서도 흐린 재질 원을 깐다
+private struct MenuCircle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.glassCircle()
+        } else {
+            content.foregroundStyle(Color.primaryText).background(.ultraThinMaterial, in: Circle())
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("하강 \(runs)회")
     }
-}
-
-/// 고른 주 막대 위치 (카드 아래 꺾쇠)
-private struct SelectedBar: PreferenceKey {
-    static var defaultValue: Anchor<CGRect>? { nil }
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
 }

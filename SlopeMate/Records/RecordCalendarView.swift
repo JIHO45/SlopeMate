@@ -1,7 +1,7 @@
 import PhotosUI
 import SwiftUI
 
-/// S8 기록 달력 (R55): 주 · 월 · 시즌 보기, 하루 대표 사진, 월 목록에서 밀어서 삭제.
+/// S8 기록 달력 (R55): 주 · 월 · 시즌 보기, 하루 3D 그림과 대표 사진, 주 카드 ⋯에서 기록 지우기.
 struct RecordCalendarView: View {
     enum Mode: Hashable { case week, month, season }
 
@@ -14,7 +14,7 @@ struct RecordCalendarView: View {
     @State var month: Date         // 달 1일 00:00
     @State var photoRev = 0        // 사진을 붙이거나 빼면 다시 읽게
     @State var thumbs: [String: UIImage] = [:]   // 시즌 하루 기록 사진 작은 판 (Stats.Day.id)
-    @State var large: [String: UIImage] = [:]    // 고른 날 사진 칸
+    @State var large: [String: UIImage] = [:]    // 고른 날 카드 2장 사진
     @State var photoDay: Stats.Day?
     @State var picking = false
     @State var pickerItem: PhotosPickerItem?
@@ -67,7 +67,7 @@ struct RecordCalendarView: View {
         }
         .task(id: "\(season) \(photoRev) \(days?.count ?? -1)") {
             let mine = Stats.days(days ?? [], inSeason: season)
-            thumbs = await Task.detached { Self.load(mine, 132) }.value
+            thumbs = await Task.detached { Self.load(mine, 360) }.value
         }
         .task(id: "\(selected) \(photoRev) \(days?.count ?? -1)") {
             let recs = records(on: selected, days ?? [])
@@ -177,6 +177,7 @@ struct RecordCalendarView: View {
             // 지운 하루가 크루 순위 합계에서도 바로 빠지게 (R15)
             if crews?.ids.isEmpty == false { summary?.sync() }
             DayPhoto.delete(day)
+            DayStill.remove(day)
         } catch {
             failed = true
         }
@@ -220,17 +221,6 @@ struct RecordCalendarView: View {
     }
     /// "12월 20일 일요일"
     static let dayTitle = formatter("M월 d일 EEEE")
-    /// "12월 27일 일"
-    static let dayShort = formatter("M월 d일 E")
     /// "2026년 12월"
     static let yearMonth = formatter("yyyy년 M월")
-}
-
-extension View {
-    /// 점선 칸 (기록 없는 날, 사진 붙이기)
-    func dashedBox(minHeight: CGFloat = 120) -> some View {
-        self.padding(16)
-            .frame(maxWidth: .infinity, minHeight: minHeight)
-            .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.cardBorder, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
-    }
 }

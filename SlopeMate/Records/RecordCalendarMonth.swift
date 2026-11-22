@@ -1,41 +1,99 @@
 import SwiftUI
 
-/// S8 월 보기: 한 달 달력 + "n월 기록" 목록(밀어서 삭제). swipeActions 때문에 List.
+/// S8 월 보기: 한 달 달력, "n월 합계" 네 칸과 지난달 비교, "n월 사진" 모아보기. 날짜나 사진을 누르면 그 주.
 extension RecordCalendarView {
     func monthView(_ all: [Stats.Day]) -> some View {
         let months = RecordCalendar.seasonMonths(season)
         let i = months.firstIndex(of: month) ?? 0
-        let shown = RecordCalendar.days(all, in: RecordCalendar.monthInterval(month)).sorted { $0.date > $1.date }
-        let t = Stats.totals(shown)
-        let photos = shown.filter { thumbs[$0.id] != nil }.count
+        let shown = RecordCalendar.days(all, in: RecordCalendar.monthInterval(month)).sorted { $0.date < $1.date }
+        let (t, delta) = RecordCalendar.monthTotals(all, month: month, season: season)
         let m = RecordCalendar.cal.component(.month, from: month)
-        return List {
-            VStack(spacing: 12) {
-                navHeader(Self.yearMonth.string(from: month), "\(t.visitDays)일 · \(t.runs)회" + (photos > 0 ? " · 사진 \(photos)장" : ""), unit: "달",
+        let photos = shown.filter { thumbs[$0.id] != nil }
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                navHeader(Self.yearMonth.string(from: month), "\(t.visitDays)일 · \(t.runs)회", unit: "달",
                           prev: i > 0 ? { month = months[i - 1] } : nil,
                           next: i < months.count - 1 ? { month = months[i + 1] } : nil)
                 monthGrid(all)
-            }
-            .padding(.vertical, 8)
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets())
-            .listRowSeparator(.hidden)
-            if !shown.isEmpty {
-                Section {
-                    ForEach(shown) { day in
-                        NavigationLink { DayDetailView(db: db, day: day) } label: { monthRow(day) }
-                            .listRowBackground(Color.card)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 12))
-                            .swipeActions { Button("삭제", role: .destructive) { deleting = day } }
+                sectionTitle("\(m)월 합계")
+                VStack(alignment: .leading, spacing: 12) {
+                    totalsRow(t)
+                    if let delta {
+                        Group {
+                            if delta == 0 {
+                                Text("지난달과 방문일이 같아요")
+                            } else {
+                                Text("지난달보다 방문 \(Text("\(abs(delta))일").bold()) \(delta > 0 ? "많아요" : "적어요")")
+                            }
+                        }
+                        .font(.subheadline).foregroundStyle(Color.secondaryText)
                     }
-                } header: {
-                    Text("\(m)월 기록")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText).textCase(nil)
                 }
+                if !photos.isEmpty {
+                    sectionTitle("\(m)월 사진 \(photos.count)장")
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                        ForEach(photos) { photoTile($0) }
+                    }
+                }
+                Text("날짜나 사진을 누르면 그 주로 가요")
+                    .font(.footnote).foregroundStyle(Color.secondaryText)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(16)
+        }
+    }
+
+    private func sectionTitle(_ s: String) -> some View {
+        Text(s).font(.headline).foregroundStyle(Color.primaryText).accessibilityAddTraits(.isHeader)
+    }
+
+    private func totalsRow(_ t: Stats.Totals) -> some View {
+        let km = RecordFormat.km(t.distance)
+        let cells: [(String, String, String)] = [
+            ("방문일", "\(t.visitDays)", "일"),
+            ("하강", "\(t.runs)", "회"),
+            ("거리", String(km.dropLast(2)), "km"),
+            ("고도차", Int(t.drop.rounded()).formatted(), "m"),
+        ]
+        return HStack(spacing: 0) {
+            ForEach(Array(cells.enumerated()), id: \.offset) { k, c in
+                if k > 0 { Divider().frame(maxHeight: 40) }
+                VStack(spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 1) {
+                        Text(c.1).font(.system(size: 20, weight: .bold)).monospacedDigit()
+                        Text(c.2).font(.system(size: 14))
+                    }
+                    .foregroundStyle(Color.primaryText)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    Text(c.0).font(.footnote).foregroundStyle(Color.secondaryText)
+                }
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(c.0) \(c.1)\(c.2)")
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .card(padding: 14)
+    }
+
+    private func photoTile(_ day: Stats.Day) -> some View {
+        Button { open(day: RecordCalendar.dayStart(day.date)) } label: {
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay { if let img = thumbs[day.id] { Image(uiImage: img).resizable().scaledToFill() } }
+                .overlay(alignment: .bottomLeading) {
+                    ZStack(alignment: .bottomLeading) {
+                        LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+                        Text(RecordFormat.monthDay(day.date))
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                            .padding(8)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .contentShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(RecordFormat.monthDay(day.date)) \(Resort.name(day.resortId)) 사진")
+        .accessibilityHint("그 주로 가요")
     }
 
     private func monthGrid(_ all: [Stats.Day]) -> some View {
@@ -98,28 +156,5 @@ extension RecordCalendarView {
         .accessibilityLabel(Self.dayTitle.string(from: d) + (recs.isEmpty ? "" : ", "
             + recs.map { "\(Resort.name($0.resortId)) \($0.runs.count)회" }.joined(separator: ", ")
             + (img != nil ? ", 사진 있음" : "")))
-    }
-
-    private func monthRow(_ day: Stats.Day) -> some View {
-        let s = RecordFormat.sessionNames(day)
-        return HStack(spacing: 12) {
-            if let img = thumbs[day.id] {
-                Image(uiImage: img).resizable().scaledToFill()
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .accessibilityHidden(true)
-            } else {
-                IconCircle(systemName: "figure.skiing.downhill", size: 44)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(Self.dayShort.string(from: day.date)) · \(Resort.name(day.resortId))")
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(Color.primaryText)
-                Text((["\(day.runs.count)회", RecordFormat.km(day.runs.reduce(0) { $0 + $1.distance })] + (s.isEmpty ? [] : [s]))
-                    .joined(separator: " · "))
-                    .font(.footnote).foregroundStyle(Color.secondaryText).monospacedDigit()
-            }
-        }
-        .frame(minHeight: 64)
-        .accessibilityElement(children: .combine)
     }
 }

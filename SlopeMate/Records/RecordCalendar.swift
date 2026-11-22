@@ -70,4 +70,12 @@ nonisolated enum RecordCalendar {
     }
 
     static func monthInterval(_ m: Date) -> DateInterval { cal.dateInterval(of: .month, for: m)! }
+
+    /// 한 달 합계와 지난달 대비 방문일 차이. 시즌 첫 달(11월)은 비교하지 않는다(nil).
+    static func monthTotals(_ days: [Stats.Day], month: Date, season: String) -> (totals: Stats.Totals, visitDelta: Int?) {
+        let m = monthInterval(month)
+        let t = Stats.totals(Self.days(days, in: m))
+        guard m.start != seasonMonths(season).first, let prev = cal.date(byAdding: .month, value: -1, to: m.start) else { return (t, nil) }
+        return (t, t.visitDays - Stats.totals(Self.days(days, in: monthInterval(prev))).visitDays)
+    }
 }

@@ -58,4 +58,26 @@ struct RecordCalendarTests {
         #expect(m == [d(2026, 11, 1), d(2026, 12, 1), d(2027, 1, 1), d(2027, 2, 1), d(2027, 3, 1), d(2027, 4, 1)])
         #expect(RecordCalendar.monthInterval(d(2026, 12, 15)) == DateInterval(start: d(2026, 12, 1), end: d(2027, 1, 1)))
     }
+
+    func day(_ y: Int, _ m: Int, _ dd: Int, _ resort: String = "high1", runs n: Int = 1) -> Stats.Day {
+        let t = d(y, m, dd, 10)
+        let run = RunDetector.Run(start: t, end: t + 60, distance: 1000, drop: 200, maxSpeed: 10, avgSpeed: 8, movingTime: 60)
+        return Stats.Day(date: BusinessDay.start(of: t), resortId: resort, runs: Array(repeating: run, count: n), usedGPSAltitude: false)
+    }
+
+    @Test func monthTotalsAndDelta() {
+        let s = "2026-27"
+        // 11월 2일(두 리조트 같은 날 = 방문 1일) + 하강 0회 하루, 12월 3일
+        let days = [day(2026, 11, 7), day(2026, 11, 7, "yongpyong", runs: 2), day(2026, 11, 8, runs: 0), day(2026, 11, 14),
+                    day(2026, 12, 5), day(2026, 12, 6), day(2026, 12, 12)]
+        let nov = RecordCalendar.monthTotals(days, month: d(2026, 11, 1), season: s)
+        #expect(nov.totals.visitDays == 2)
+        #expect(nov.totals.runs == 4)
+        #expect(nov.totals.distance == 4000)
+        #expect(nov.visitDelta == nil) // 시즌 첫 달
+        #expect(RecordCalendar.monthTotals(days, month: d(2026, 12, 1), season: s).visitDelta == 1)
+        #expect(RecordCalendar.monthTotals(days, month: d(2027, 1, 1), season: s).visitDelta == -3)
+        #expect(RecordCalendar.monthTotals(days + [day(2027, 1, 2), day(2027, 1, 3), day(2027, 1, 9)],
+                                           month: d(2027, 1, 1), season: s).visitDelta == 0)
+    }
 }
