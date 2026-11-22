@@ -17,8 +17,8 @@ nonisolated enum SeasonRecap {
         case topSlope(name: String, resortId: String, runs: Int)
         case pass(name: String, visits: Int, perVisit: Int, ticket: Int)
 
-        /// 이용권 없음 안내 카드에 적는 이름
-        var lockedName: String {
+        /// 카드 이름(카드 제목·접근성)
+        var name: String {
             switch self {
             case .totals: "방문일"
             case .drop: "고도차"

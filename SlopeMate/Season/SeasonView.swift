@@ -5,7 +5,6 @@ import UIKit
 /// 방문 0일(빈 상태 v1): 안내 문장, 회색 "0일", 결산 카드 없음.
 struct SeasonView: View {
     let db: AppDatabase
-    @Environment(SeasonTicket.self) private var ticket
     @State private var days: [Stats.Day] = []
     @State private var passes: [(pass: SeasonPass, resorts: [String])] = []
     @State private var season = HomeData.currentSeason()
@@ -15,8 +14,6 @@ struct SeasonView: View {
     /// 기록 달력 카드 주의 사진 (달력 날짜 00:00 → 작은 사진)
     @State private var photos: [Date: UIImage] = [:]
     @State private var editingGoal = false
-    @State private var showTicket = false
-    @State private var pastNote = false
     /// 시트를 열 때 다시 읽은 이번 시즌 (화면이 시즌을 넘겨 살아 있어도 맞게)
     @State private var goalSeason = HomeData.currentSeason()
     /// 넘기는 카드와 지금 보이는 카드(목표를 정해 카드가 바뀌어도 같은 카드에 머문다)
@@ -49,12 +46,10 @@ struct SeasonView: View {
             // 화면에 돌아올 때마다 다시 읽는다(S8에서 지우거나 사진을 바꿀 수 있음)
             .task(id: season) { await load() }
             .onChange(of: season) { page = nil }
-            .sheet(isPresented: $showTicket) { SeasonTicketView() }
             .sheet(isPresented: $editingGoal, onDismiss: { goal = SeasonGoal.load(season: season); reorder() }) {
                 let t = Stats.totals(Stats.days(days, inSeason: goalSeason))
                 SeasonGoalSheet(season: goalSeason, visitDays: t.visitDays, runs: t.runs, initial: SeasonGoal.load(season: goalSeason))
             }
-            .alert(SeasonRecap.pastSeasonNote, isPresented: $pastNote) { Button("확인", role: .cancel) {} }
         }
     }
 
@@ -344,25 +339,16 @@ struct SeasonView: View {
         let title = final ? "최종 결산" : "지금까지 결산"
         let icon = "rectangle.portrait.on.rectangle.portrait"
         let count = recapCount
-        let lock = SeasonRecap.lock(season: season, owned: ticket.seasons, current: SeasonTicket.season(purchase: .now))
-        let big = VStack(alignment: .leading, spacing: 0) {
-            Text("\(count)장").font(.largeTitle.bold()).monospacedDigit().foregroundStyle(Color.accentText)
-            Text("\(season) 시즌 카드").font(.subheadline).foregroundStyle(Color.secondaryText)
-        }
-        if lock == .open {
-            NavigationLink { SeasonRecapView(days: days, season: season, passes: passes) } label: {
-                CardShell(icon: icon, title: title, footer: Text("넘겨 보고 이미지로 공유해요")) { big }
+        // 무료(decisions 2026-11-17, 2.0.1 다음 업데이트)
+        NavigationLink { SeasonRecapView(days: days, season: season, passes: passes) } label: {
+            CardShell(icon: icon, title: title, footer: Text("넘겨 보고 이미지로 공유해요")) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("\(count)장").font(.largeTitle.bold()).monospacedDigit().foregroundStyle(Color.accentText)
+                    Text("\(season) 시즌 카드").font(.subheadline).foregroundStyle(Color.secondaryText)
+                }
             }
-            .buttonStyle(.plain)
-        } else {
-            // 이용권이 없으면 결산 대신 이용권 화면 (2026-11-17)
-            Button { if lock == .pastSeason { pastNote = true } else { showTicket = true } } label: {
-                CardShell(icon: icon, title: title, accessory: Text("\(Image(systemName: "lock.fill")) 이용권"),
-                          footer: Text(lock == .pastSeason ? SeasonRecap.pastSeasonNote : "첫 카드 · 나머지 \(max(count - 1, 0))장은 시즌 이용권")) { big }
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("시즌 이용권 필요")
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: 시즌권 (R8)

@@ -441,7 +441,7 @@ extension SeasonTicketView {
     }
 }
 
-// MARK: 여는 기능 (시즌 목표는 무료, 내 리프트 대기는 켜진 뒤 카드를 더한다)
+// MARK: 여는 기능 (시즌 목표·시즌 결산은 무료, 내 리프트 대기는 켜진 뒤 카드를 더한다)
 
 struct Feature: Identifiable {
     /// 미리보기 그림 에셋 이름(Assets에 밝게·어둡게 Appearance로)
@@ -454,7 +454,6 @@ extension SeasonTicketView {
         Feature(id: "ticket-3d", title: "내 경로 3D", detail: "내가 탄 경로를 3D 지형 위에서 돌려 보고 재생해요", short: "내 경로를 3D 지형 위에서", icon: "cube"),
         Feature(id: "ticket-video", title: "고화질 동영상", detail: "1080p, 워터마크 없이 공유해요", short: "1080p, 워터마크 없이 공유", icon: "video"),
         Feature(id: "ticket-run", title: "하강 상세", detail: "내려오는 모습과 지금 속도·고도를 함께 봐요", short: "속도·고도 그래프와 최고 속도", icon: "chart.xyaxis.line"),
-        Feature(id: "ticket-recap", title: "시즌 결산", detail: "이번 시즌을 카드로 정리하고 공유해요", short: "이번 시즌을 카드로 정리하고 공유", icon: "rectangle.on.rectangle"),
     ]
 }
 
@@ -464,7 +463,7 @@ private struct FeatureArt: View {
 
     var body: some View {
         Group {
-            // 실제 화면 캡처(3D 보기, 동영상 두 화질, 하강 상세, 결산)를 Assets.xcassets에 feature.id 이름으로 밝게·어둡게 넣으면 자리 표시 대신 쓴다.
+            // 실제 화면 캡처(3D 보기, 동영상 두 화질, 하강 상세)를 Assets.xcassets에 feature.id 이름으로 밝게·어둡게 넣으면 자리 표시 대신 쓴다.
             // 세로 전체 화면은 휴대폰 모양으로 가운데에(S18 v6). 동영상은 두 화질 프레임과 라벨을 한 장에 담은 그림이라 테두리 없이 높이에 맞춘다
             if UIImage(named: feature.id) != nil {
                 if feature.id == "ticket-video" {

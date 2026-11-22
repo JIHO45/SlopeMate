@@ -1,19 +1,16 @@
 import SwiftUI
-import StoreKit
 
-/// S20 시즌 결산 (R53; 07-visual-design 6장 C 확정 S20 v3, 카드 밝게 v1·어둡게 v2, 이용권 없음 안내 카드는 S20 v1 내용).
+/// S20 시즌 결산 (R53; 07-visual-design 6장 C 확정 S20 v3, 카드 밝게 v1·어둡게 v2). 무료(decisions 2026-11-17, 2.0.1 다음 업데이트).
 /// 4:5 카드를 옆으로 넘긴다. 카드 색은 화면 모드를 따르다가 바꾸면 기억하고 공유 이미지에도 쓴다.
 struct SeasonRecapView: View {
     let days: [Stats.Day]
     let season: String
     let passes: [(pass: SeasonPass, resorts: [String])]
 
-    @Environment(SeasonTicket.self) private var ticket
     @Environment(\.colorScheme) private var scheme
     /// "" 화면 모드를 따름, "light", "dark"
     @AppStorage("recapCardColor") private var cardColor = ""
     @State private var page: Int? = 0
-    @State private var showTicket = false
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// S9와 S20이 같은 카드를 센다(세션은 시간표, 슬로프는 이름이 켜진 리조트만)
@@ -29,15 +26,11 @@ struct SeasonRecapView: View {
         let cards = Self.cards(days: days, season: season, passes: passes)
         let final = SeasonRecap.isFinal(season: season)
         let header = "\(season) 시즌 · \(final ? "최종 결산" : "지금까지")"
-        let lock = SeasonRecap.lock(season: season, owned: ticket.seasons, current: SeasonTicket.season(purchase: .now))
-        let shown = lock == .open ? cards : Array(cards.prefix(1))
-        let locked = Array(cards.dropFirst(shown.count))
-        let pages = shown.count + (locked.isEmpty ? 0 : 1)
+        let pages = cards.count
         let i = max(0, min(page ?? 0, pages - 1))
-        let onLock = !locked.isEmpty && i >= shown.count
         // 가장 큰 글씨에서는 아래 고정을 버튼만 두고 안내 줄은 스크롤 내용 끝으로 옮긴다
         let ax = typeSize.isAccessibilitySize
-        let note = Text(onLock ? (lock == .pastSeason ? SeasonRecap.pastSeasonNote : ticketLine) : "GPS 좌표와 경로는 이미지에 넣지 않아요")
+        let note = Text("GPS 좌표와 경로는 이미지에 넣지 않아요")
             .font(.footnote).foregroundStyle(Color.secondaryText).monospacedDigit()
             .multilineTextAlignment(.center).frame(maxWidth: .infinity)
             .padding(.horizontal, 20).padding(.bottom, 12)
@@ -62,13 +55,9 @@ struct SeasonRecapView: View {
                     GeometryReader { g in
                         ScrollView(.horizontal) {
                             LazyHStack(spacing: 12) {
-                                ForEach(shown.indices, id: \.self) { n in
-                                    RecapCardView(card: shown[n], header: header, dark: dark).id(n)
+                                ForEach(cards.indices, id: \.self) { n in
+                                    RecapCardView(card: cards[n], header: header, dark: dark).id(n)
                                         .accessibilityValue("\(n + 1)번째, 총 \(pages)장")
-                                }
-                                if !locked.isEmpty {
-                                    lockCard(locked, past: lock == .pastSeason).id(shown.count)
-                                        .accessibilityValue("\(pages)번째, 총 \(pages)장")
                                 }
                             }
                             .scrollTargetLayout()
@@ -94,16 +83,9 @@ struct SeasonRecapView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 if !ax { note }
-                Group {
-                    if onLock {
-                        // 지난 시즌 이용권은 팔지 않으므로 S18을 열지 않고 위 안내만 둔다
-                        if lock == .ticket { Button("시즌 이용권 보기") { showTicket = true } }
-                    } else {
-                        Button("이 카드 공유") { if shown.indices.contains(i) { share(shown[i], header: header) } }
-                            .disabled(shown.isEmpty)
-                    }
-                }
-                .buttonStyle(PrimaryButtonStyle())
+                Button("이 카드 공유") { if cards.indices.contains(i) { share(cards[i], header: header) } }
+                    .disabled(cards.isEmpty)
+                    .buttonStyle(PrimaryButtonStyle())
                 .padding(.horizontal, 16).padding(.bottom, 8)
             }
             .padding(.top, 12)
@@ -113,7 +95,6 @@ struct SeasonRecapView: View {
         .background(Color.bg.ignoresSafeArea())
         .navigationTitle("시즌 결산")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showTicket) { SeasonTicketView() }
     }
 
     // MARK: 카드 색
@@ -146,37 +127,6 @@ struct SeasonRecapView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
-    }
-
-    // MARK: 이용권 없음
-
-    private func lockCard(_ locked: [SeasonRecap.Card], past: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            IconCircle(systemName: "lock")
-            Text("나머지 카드 \(locked.count)장").font(.system(size: 22, weight: .bold)).padding(.top, 14)
-            Text(past ? SeasonRecap.pastSeasonNote : "시즌 이용권으로 열어요").font(.system(size: 15)).foregroundStyle(Color.secondaryText)
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(locked.indices, id: \.self) { n in
-                    HStack(spacing: 8) {
-                        Image(systemName: "lock").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.secondaryText)
-                        Text(locked[n].lockedName)
-                    }
-                    .font(.system(size: 15)).frame(height: 26)
-                }
-            }
-            .padding(.top, 16)
-            Spacer(minLength: 0)
-        }
-        .padding(EdgeInsets(top: 28, leading: 26, bottom: 24, trailing: 26))
-        .frame(width: 320, height: 400, alignment: .topLeading)
-        .background(Color.card, in: RoundedRectangle(cornerRadius: 28))
-        .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(Color.cardBorder))
-        .accessibilityElement(children: .combine)
-    }
-
-    private var ticketLine: String {
-        let until = SeasonTicketView.untilText(SeasonTicket.expiry(purchase: .now))
-        return ((ticket.product.map { [SeasonTicketView.priceText($0)] } ?? []) + [until, "자동 갱신 없음"]).joined(separator: " · ")
     }
 
     // MARK: 공유
@@ -238,7 +188,7 @@ struct RecapCardView: View {
     private var title: String {
         switch card {
         case .sessions: "세션"
-        default: card.lockedName
+        default: card.name
         }
     }
 
