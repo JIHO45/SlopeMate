@@ -221,12 +221,19 @@ struct RunDetailView: View {
         guard loaded != nil, scene3D == nil, !route.isEmpty, let terrain = drawing.terrain?.terrain else { return }
         let map = map
         let pair: (Terrain3D, Map3DTerrain)
+        let near = Terrain3D.forest3D ? route.flatMap(\.points).map { (lat: $0.lat, lon: $0.lon) } : []
         if let p = prepared3D {
-            pair = (p.space, p.terrain.copy()) // S6 장면과 재질을 따로 갖게 지오메트리만 복사
+            let copy = p.terrain.copy() // S6 장면과 재질을 따로 갖게 지오메트리만 복사
+            // v6 숲 면은 하강 경로 가까이를 잘게 다시 만든다
+            pair = near.isEmpty ? (p.space, copy) : await Task.detached(priority: .userInitiated) {
+                var c = copy
+                c.buildForest(space: p.space, map: map, near: near)
+                return (p.space, c)
+            }.value
         } else {
             pair = await Task.detached(priority: .userInitiated) {
                 let space = Terrain3D(terrain: terrain, map: map)
-                return (space, Map3DTerrain(space: space, map: map))
+                return (space, Map3DTerrain(space: space, map: map, near: near))
             }.value
         }
         let (space, prepared) = pair
@@ -436,7 +443,11 @@ private extension View {
 
 private extension Map3DTerrain {
     /// 메시 데이터는 나누고 재질은 따로 쓰는 복사(SCNGeometry.copy)
-    func copy() -> Map3DTerrain { Map3DTerrain(geometry: geometry.copy() as! SCNGeometry, texture: texture) }
+    func copy() -> Map3DTerrain {
+        var c = Map3DTerrain(geometry: geometry.copy() as! SCNGeometry, texture: texture)
+        c.forest = forest?.copy() as? SCNGeometry
+        return c
+    }
     init(geometry: SCNGeometry, texture: CGImage?) { self.geometry = geometry; self.texture = texture }
 }
 

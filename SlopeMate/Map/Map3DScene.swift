@@ -138,12 +138,24 @@ nonisolated struct Camera3D: Equatable, Sendable {
 nonisolated struct Map3DTerrain: @unchecked Sendable {
     let geometry: SCNGeometry
     let texture: CGImage?
+    /// v6 시험판 숲 면(Terrain3D.forest3D일 때만)
+    var forest: SCNGeometry? = nil
 
-    /// side: 질감 긴 변 상한(테스트는 작게)
-    init(space: Terrain3D, map: SlopeMap, side: Int = 2048) {
-        let mesh = space.mesh()
+    /// side: 질감 긴 변 상한(테스트는 작게). near: S19 하강 경로(그 가까이만 숲 면을 잘게)
+    init(space: Terrain3D, map: SlopeMap, side: Int = 2048, near: [(lat: Double, lon: Double)] = []) {
+        let mesh = space.mesh(), canopy = Terrain3D.Canopy.load(resortId: map.resortId)
         geometry = mesh.geometry()
-        texture = space.cachedGroundTexture(map: map, mesh: mesh, side: side, canopy: .load(resortId: map.resortId)).image
+        texture = space.cachedGroundTexture(map: map, mesh: mesh, side: side, canopy: canopy, raised: Terrain3D.forest3D).image
+        if let canopy { buildForest(space: space, map: map, canopy: canopy, near: near) }
+    }
+
+    /// v6 숲 면을 (다시) 만든다. Terrain3D.forest3D가 아니면 아무것도 안 한다
+    mutating func buildForest(space: Terrain3D, map: SlopeMap, canopy: Terrain3D.Canopy? = nil, near: [(lat: Double, lon: Double)]) {
+        guard Terrain3D.forest3D, let canopy = canopy ?? .load(resortId: map.resortId) else { return }
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let f = space.forestMesh(canopy: canopy, near: near)
+        forest = f.map { $0.mesh.geometry(shade: $0.shade, walls: $0.walls) }
+        print("[forest3D] \(map.resortId) near \(near.count) \(f?.mesh.positions.count ?? 0) verts \(((f?.mesh.indices.count ?? 0) + (f?.walls.count ?? 0)) / 3) tris \(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - t0))s")
     }
 }
 
@@ -202,6 +214,7 @@ final class Map3DScene {
     /// S6에서 하강을 고르지 않았고 재생 위치도 없는 첫 화면: 하루 하강을 조금 더 살린다(리조트 난이도 선보다 먼저 보이게)
     static let dayRunAlphaIdle: CGFloat = 0.85
 
+    private let forestNode = SCNNode(), forestWallMat = SCNMaterial()
     private let terrainNode = SCNNode(), slopeNode = SCNNode(), liftNode = SCNNode(), stationNode = SCNNode()
     private let routeNode = SCNNode(), highlightNode = SCNNode(), highlightCasingNode = SCNNode(), dotNode = SCNNode()
     /// 재생 점 판(dotNode는 카메라를 보는 빈 노드, 이 판은 그 안에서 진행 방향으로 돈다)과 출발·도착 표식
@@ -286,6 +299,18 @@ final class Map3DScene {
         terrain.geometry.firstMaterial = terrainMat
         terrainNode.geometry = terrain.geometry
         terrainNode.renderingOrder = Order.terrain
+        // v6 시험판: 숲 면은 지형 재질을 함께 쓴다(같은 질감·안개·가장자리). 깊이를 써서 숲끼리·능선과 가린다. 지형 자식이 아니라 순서를 따로
+        if let forest = terrain.forest {
+            // 벽: 지형 재질과 같은 셰이더·값에 질감 대신 숲 색 단색(늘어난 질감 줄무늬 없음)
+            forestWallMat.lightingModel = .constant
+            forestWallMat.diffuse.contents = Self.color(Terrain3D.Ground.forestFace)
+            forestWallMat.shaderModifiers = terrainMat.shaderModifiers
+            forestWallMat.setValue(SCNVector3(es.x, es.y, 0), forKey: "edgeScale")
+            forest.materials = [terrainMat, forestWallMat]
+            forestNode.geometry = forest
+            forestNode.renderingOrder = Order.terrain - 1   // 먼저 그려 가린 지형 픽셀의 셰이더를 건너뛴다
+            scene.rootNode.addChildNode(forestNode)
+        }
 
         // 리본은 깊이를 읽되(능선 뒤는 가려짐) 쓰지 않고 순서로 겹친다
         slopeNode.name = "slopes"
@@ -601,8 +626,10 @@ final class Map3DScene {
         cameraNode.simdLook(at: camera.target, up: SIMD3(0, 1, 0), localFront: SIMD3(0, 0, -1))
         cameraNode.simdPosition -= cameraNode.simdWorldUp * shift
         // 먼 산은 뒤 하늘빛으로 옅어진다(셰이더 안개)
-        terrainMat.setValue(NSNumber(value: camera.distance + space.radius * 0.5), forKey: "fogStart")
-        terrainMat.setValue(NSNumber(value: camera.distance + space.radius * 5), forKey: "fogEnd")
+        for m in [terrainMat, forestWallMat] {
+            m.setValue(NSNumber(value: camera.distance + space.radius * 0.5), forKey: "fogStart")
+            m.setValue(NSNumber(value: camera.distance + space.radius * 5), forKey: "fogEnd")
+        }
         for n in [dotNode, startNode, endNode] + stationNode.childNodes { n.simdScale = SIMD3(repeating: mpp) }
         updateArrow()   // 카메라와 같은 애니메이션으로 돈다
         updateLabels()
@@ -839,9 +866,11 @@ final class Map3DScene {
         func vec(_ v: SIMD3<Float>) -> SCNVector3 { let l = Terrain3D.linear(v); return SCNVector3(l.x, l.y, l.z) }
         // 3D v5: 하늘 그라데이션 배경. 지형 가장자리·안개는 화면 같은 높이의 배경색으로 녹는다. 질감 × 모드 색(셰이더)
         scene.background.contents = Self.skyImage(w)
-        for (k, v) in [("skyTop", w.skyTop), ("skyMid", w.skyMid), ("skyHaze", w.haze), ("skyGround", w.ground)] { terrainMat.setValue(vec(v), forKey: k) }
-        terrainMat.setValue(SCNVector3(w.tintLow.x, w.tintLow.y, w.tintLow.z), forKey: "tintLow")
-        terrainMat.setValue(SCNVector3(w.tintHigh.x, w.tintHigh.y, w.tintHigh.z), forKey: "tintHigh")
+        for m in [terrainMat, forestWallMat] {
+            for (k, v) in [("skyTop", w.skyTop), ("skyMid", w.skyMid), ("skyHaze", w.haze), ("skyGround", w.ground)] { m.setValue(vec(v), forKey: k) }
+            m.setValue(SCNVector3(w.tintLow.x, w.tintLow.y, w.tintLow.z), forKey: "tintLow")
+            m.setValue(SCNVector3(w.tintHigh.x, w.tintHigh.y, w.tintHigh.z), forKey: "tintHigh")
+        }
         let lift = Self.color(dark ? 0xC4D3DA : 0x34474E)
         liftMat.diffuse.contents = lift
         pylonMat.diffuse.contents = lift
@@ -916,6 +945,18 @@ final class Map3DScene {
         m.isDoubleSided = true
         m.writesToDepthBuffer = false
         m.blendMode = .alpha
+        // v6 시험판: 정점을 시선 따라 카메라 쪽으로 당겨(화면 위치는 그대로) 숲 면에는 안 가리고 능선에는 가리게.
+        // 숲 벽을 빠져나오는 길이 = (숲 높이 + 4m) ÷ 시선의 수직 성분(낮게 볼수록 길게). 시점 공간(m)이라 mpp로 키운 판에도 같다
+        if Terrain3D.forest3D {
+            m.shaderModifiers = [.geometry: """
+            float4 v = scn_node.modelViewTransform * _geometry.position;
+            float len = max(length(v.xyz), 1.0);
+            float3 up = normalize((scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz);
+            float d = min(0.5 * len, \(Terrain3D.forestHeight + 4) / max(abs(dot(v.xyz / len, up)), 0.3));
+            v.xyz *= 1.0 - d / len;
+            _geometry.position = scn_node.inverseModelViewTransform * v;
+            """]
+        }
         return m
     }
 

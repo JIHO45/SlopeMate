@@ -146,6 +146,142 @@ nonisolated struct Terrain3D: Sendable {
         return Mesh(positions: positions, uv: uv, indices: indices)
     }
 
+    /// v6 시험판(R50 보강, `-SMForest3D`, DEBUG만): 숲만 떼어 낸 면을 지형 위에 띄운다. 끄면 v5 그대로
+    static var forest3D: Bool { DebugFailures.on("-SMForest3D") }
+    /// 숲 면 높이 = 숲 지도 나무 높이 판의 실제 높이(m, 0~30). 판이 낮게 나와도 숲 경계가 보이게 최소 forestMinHeight. 숲 아닌 곳은 forestSink 아래로
+    static let forestMinHeight: Float = 4, forestSink: Float = 3
+    /// 선이 숲 면을 빠져나오는 데 쓰는 최대 숲 높이(나무 높이 판 상한)
+    static let forestHeight: Float = 30
+
+    /// 숲 면: 숲 비율(Canopy.field, 질감과 같은 값)의 forestLevel 등고선 안쪽을 잘라(marching squares) 지형 위 실제 나무 높이(나무 높이 판)에 띄우고,
+    /// 등고선을 따라 지형 아래(forestSink)까지 벽을 세운다. 벽은 어깨(바깥 forestShoulder·높이 75%)에서 꺾여 아래는 바깥 forestSkirt로 벌어진다(DEM 칸 단위).
+    /// 윗면은 지형 질감 그대로에 ±forestBump/2 m 굴곡(수관). 벽(walls)은 숲 색 단색 재질로 따로 그리고 해를 보는 쪽일수록 밝게(0.8~1) × 위 1 → 어깨 0.8 → 아래 0.55.
+    /// 격자는 DEM 칸 ÷ coarseSub(약 15m). near(하강 경로 위경도)가 있으면 그 radius m 안 칸은 DEM 칸 ÷ fineSub(약 5m)로 잘게 자른다(S19 근접).
+    /// 원형 가장자리에서는 지형처럼 낮아지고 원 밖(edge ≤ 0)은 숲이 없다. 숲 지도가 격자와 안 맞거나 숲이 없으면 nil
+    // ponytail: 잘게 자른 구역 경계에서 굵은 칸 변과 고운 칸 정점이 T자로 만나 1~2m 틈이 날 수 있다(경로에서 radius 떨어진 곳). 보이면 경계 정점 높이를 굵은 변에 맞춘다
+    static let forestLevel: Float = 0.6, forestSkirt: Float = 0.15, forestShoulder: Float = 0.05, forestBump: Float = 5
+    static let forestCoarseSub = 2, forestFineSub = 6
+    func forestMesh(canopy: Canopy, near: [(lat: Double, lon: Double)] = [], radius: Float = 250) -> (mesh: Mesh, walls: [UInt32], shade: [Float])? {
+        let t = terrain
+        guard canopy.width == (t.cols - 1) * canopy.k, canopy.height == (t.rows - 1) * canopy.k else { return nil }
+        let lv = Self.forestLevel, uvScale = SIMD2(1 / Float(max(1, t.cols - 1)), 1 / Float(max(1, t.rows - 1)))
+        let sunXZ = simd_normalize(SIMD2(Self.sun.x, Self.sun.z))
+        var positions = [SIMD3<Float>](), uv = [SIMD2<Float>](), shade = [Float](), indices = [UInt32](), walls = [UInt32]()
+        func latlon(_ g: SIMD2<Float>) -> (lat: Double, lon: Double) { (t.north - Double(g.x) * t.step, t.west + Double(g.y) * t.step) }
+        func scene(_ g: SIMD2<Float>) -> SIMD2<Float> { let ll = latlon(g); return xz(lat: ll.lat, lon: ll.lon) }
+        /// 격자 좌표(DEM 행, 열)의 장면 점: top이면 나무 높이 위, 아니면 지형 아래 forestSink
+        func add(_ g: SIMD2<Float>, top: Bool, shade sh: Float, rise: Float = 1) -> UInt32 {
+            let ll = latlon(g), p = xz(lat: ll.lat, lon: ll.lon), se = Self.smooth(0, 1, edge(p))
+            var y = height(lat: ll.lat, lon: ll.lon) * se - Self.forestSink
+            if top { y += Self.forestSink + (max(Self.forestMinHeight, canopy.treeHeight(g.x, g.y)) + (Self.noise(p.x / 18, p.y / 18, 11) - 0.5) * Self.forestBump) * se * rise }
+            positions.append(SIMD3(p.x, y, p.y)); uv.append(SIMD2(g.y, g.x) * uvScale); shade.append(sh)
+            return UInt32(positions.count - 1)
+        }
+        /// sub 격자의 칸 [r0, r1) × [c0, r1) 중 include인 칸만 marching squares
+        func march(sub: Int, r0: Int, c0: Int, r1: Int, c1: Int, include: (Int, Int) -> Bool) {
+            let rows = r1 - r0 + 1, cols = c1 - c0 + 1, n = rows * cols, s = 1 / Float(sub)
+            func gridOf(_ k: Int) -> SIMD2<Float> { SIMD2(Float(r0 + k / cols), Float(c0 + k % cols)) * s }
+            var f = [Float](repeating: 0, count: n)
+            for k in 0..<n { let g = gridOf(k); if edge(scene(g)) > 0 { f[k] = canopy.field(g.x, g.y) } }
+            var grad = [SIMD2<Float>](repeating: .zero, count: n)
+            for r in 1..<max(1, rows - 1) { for c in 1..<max(1, cols - 1) { let k = r * cols + c; grad[k] = SIMD2(f[k + cols] - f[k - cols], f[k + 1] - f[k - 1]) } }
+            var cornerTop = [Int32](repeating: -1, count: n), edgeTop = [Int32](repeating: -1, count: 2 * n)
+            func corner(_ k: Int) -> UInt32 {
+                if cornerTop[k] < 0 { cornerTop[k] = Int32(add(gridOf(k), top: true, shade: 1)) }
+                return UInt32(cornerTop[k])
+            }
+            func isoPoint(_ a: Int, _ b: Int) -> SIMD2<Float> {
+                let u = min(max((lv - f[a]) / (f[b] - f[a]), 0), 1)
+                return gridOf(a) + (gridOf(b) - gridOf(a)) * u
+            }
+            /// 등고선 점의 바깥 방향(숲 비율 기울기 반대, DEM 칸 단위). 기울기가 없으면 숲 쪽 → 바깥 꼭짓점
+            func isoOut(_ a: Int, _ b: Int) -> SIMD2<Float> {
+                let u = min(max((lv - f[a]) / (f[b] - f[a]), 0), 1), gv = -(grad[a] * (1 - u) + grad[b] * u)
+                if simd_length(gv) > 1e-4 { return simd_normalize(gv) }
+                return simd_normalize(f[a] >= lv ? gridOf(b) - gridOf(a) : gridOf(a) - gridOf(b))
+            }
+            func iso(_ a: Int, _ b: Int, _ id: Int) -> UInt32 {
+                if edgeTop[id] < 0 { edgeTop[id] = Int32(add(isoPoint(a, b), top: true, shade: 1)) }
+                return UInt32(edgeTop[id])
+            }
+            typealias P = (i: UInt32, g: SIMD2<Float>?, exit: Bool, out: SIMD2<Float>)
+            for r in 0..<rows - 1 {
+                for c in 0..<cols - 1 where include(r0 + r, c0 + c) {
+                    let k = r * cols + c
+                    // 꼭짓점 0 (r,c) → 1 (r,c+1) → 2 (r+1,c+1) → 3 (r+1,c). 변 i는 꼭짓점 i → i+1
+                    let v = [k, k + 1, k + cols + 1, k + cols]
+                    let inside = v.map { f[$0] >= lv }
+                    guard inside.contains(true) else { continue }
+                    let edgeId = [2 * k, 2 * (k + 1) + 1, 2 * (k + cols), 2 * k + 1]   // 가로 변 = 2×왼쪽 꼭짓점, 세로 변 = 2×위 꼭짓점 + 1
+                    // 칸 안 숲 다각형(들). 안장(0·2만 또는 1·3만 숲)은 가운데가 숲이 아니면 둘로 나눈다
+                    var polys: [[P]] = []
+                    let saddle = inside[0] == inside[2] && inside[1] == inside[3] && inside[0] != inside[1]
+                    if saddle && (f[v[0]] + f[v[1]] + f[v[2]] + f[v[3]]) / 4 < lv {
+                        for i in 0..<4 where inside[i] {
+                            let prev = (i + 3) % 4, next = (i + 1) % 4
+                            polys.append([(corner(v[i]), nil, false, .zero),
+                                          (iso(v[i], v[next], edgeId[i]), isoPoint(v[i], v[next]), true, isoOut(v[i], v[next])),
+                                          (iso(v[prev], v[i], edgeId[prev]), isoPoint(v[prev], v[i]), false, isoOut(v[prev], v[i]))])
+                        }
+                    } else {
+                        var poly: [P] = []
+                        for i in 0..<4 {
+                            let j = (i + 1) % 4
+                            if inside[i] { poly.append((corner(v[i]), nil, false, .zero)) }
+                            if inside[i] != inside[j] { poly.append((iso(v[i], v[j], edgeId[i]), isoPoint(v[i], v[j]), inside[i], isoOut(v[i], v[j]))) }
+                        }
+                        polys.append(poly)
+                    }
+                    for poly in polys {
+                        // 윗면: 부채꼴(지형과 같은 감기: 위에서 볼 때 시계 반대)
+                        for i in 1..<poly.count - 1 { indices += [poly[0].i, poly[i + 1].i, poly[i].i] }
+                        // 벽: 나감 점 → 다음 들어옴 점 선분마다(양면)
+                        for i in poly.indices where poly[i].exit {
+                            let j = (i + 1) % poly.count
+                            guard let ga = poly[i].g, let gb = poly[j].g else { continue }
+                            let oa = poly[i].out, ob = poly[j].out
+                            let out = scene(ga + oa) - scene(ga) + scene(gb + ob) - scene(gb)
+                            let lit = 0.9 + 0.1 * simd_dot(simd_length(out) > 0 ? simd_normalize(out) : .zero, sunXZ)
+                            let a0 = add(ga, top: true, shade: lit), b0 = add(gb, top: true, shade: lit)
+                            let a1 = add(ga + oa * Self.forestShoulder, top: true, shade: 0.8 * lit, rise: 0.75)
+                            let b1 = add(gb + ob * Self.forestShoulder, top: true, shade: 0.8 * lit, rise: 0.75)
+                            let a2 = add(ga + oa * Self.forestSkirt, top: false, shade: 0.55 * lit)
+                            let b2 = add(gb + ob * Self.forestSkirt, top: false, shade: 0.55 * lit)
+                            for (p, q, r2, t2) in [(a0, b0, a1, b1), (a1, b1, a2, b2)] { walls += [p, r2, q, q, r2, t2, p, q, r2, q, t2, r2] }
+                        }
+                    }
+                }
+            }
+        }
+        // 잘게 자를 굵은 칸: 경로 점마다 radius 안(DEM 칸 미터로 잰 원)
+        let cs = Self.forestCoarseSub, ratio = Self.forestFineSub / cs, cr = (t.rows - 1) * cs, cc = (t.cols - 1) * cs
+        var refined = [Bool](repeating: false, count: near.isEmpty ? 0 : cr * cc)
+        var lo = SIMD2(Int.max, Int.max), hi = SIMD2(-1, -1)
+        if !near.isEmpty {
+            let cellM = t.step * Self.metersPerDegree / Double(cs)
+            let rr = Int(ceil(Double(radius) / cellM)), rc = Int(ceil(Double(radius) / (cellM * kx)))
+            for p in stride(from: 0, to: near.count, by: max(1, near.count / 400)).map({ near[$0] }) {
+                let pr = Int((t.north - p.lat) / t.step * Double(cs)), pc = Int((p.lon - t.west) / t.step * Double(cs))
+                for dr in -rr...rr {
+                    for dc in -rc...rc {
+                        let r = pr + dr, c = pc + dc
+                        guard r >= 0, r < cr, c >= 0, c < cc, !refined[r * cc + c] else { continue }
+                        let dy = Double(dr) * cellM, dx = Double(dc) * cellM * kx
+                        guard dx * dx + dy * dy <= Double(radius * radius) else { continue }
+                        refined[r * cc + c] = true
+                        lo = simd_min(lo, SIMD2(r, c)); hi = simd_max(hi, SIMD2(r, c))
+                    }
+                }
+            }
+        }
+        march(sub: cs, r0: 0, c0: 0, r1: cr, c1: cc) { r, c in refined.isEmpty || !refined[r * cc + c] }
+        if hi.x >= 0 {
+            march(sub: Self.forestFineSub, r0: lo.x * ratio, c0: lo.y * ratio, r1: (hi.x + 1) * ratio, c1: (hi.y + 1) * ratio) { r, c in refined[(r / ratio) * cc + c / ratio] }
+        }
+        guard !indices.isEmpty else { return nil }
+        return (Mesh(positions: positions, uv: uv, indices: indices), walls, shade)
+    }
+
     struct Ribbon: Sendable {
         var positions: [SIMD3<Float>]
         var indices: [UInt32]           // 삼각형, 입력 순서대로
@@ -465,10 +601,11 @@ nonisolated extension Terrain3D {
 
     /// groundTexture를 <dir>/<리조트 ID>.rgba 하나에 둔다(RGBA 다음 끝 16바이트: 키 UInt64, 너비·높이 UInt32, 리틀 엔디언).
     /// 키 = 입력(회전각, 과장, 기준 고도, 격자, 슬로프·리프트 좌표, side, textureVersion)의 FNV-1a 64. 키가 다르거나 읽기에 실패하면 새로 만들어 덮어쓴다
-    func cachedGroundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048, canopy: Canopy? = nil, dir: URL = Self.textureCacheDir) -> GroundTexture {
+    func cachedGroundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048, canopy: Canopy? = nil, raised: Bool = false, dir: URL = Self.textureCacheDir) -> GroundTexture {
         var key: UInt64 = 0xcbf2_9ce4_8422_2325
         func mix(_ v: UInt64) { key = (key ^ v) &* 0x100_0000_01b3 }
         mix(canopy?.key ?? 0)
+        mix(raised ? 1 : 0)
         for v in [Self.textureVersion, UInt64(side), UInt64(terrain.rows), UInt64(terrain.cols), UInt64(exaggeration.bitPattern)] { mix(v) }
         // 회전각: 해 방향이 장면 기준이라 각이 바뀌면 음영도 바뀐다
         for v in [angle, baseHeight, terrain.north, terrain.west, terrain.step] + terrain.z { mix(v.bitPattern) }
@@ -485,7 +622,7 @@ nonisolated extension Terrain3D {
             let h = Int(d.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: t + 12, as: UInt32.self).littleEndian })
             if k == key, w <= 4096, h <= 4096, t == w * h * 4 { return GroundTexture(width: w, height: h, bytes: d.prefix(t)) }
         }
-        let g = groundTexture(map: map, mesh: mesh, side: side, canopy: canopy)
+        let g = groundTexture(map: map, mesh: mesh, side: side, canopy: canopy, raised: raised)
         var d = g.bytes
         withUnsafeBytes(of: key.littleEndian) { d.append(contentsOf: $0) }
         for v in [UInt32(g.width), UInt32(g.height)] { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
@@ -530,6 +667,15 @@ nonisolated extension Terrain3D {
             return 2 * ((Float(p[i]) * (1 - v) + Float(p[i + 1]) * v) * (1 - u) + (Float(p[i + w]) * (1 - v) + Float(p[i + w + 1]) * v) * u)
         }
 
+        /// v6 숲 면 경계에 쓰는 숲 비율: 숲 판 한 칸(약 3m) 간격 3×3 이항 평균(범위 밖 0). 숲 면과 raised 지형 질감이 같은 값을 쓴다
+        func field(_ r: Float, _ c: Float) -> Float { cells.withUnsafeBufferPointer { Self.field($0, k, width, height, r, c) } }
+        static func field(_ p: UnsafeBufferPointer<UInt8>, _ k: Int, _ w: Int, _ h: Int, _ r: Float, _ c: Float) -> Float {
+            let d = 1 / Float(k), wts: [Float] = [1, 2, 1]
+            var v: Float = 0
+            for i in 0..<3 { for j in 0..<3 { v += wts[i] * wts[j] * (sample(p, k, w, h, r + Float(i - 1) * d, c + Float(j - 1) * d) ?? 0) } }
+            return v / 16
+        }
+
         /// 병렬 구간용: 배열 대신 포인터로 읽는다(참조 계수 경합 없음)
         static func sample(_ p: UnsafeBufferPointer<UInt8>, _ k: Int, _ w: Int, _ h: Int, _ r: Float, _ c: Float) -> Float? {
             let y = min(max(r * Float(k) - 0.5, 0), Float(h - 1)), x = min(max(c * Float(k) - 0.5, 0), Float(w - 1))
@@ -542,7 +688,8 @@ nonisolated extension Terrain3D {
 
     /// window: 격자 (행0, 열0, 행1, 열1) 안만 side 해상도로 그린다(S19 고해상 패치). 이때 나무는 7m 칸에 별 모양 수관·긴 그림자. nil이면 격자 전체.
     /// canopy: 있으면 그 범위 안 숲은 실제 숲 비율로 칠한 면(나무 도장·절차적 빈터 없음). 밖은 원래 규칙
-    func groundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048, window: SIMD4<Float>? = nil, canopy: Canopy? = nil) -> GroundTexture {
+    /// raised: v6 숲 면을 올릴 때. 눈 위 숲 그림자를 그리지 않고 숲 색은 숲 면 아래만
+    func groundTexture(map: SlopeMap, mesh: Mesh, side: Int = 2048, window: SIMD4<Float>? = nil, canopy: Canopy? = nil, raised: Bool = false) -> GroundTexture {
         let t = terrain, rows = t.rows, cols = t.cols
         let win = window ?? SIMD4(0, 0, Float(rows - 1), Float(cols - 1))
         // 숲 지도는 이 DEM 격자와 크기가 맞을 때만(DEM을 다시 만들면 숲 파일도 다시)
@@ -814,14 +961,16 @@ nonisolated extension Terrain3D {
                             return (s2, Self.Canopy.treeHeight(heightPtr, hk, hw, hh, r, cc) * Self.smooth(0.3, 0.7, s2))
                         }
                         // OSM 슬로프 띠로 비우지 않는다(중심선이 어긋나면 실제 숲을 지운다). 트인 곳은 숲 지도가 정한다
-                        let f = Self.smooth(0.35, 0.65, cf)
+                        // raised: 숲 색은 숲 면과 같은 숲 비율(field)로 등고선 바로 안쪽까지만. 바깥은 깨끗한 눈, 숲 면 윗면에는 눈 얼룩이 없다
+                        let f = raised ? Self.smooth(Self.forestLevel - 0.12, Self.forestLevel, Self.Canopy.field(canopyPtr, ck, cw, ch, gr, gc)) : Self.smooth(0.35, 0.65, cf)
                         let hgt = Self.Canopy.treeHeight(heightPtr, hk, hw, hh, gr, gc)
                         let relief = min(max((at(8).h - at(-8).h) * 0.025, -0.2), 0.2)
                         let grain = Self.noise(m.y / 9, m.x / 9, 5)
                         let tone = (1.08 - 0.22 * Self.smooth(8, 24, hgt)) * (0.86 + 0.14 * nm + 0.16 * grain) * (1 + relief)
                         // 숲 그림자: 해 쪽 d m에 높이 d·tan(해 고도)보다 큰 숲이 있으면 눈 위에 그림자(2m 간격)
                         var fsh: Float = 0
-                        if f < 0.98 {
+                        // raised(v6 숲 면): 숲은 장면에 솟아 있으니 납작한 숲 그림자는 그리지 않는다
+                        if !raised, f < 0.98 {
                             for d: Float in stride(from: 2, through: 30, by: 2) {   // 촘촘히: 성기면 작은 군락 그림자가 계단·점선으로 끊긴다
                                 let s2 = at(d)
                                 // 멀수록 옅게: 긴 그림자가 군락 사이 눈을 다 덮으면 군락이 한 덩어리로 읽힌다
@@ -896,6 +1045,14 @@ nonisolated extension Terrain3D.Mesh {
     func geometry() -> SCNGeometry {
         SCNGeometry(sources: [Self.source(positions, .vertex, 3), Self.source(uv, .texcoord, 2)],
                     elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)])
+    }
+
+    /// 정점 색(회색 shade)을 더한 지오메트리(v6 숲 면). 요소 0 윗면, 요소 1 벽(walls)
+    func geometry(shade: [Float], walls: [UInt32]) -> SCNGeometry {
+        SCNGeometry(sources: [Self.source(positions, .vertex, 3), Self.source(uv, .texcoord, 2),
+                              Self.source(shade.map { SIMD3<Float>(repeating: $0) }, .color, 3)],
+                    elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles),
+                               SCNGeometryElement(indices: walls, primitiveType: .triangles)])
     }
 
     /// Float 성분 SIMD 배열 → 소스. stride는 타입 그대로(SIMD3<Float>는 16바이트)
