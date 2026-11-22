@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// S9 시즌 기록 탭 (R55 확정 v13; R6, R8, R36, R53). 홈 구조: 시즌 캡슐, 요약, 시즌권 캡슐, 넘기는 카드(SeasonCards.order).
-/// 방문일 0일 판은 아직 그리지 않아 임시로 "0일 방문"과 카드만 보인다(todo).
+/// 방문 0일(빈 상태 v1): 안내 문장, 회색 "0일", 결산 카드 없음.
 struct SeasonView: View {
     let db: AppDatabase
     @Environment(SeasonTicket.self) private var ticket
@@ -81,7 +81,8 @@ struct SeasonView: View {
 
     private func reorder() {
         list = SeasonCards.order(hasGoal: goal != nil, canSetGoal: season == HomeData.currentSeason(),
-                                 passIds: passes.map(\.pass.id), final: SeasonRecap.isFinal(season: season))
+                                 passIds: passes.map(\.pass.id), final: SeasonRecap.isFinal(season: season),
+                                 hasVisits: totals.visitDays > 0)
         if page.map(list.contains) != true { page = list.first }
     }
 
@@ -119,8 +120,13 @@ struct SeasonView: View {
         let resorts = Stats.totalsByResort(mine).filter { $0.value.visitDays > 0 }
             .sorted { ($0.value.visitDays, $0.value.runs) > ($1.value.visitDays, $1.value.runs) }
             .map { Resort.name($0.key) }
+        let empty = t.visitDays == 0
         return VStack(alignment: .leading, spacing: 4) {
-            if let last {
+            if empty {
+                Text("아직 이번 시즌 기록이 없어요")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(Color.secondaryText)
+                    .frame(minHeight: 44)
+            } else if let last {
                 NavigationLink { DayDetailView(db: db, day: last) } label: {
                     HStack(spacing: 4) {
                         Text("마지막 기록 · \(RecordFormat.monthDay(last.date)) \(Resort.name(last.resortId))")
@@ -133,12 +139,16 @@ struct SeasonView: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(t.visitDays)일").font(.system(size: bigSize, weight: .bold)).foregroundStyle(Color.accentText)
+                    Text("\(t.visitDays)일").font(.system(size: bigSize, weight: .bold)).foregroundStyle(empty ? Color.secondaryText : Color.accentText)
                     Text("방문").font(.system(size: unitSize, weight: .bold))
                 }
                 .monospacedDigit()
-                Text("하강 \(Text("\(t.runs)회").bold()) · 거리 \(Text(RecordFormat.km(t.distance)).bold()) · 고도차 \(Text(RecordFormat.km(t.drop)).bold())")
-                    .font(.subheadline).monospacedDigit()
+                if empty {
+                    Text("기록을 시작하면 하강·거리·고도차가 여기에 쌓여요").font(.subheadline).foregroundStyle(Color.secondaryText)
+                } else {
+                    Text("하강 \(Text("\(t.runs)회").bold()) · 거리 \(Text(RecordFormat.km(t.distance)).bold()) · 고도차 \(Text(RecordFormat.km(t.drop)).bold())")
+                        .font(.subheadline).monospacedDigit()
+                }
                 if !resorts.isEmpty {
                     // 많으면 방문일 순 3곳 + "외 n곳" 한 줄. 읽기는 전체
                     Label(resorts.prefix(3).joined(separator: " · ") + (resorts.count > 3 ? " 외 \(resorts.count - 3)곳" : ""),
@@ -232,7 +242,8 @@ struct SeasonView: View {
         let prevStart = RecordCalendar.cal.date(byAdding: .day, value: -7, to: week)!
         let prev = Stats.totals(RecordCalendar.days(mine, in: RecordCalendar.weekInterval(prevStart)))
         let ridden = Set(inWeek.filter(\.isVisit).map { RecordCalendar.dayStart($0.date) })
-        let footer = "\(isThis ? "이번 주" : "마지막 주") \(t.visitDays)일 · \(t.runs)회 · \(isThis ? "지난주" : "전 주") \(prev.runs)회"
+        let footer = totals.visitDays == 0 ? "첫 기록을 남기면 이 줄에 표시돼요"
+            : "\(isThis ? "이번 주" : "마지막 주") \(t.visitDays)일 · \(t.runs)회 · \(isThis ? "지난주" : "전 주") \(prev.runs)회"
         return NavigationLink { RecordCalendarView(db: db, season: season) } label: {
             CardShell(icon: "calendar", title: "기록 달력", accessory: Text("주 · 월 · 시즌 \(Image(systemName: "chevron.right"))"),
                       footer: Text(footer)) {
@@ -332,32 +343,25 @@ struct SeasonView: View {
         let final = SeasonRecap.isFinal(season: season)
         let title = final ? "최종 결산" : "지금까지 결산"
         let icon = "rectangle.portrait.on.rectangle.portrait"
-        if totals.visitDays == 0 {
-            CardShell(icon: icon, title: title) {
-                Text("첫 기록을 남기면 결산을 볼 수 있어요").font(.headline).foregroundStyle(Color.secondaryText)
+        let count = recapCount
+        let lock = SeasonRecap.lock(season: season, owned: ticket.seasons, current: SeasonTicket.season(purchase: .now))
+        let big = VStack(alignment: .leading, spacing: 0) {
+            Text("\(count)장").font(.largeTitle.bold()).monospacedDigit().foregroundStyle(Color.accentText)
+            Text("\(season) 시즌 카드").font(.subheadline).foregroundStyle(Color.secondaryText)
+        }
+        if lock == .open {
+            NavigationLink { SeasonRecapView(days: days, season: season, passes: passes) } label: {
+                CardShell(icon: icon, title: title, footer: Text("넘겨 보고 이미지로 공유해요")) { big }
             }
-            .opacity(0.6)
+            .buttonStyle(.plain)
         } else {
-            let count = recapCount
-            let lock = SeasonRecap.lock(season: season, owned: ticket.seasons, current: SeasonTicket.season(purchase: .now))
-            let big = VStack(alignment: .leading, spacing: 0) {
-                Text("\(count)장").font(.largeTitle.bold()).monospacedDigit().foregroundStyle(Color.accentText)
-                Text("\(season) 시즌 카드").font(.subheadline).foregroundStyle(Color.secondaryText)
+            // 이용권이 없으면 결산 대신 이용권 화면 (2026-11-17)
+            Button { if lock == .pastSeason { pastNote = true } else { showTicket = true } } label: {
+                CardShell(icon: icon, title: title, accessory: Text("\(Image(systemName: "lock.fill")) 이용권"),
+                          footer: Text(lock == .pastSeason ? SeasonRecap.pastSeasonNote : "첫 카드 · 나머지 \(max(count - 1, 0))장은 시즌 이용권")) { big }
             }
-            if lock == .open {
-                NavigationLink { SeasonRecapView(days: days, season: season, passes: passes) } label: {
-                    CardShell(icon: icon, title: title, footer: Text("넘겨 보고 이미지로 공유해요")) { big }
-                }
-                .buttonStyle(.plain)
-            } else {
-                // 이용권이 없으면 결산 대신 이용권 화면 (2026-11-17)
-                Button { if lock == .pastSeason { pastNote = true } else { showTicket = true } } label: {
-                    CardShell(icon: icon, title: title, accessory: Text("\(Image(systemName: "lock.fill")) 이용권"),
-                              footer: Text(lock == .pastSeason ? SeasonRecap.pastSeasonNote : "첫 카드 · 나머지 \(max(count - 1, 0))장은 시즌 이용권")) { big }
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("시즌 이용권 필요")
-            }
+            .buttonStyle(.plain)
+            .accessibilityHint("시즌 이용권 필요")
         }
     }
 

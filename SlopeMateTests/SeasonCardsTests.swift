@@ -26,4 +26,9 @@ struct SeasonCardsTests {
     @Test func twoPassesAddTotal() {
         #expect(SeasonCards.order(hasGoal: true, canSetGoal: true, passIds: [a, b], final: false) == [.calendar, .goal, .recap, .pass(a), .pass(b), .passTotal])
     }
+
+    @Test func noVisitsHidesRecap() {
+        #expect(SeasonCards.order(hasGoal: false, canSetGoal: true, passIds: [], final: false, hasVisits: false) == [.calendar, .goalEmpty, .passEmpty])
+        #expect(SeasonCards.order(hasGoal: true, canSetGoal: true, passIds: [a], final: true, hasVisits: false) == [.calendar, .goal, .pass(a)])
+    }
 }
