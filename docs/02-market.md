@@ -48,17 +48,18 @@
 | | 하루·시즌 통계 | ● | ● | ● | ● | ○ | ○ |
 | | 국내 슬로프 이름 인식 | ● | ? 지도 지원 지역에 한국이 없음. 용평 웹페이지는 있음 | ? | ? | ◐ 슬로프 통과 판정 | ◐ 슬로프 경로 표시 |
 | | Apple Watch | 검토 중 | ● | ○ | ○ | ○ | ○ |
-| **차별점** | D1 시즌권 본전 계산 | ● | ? 업데이트 내역에 "Pass Value Calculator" 언급. 동작 미확인 | ○ | ○ | ○ | ○ |
+| **차별점** | D1 시즌권 본전 계산 | ● | ● 2026.11에서 시즌 요약 화면에 "Pass Value Calculator" 추가 | ○ | ○ | ○ | ○ |
 | | D2 주간·야간·심야 세션 | ● | ○ | ○ | ○ | ○ | ○ |
 | | D3 슬로프·시간대별 설질 | ● | ◐ 리조트 단위 설질 후기 | ○ | ◐ 설질·위험 구간 제보 | ○ | ◐ 리조트 단위 설질 투표 |
 | | D4 리프트 대기 (리조트·시간대 집계) | ● | ◐ 개인 기록에서 리프트 대기 감지 | ◐ 개인 기록에서 대기 시간 분리 | ○ | ○ | ◐ 인기 시간대 |
+| | D7 리조트별 슬로프 도감 | ● | ○ | ○ | ○ | ◐ 슬로프 통과 점수 | ○ |
 | | D5 크루 기록 | ● | ◐ 친구, 여행 그룹, 가족 플랜 | ○ | ◐ 친구 | ● 크루 | ○ |
 | **비교** | 랭킹 | ● 단계적 | ○ | ○ | ○ | ● 점수·등급 | ○ |
 | **보조** | 리조트 날씨 | ● | ◐ 여행 화면의 리조트 상태 | ○ | ○ | ● | ● |
 | | 슬로프 운행 현황 | ○ 공식 링크만 | ◐ 북미 50여 곳만, 유료 | ○ | ○ | ○ | ● |
 | **가격** | | 기본 무료, 시즌 이용권 9,900원 | 기본 무료. 유료 연 $29.99 (미국, 자료 시점 불분명) | 무료 | 무료 | 무료 | 무료 |
 
-출처: 한국 앱스토어 앱 설명, [Slopes 2,000+ resorts 발표](https://news.getslopes.com/slopes-app-expands-to-2-000-resorts-worldwide-on-interactive-3d-maps/), [Slopes Premium 블로그](https://blog.getslopes.com/discover-slopes-premium/), [Slopes Premium 안내](https://slopes.helpscoutdocs.com/article/19-what-is-slopes-premium), [Slopes 용평 페이지](https://getslopes.com/resorts/yongpyong)
+출처: 한국 앱스토어 앱 설명, [Slopes 2,000+ resorts 발표](https://news.getslopes.com/slopes-app-expands-to-2-000-resorts-worldwide-on-interactive-3d-maps/), [Slopes Premium 블로그](https://blog.getslopes.com/discover-slopes-premium/), [Slopes Premium 안내](https://slopes.helpscoutdocs.com/article/19-what-is-slopes-premium), [Slopes 용평 페이지](https://getslopes.com/resorts/yongpyong), [Slopes 업데이트 내역](https://getslopes.com/whatsnew_ios)
 
 ## 4. 포지셔닝 빈자리
 
@@ -66,7 +67,7 @@
 | --- | --- |
 | **비어 있음 (진짜 차별점 후보)** | **D2 야간·심야 세션**: 어떤 앱도 언급하지 않음. **D3 슬로프·시간대 단위 설질**: 다른 앱은 리조트 단위 후기나 투표까지만 있음. **D4 리조트·시간대별 리프트 대기 집계**: 개인 기록에서 대기를 재는 앱은 있지만, 모아서 보여주는 앱은 없음 |
 | **붐빔 (갖춰야 하지만 차별점 아님)** | 자동 트래킹, 하루·시즌 통계, 공유 이미지, 리조트 날씨 |
-| **겹침 (현지화로 승부)** | **D1 시즌권 계산**: Slopes에 비슷한 기능이 있을 수 있음. 국내 시즌권·리프트권 가격을 기본값으로 넣는 정도로 차이를 만듦. **D5 크루**: 스노우라이브가 이미 크루를 운영 중. 우리 크루는 기록 누적에 묶여 있다는 점이 다름 |
+| **겹침 (현지화로 승부)** | **D1 시즌권 계산**: Slopes가 2026.11에 시즌권 본전 계산기를 넣음. 국내 시즌권·리프트권 가격을 기본값으로 넣는 정도로 차이를 만듦. **D5 크루**: 스노우라이브가 이미 크루를 운영 중. 우리 크루는 기록 누적에 묶여 있다는 점이 다름 |
 | **불확실** | 국내 슬로프 이름 인식: Slopes가 한국 리조트 지도를 실제로 지원하는지 확인 필요 |
 
 ## 5. 강점과 약점
@@ -100,7 +101,7 @@
 | 확인 항목 | 방법 | 왜 |
 | --- | --- | --- |
 | Slopes가 한국 리조트에서 슬로프 이름을 인식하는가 | 개장 후 Slopes 무료판으로 하루 기록 | 국내 슬로프 인식이 기본기인지 차별점인지 갈림 |
-| Slopes "Pass Value Calculator"가 무엇인가 | Slopes 앱 설치 후 확인 | D1이 겹치는지 |
+| Slopes "Pass Value Calculator"의 계산 방식 | Slopes 앱 설치 후 확인 | 있다는 것은 2026.11 업데이트 내역으로 확인. 국내 가격 기본값으로 차이가 나는지 |
 | Snow Record의 리프트 대기 분리 정확도 | 개장 후 같은 날 함께 기록 | D4를 만들 때 비교 기준 |
 | 스노우라이브 크루·랭킹의 실제 활동량 | 앱 설치 후 크루 목록과 랭킹 확인 | D5의 경쟁 강도 |
 | WeSki 슬로프 운행 데이터의 출처 표시 | 앱 설치 후 확인 | 리조트 데이터 이용 방식 참고 |
