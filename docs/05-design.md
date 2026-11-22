@@ -611,6 +611,16 @@ struct SlopeBalloon: View {
 | `SlopeMate/Map/Map3DView.swift`·`SlopeMate/Map/DayMapView.swift` | 바뀌지 않는다(준비는 `Map3DTerrain` 안). 캐시를 쓰면 읽기·쓰기도 `Map3DTerrain` 쪽 | 없음 |
 | `SlopeMateTests/Terrain3DTests.swift`·`Map3DSceneTests.swift` | 06-verification R50 "3D v5" 단위 테스트 줄, v4 눈 띠·정점 색 기대값 정리(`homePitch34` 포함) | 위 API |
 
+### 3D v6 숲 높이 (R50 보강, K)
+
+"3D v5" 위에 숲 면을 실제 나무 높이로 띄운다. 2026-11-22 확정(decisions 2026-11-19~22 "3D 숲 높이" 묶음).
+
+- **숲 경계:** `Canopy.field` = 숲 비율 판(약 3m 칸) 3×3 이항 평균, 0.6 등고선(`Terrain3D.forestLevel`). 숲 면과 지형 질감이 같은 값을 쓴다(질감은 `raised`로 눈 위 숲 그림자 없이 숲 색을 0.48 → 0.6에만).
+- **숲 면:** `Terrain3D.forestMesh`. DEM 칸 ÷ 2(약 15m) 격자를 marching squares로 잘라 윗면을 나무 높이 판 값(최소 4m)만큼 띄우고 ±2.5m 굴곡. S19는 하강 경로 250m 안을 DEM 칸 ÷ 6(약 5m)으로 잘게(`near`). 벽은 등고선을 따라 어깨(바깥 0.05칸·높이 75%)에서 꺾여 지형 아래 3m까지, 바깥 0.15칸으로 벌어지고 숲 색 단색 재질(해를 보는 쪽 밝게).
+- **그리기:** 숲 노드는 지형보다 먼저(`Order.terrain - 1`), 지형 재질(안개·모드 색)을 같이 쓴다. 선·표식 재질(`flat()`)은 정점을 시선 따라 (숲 높이 + 4m) ÷ 시선 수직 성분만큼 카메라 쪽으로 당겨 숲에는 안 가리고 능선에는 가린다.
+- **숲 파일:** 외딴 숲 덩어리 500㎡ 미만 빼기(`tools/canopy/islands.py`), 그린 선 양쪽 15m 숲 지우기(`open_slopes.py`, 폭 30m 보장). 그린 선 고침은 `line_fixes.py`.
+- **성능(하이원, 시뮬레이터 Release):** 숲 면 0.10~0.15초, 삼각형 약 77만(S19 약 81만). 오래된 기기 실측은 남음.
+
 **S19 고해상 패치 (R50, R54, K)** — 2.0에서 뺌
 
 S19는 리조트 질감을 그대로 쓴다. 처음 시점에 보이는 땅만 다시 그려 덮던 패치(`loadDetail`)는 뺐다(decisions 2026-11-17 "S19 고해상 패치 빼기"). 범위를 고르는 `Map3DScene.detailWindow()`와 `Terrain3D.groundTexture(window:)`는 코드에 남아 있고 테스트만 쓴다.

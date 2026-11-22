@@ -146,8 +146,7 @@ nonisolated struct Terrain3D: Sendable {
         return Mesh(positions: positions, uv: uv, indices: indices)
     }
 
-    /// v6 시험판(R50 보강, `-SMForest3D`, DEBUG만): 숲만 떼어 낸 면을 지형 위에 띄운다. 끄면 v5 그대로
-    static var forest3D: Bool { DebugFailures.on("-SMForest3D") }
+    /// 3D v6(R50 보강, 2026-11-22 확정): 숲만 떼어 낸 면을 지형 위에 실제 나무 높이로 띄운다
     /// 숲 면 높이 = 숲 지도 나무 높이 판의 실제 높이(m, 0~30). 판이 낮게 나와도 숲 경계가 보이게 최소 forestMinHeight. 숲 아닌 곳은 forestSink 아래로
     static let forestMinHeight: Float = 4, forestSink: Float = 3
     /// 선이 숲 면을 빠져나오는 데 쓰는 최대 숲 높이(나무 높이 판 상한)

@@ -221,11 +221,11 @@ struct RunDetailView: View {
         guard loaded != nil, scene3D == nil, !route.isEmpty, let terrain = drawing.terrain?.terrain else { return }
         let map = map
         let pair: (Terrain3D, Map3DTerrain)
-        let near = Terrain3D.forest3D ? route.flatMap(\.points).map { (lat: $0.lat, lon: $0.lon) } : []
+        let near = route.flatMap(\.points).map { (lat: $0.lat, lon: $0.lon) }
         if let p = prepared3D {
             let copy = p.terrain.copy() // S6 장면과 재질을 따로 갖게 지오메트리만 복사
             // v6 숲 면은 하강 경로 가까이를 잘게 다시 만든다
-            pair = near.isEmpty ? (p.space, copy) : await Task.detached(priority: .userInitiated) {
+            pair = await Task.detached(priority: .userInitiated) {
                 var c = copy
                 c.buildForest(space: p.space, map: map, near: near)
                 return (p.space, c)

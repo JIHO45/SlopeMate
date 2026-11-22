@@ -138,24 +138,22 @@ nonisolated struct Camera3D: Equatable, Sendable {
 nonisolated struct Map3DTerrain: @unchecked Sendable {
     let geometry: SCNGeometry
     let texture: CGImage?
-    /// v6 시험판 숲 면(Terrain3D.forest3D일 때만)
+    /// 숲 면(3D v6). 숲 지도가 없거나 격자와 안 맞으면 nil
     var forest: SCNGeometry? = nil
 
     /// side: 질감 긴 변 상한(테스트는 작게). near: S19 하강 경로(그 가까이만 숲 면을 잘게)
     init(space: Terrain3D, map: SlopeMap, side: Int = 2048, near: [(lat: Double, lon: Double)] = []) {
         let mesh = space.mesh(), canopy = Terrain3D.Canopy.load(resortId: map.resortId)
         geometry = mesh.geometry()
-        texture = space.cachedGroundTexture(map: map, mesh: mesh, side: side, canopy: canopy, raised: Terrain3D.forest3D).image
+        texture = space.cachedGroundTexture(map: map, mesh: mesh, side: side, canopy: canopy, raised: true).image
         if let canopy { buildForest(space: space, map: map, canopy: canopy, near: near) }
     }
 
-    /// v6 숲 면을 (다시) 만든다. Terrain3D.forest3D가 아니면 아무것도 안 한다
+    /// 숲 면을 (다시) 만든다. near: S19 하강 경로(그 가까이만 잘게)
     mutating func buildForest(space: Terrain3D, map: SlopeMap, canopy: Terrain3D.Canopy? = nil, near: [(lat: Double, lon: Double)]) {
-        guard Terrain3D.forest3D, let canopy = canopy ?? .load(resortId: map.resortId) else { return }
-        let t0 = CFAbsoluteTimeGetCurrent()
+        guard let canopy = canopy ?? .load(resortId: map.resortId) else { return }
         let f = space.forestMesh(canopy: canopy, near: near)
         forest = f.map { $0.mesh.geometry(shade: $0.shade, walls: $0.walls) }
-        print("[forest3D] \(map.resortId) near \(near.count) \(f?.mesh.positions.count ?? 0) verts \(((f?.mesh.indices.count ?? 0) + (f?.walls.count ?? 0)) / 3) tris \(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - t0))s")
     }
 }
 
@@ -299,7 +297,7 @@ final class Map3DScene {
         terrain.geometry.firstMaterial = terrainMat
         terrainNode.geometry = terrain.geometry
         terrainNode.renderingOrder = Order.terrain
-        // v6 시험판: 숲 면은 지형 재질을 함께 쓴다(같은 질감·안개·가장자리). 깊이를 써서 숲끼리·능선과 가린다. 지형 자식이 아니라 순서를 따로
+        // 숲 면(v6)은 지형 재질을 함께 쓴다(같은 질감·안개·가장자리). 깊이를 써서 숲끼리·능선과 가린다. 지형 자식이 아니라 순서를 따로
         if let forest = terrain.forest {
             // 벽: 지형 재질과 같은 셰이더·값에 질감 대신 숲 색 단색(늘어난 질감 줄무늬 없음)
             forestWallMat.lightingModel = .constant
@@ -945,18 +943,16 @@ final class Map3DScene {
         m.isDoubleSided = true
         m.writesToDepthBuffer = false
         m.blendMode = .alpha
-        // v6 시험판: 정점을 시선 따라 카메라 쪽으로 당겨(화면 위치는 그대로) 숲 면에는 안 가리고 능선에는 가리게.
+        // 정점을 시선 따라 카메라 쪽으로 당겨(화면 위치는 그대로) 숲 면(v6)에는 안 가리고 능선에는 가리게.
         // 숲 벽을 빠져나오는 길이 = (숲 높이 + 4m) ÷ 시선의 수직 성분(낮게 볼수록 길게). 시점 공간(m)이라 mpp로 키운 판에도 같다
-        if Terrain3D.forest3D {
-            m.shaderModifiers = [.geometry: """
-            float4 v = scn_node.modelViewTransform * _geometry.position;
-            float len = max(length(v.xyz), 1.0);
-            float3 up = normalize((scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz);
-            float d = min(0.5 * len, \(Terrain3D.forestHeight + 4) / max(abs(dot(v.xyz / len, up)), 0.3));
-            v.xyz *= 1.0 - d / len;
-            _geometry.position = scn_node.inverseModelViewTransform * v;
-            """]
-        }
+        m.shaderModifiers = [.geometry: """
+        float4 v = scn_node.modelViewTransform * _geometry.position;
+        float len = max(length(v.xyz), 1.0);
+        float3 up = normalize((scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz);
+        float d = min(0.5 * len, \(Terrain3D.forestHeight + 4) / max(abs(dot(v.xyz / len, up)), 0.3));
+        v.xyz *= 1.0 - d / len;
+        _geometry.position = scn_node.inverseModelViewTransform * v;
+        """]
         return m
     }
 
