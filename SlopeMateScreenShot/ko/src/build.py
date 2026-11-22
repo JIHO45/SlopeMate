@@ -7,12 +7,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.dirname(HERE)
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
-SHOTS = [  # (파일, 원본 화면, 회색 줄, 굵은 줄, 배지)
-    ("1.png", "s6_3d.png", "내가 탄 산을", "3D 지도로 돌려 봐요", "시즌 이용권"),
+SHOTS = [  # (파일, 원본 화면, 회색 줄, 굵은 줄, 배지). 원본이 .png가 아니라 "card:"로 시작하면 휴대폰 없이 그 이미지를 카드로
+    ("1.png", "s2_home.png", "어디 갈지 고민될 때", "날씨·설질·3D 지도를 한눈에", ""),
     ("2.png", "s5_recording.png", "주머니에 넣고 타기만 하세요", "몇 번 탔는지 알아서 기록해요", ""),
-    ("3.png", "s6_map.png", "오늘 탄 길을", "지도에서 다시 봐요", ""),
+    ("3.png", "s6_3d.png", "내가 탄 산을", "3D 지도로 돌려 봐요", "시즌 이용권"),
     ("4.png", "s9_season.png", "시즌권 본전, 뽑았는지 궁금하다면", "1회 방문당 금액을 알려줘요", ""),
-    ("5.png", "weather.png", "출발하기 전에", "날씨와 예상 설질을 확인해요", ""),
+    ("5.png", "recap_1.png", "한 시즌을", "결산 카드로 돌아봐요", ""),
+    ("6.png", "card:share_image.png", "오늘 하루를", "한 장으로 공유해요", "시즌 이용권"),  # 3D 그림 판은 이용권(decisions 2026-11-22)
 ]
 
 BASE_CSS = """
@@ -46,8 +47,15 @@ body {{ width:1320px; height:2868px; }}
 .badge {{ display:inline-block; margin-top:30px; padding:12px 30px; border-radius:999px; background:var(--accent); color:#fff; font-size:40px; font-weight:700; letter-spacing:-1px; }}
 </style></head><body>
 <div class="copy"><div class="g">{gray}</div><div class="h">{bold}</div>{f'<div><span class="badge">{badge}</span></div>' if badge else ""}</div>
-{phone(img, (1320 - w) // 2, 640, w)}
+{phone(img, (1320 - w) // 2, 640, w) if not img.startswith("card:") else share_card(img[5:])}
 </body></html>"""
+
+def share_card(img):
+    """공유 이미지(1080x1350)를 휴대폰 대신 살짝 기울인 카드로"""
+    w = 1120
+    return (f'<div style="position:absolute;left:{(1320 - w) // 2}px;top:800px;width:{w}px;height:{w * 1350 // 1080}px;'
+            f'border-radius:48px;overflow:hidden;transform:rotate(-2.5deg);box-shadow:0 40px 90px rgba(20,27,45,.22);'
+            f'background:url(../raw/{img}) center / cover no-repeat;"></div>')
 
 def crop(img, x, y, w, h, scale, left, top, rot, radius=40):
     """원본 이미지의 (x,y,w,h) 영역을 scale배로 잘라 기울인 카드"""
@@ -68,11 +76,11 @@ body {{ width:2400px; height:1350px; background:radial-gradient(ellipse 800px 56
 </style></head><body>
 <div class="copy">
   <div class="h">스키장에서<br><em>기록 시작</em>만 누르세요</div>
-  <div class="s">하강 횟수와 거리는 알아서 세고,<br>시즌권 1회 방문당 금액까지 알려줘요</div>
+  <div class="s">12개 스키장 날씨·3D 지도부터<br>하강 기록, 시즌 결산까지</div>
 </div>
 {crop("s6_3d.png", 0, 330, 1320, 1560, 0.17, 1590, 390, 6, 22)}
 {phone("s2_home.png", 1330, 215, 300)}
-{crop("s9_season.png", 50, 1360, 1220, 280, 0.25, 1500, 690, -4, 16)}
+{crop("recap_1.png", 183, 769, 956, 600, 0.25, 1540, 630, -4, 18)}
 </body></html>"""
 
 def render(html, png, w, h, scale=1):

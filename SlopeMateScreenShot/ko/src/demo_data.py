@@ -62,15 +62,15 @@ def day(resort, start, n_runs, rid, rng):
 def ts(d): return d.astimezone(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 def blob(u): return "X'" + u.hex + "'"
 
-DAYS = [  # (리조트, 날짜, 시작 시각, 하강 수) 용평 9일 · 하이원 6일
-    ("yongpyong", "2026-12-05", "09:10", 11), ("high1", "2026-12-06", "09:30", 12),
-    ("yongpyong", "2026-12-12", "09:20", 10), ("high1", "2026-12-13", "09:30", 14),
-    ("yongpyong", "2026-12-19", "10:00", 9), ("high1", "2026-12-20", "09:40", 13),
-    ("yongpyong", "2026-12-25", "09:15", 12), ("yongpyong", "2026-12-27", "09:05", 15),
-    ("high1", "2027-01-01", "10:10", 11), ("yongpyong", "2027-01-03", "09:15", 13),
-    ("high1", "2027-01-09", "09:20", 15), ("yongpyong", "2027-01-10", "09:00", 14),
-    ("high1", "2027-01-16", "09:20", 16), ("yongpyong", "2027-01-17", "09:10", 12),
-    ("yongpyong", "2027-01-22", "09:00", 18),
+DAYS = [  # (리조트, 날짜, 시작 시각, 하강 수) 용평 9일 · 하이원 6일. 2.1 스크린샷은 시계를 바꾸지 않고 2026-11-22(일, 주 첫날)을 마지막 날로 찍음
+    ("yongpyong", "2026-11-02", "09:10", 11), ("high1", "2026-11-03", "09:30", 12),
+    ("yongpyong", "2026-11-05", "09:20", 10), ("high1", "2026-11-07", "09:30", 14),
+    ("yongpyong", "2026-11-08", "10:00", 9), ("high1", "2026-11-10", "09:40", 13),
+    ("yongpyong", "2026-11-12", "09:15", 12), ("yongpyong", "2026-11-14", "09:05", 15),
+    ("high1", "2026-11-15", "10:10", 11), ("yongpyong", "2026-11-16", "09:15", 13),
+    ("high1", "2026-11-17", "09:20", 15), ("yongpyong", "2026-11-18", "09:00", 14),
+    ("high1", "2026-11-20", "09:20", 16), ("yongpyong", "2026-11-22", "09:10", 12),
+    ("yongpyong", "2026-11-21", "09:00", 18),  # 앞 줄과 날짜만 바꿈: 가운데 곤돌라 경로가 마지막 기록(3D 장면)이 되게
 ]
 
 LIVE_RUNS = 8
@@ -80,14 +80,20 @@ def main():
     out = ["BEGIN;", "DELETE FROM point; DELETE FROM restart; DELETE FROM gap; DELETE FROM recording_cache; DELETE FROM recording;",
            "DELETE FROM pass_resort; DELETE FROM season_pass; DELETE FROM home_resort;",
            "INSERT INTO home_resort VALUES ('yongpyong',0),('high1',1);"]
-    live = "--live" in sys.argv  # 오늘(1월 23일) 아직 끝나지 않은 기록: 기록 중 화면·Live Activity용
-    for resort, d, hm, n in DAYS + ([("yongpyong", "2027-01-23", "09:05", LIVE_RUNS)] if live else []):
+    live = "--live" in sys.argv  # 오늘 아직 끝나지 않은 기록(마지막 위치가 방금): 기록 중 화면·Live Activity용
+    now = dt.datetime.now(KST) - dt.timedelta(minutes=67)
+    today = now.strftime("%Y-%m-%d")
+    days = [x for x in DAYS if not (live and x[1] == today)]  # 기록 중 화면은 오늘 끝난 기록 대신 진행 중 기록
+    for resort, d, hm, n, open_ in [(*x, False) for x in days] + ([("yongpyong", today, now.strftime("%H:%M"), LIVE_RUNS, True)] if live else []):
         rid = uuid.uuid5(uuid.NAMESPACE_URL, f"slopemate-demo-{d}")
         start = dt.datetime.fromisoformat(f"{d}T{hm}:00").replace(tzinfo=KST)
         pts = day(resort, start, n, rid, rng)
+        if open_:  # 마지막 위치가 방금(20초 전) 들어온 것처럼 통째로 옮김
+            shift = dt.datetime.now(KST) - dt.timedelta(seconds=20) - pts[-1][0]
+            start += shift; pts = [(t + shift, *rest) for t, *rest in pts]
         end = pts[-1][0] + dt.timedelta(seconds=30)
-        if d == "2027-01-23": print(f"-- live last point {pts[-1][0]}", file=sys.stderr)
-        e = "NULL,NULL" if d == "2027-01-23" else f"'{ts(end)}','user'"
+        if open_: print(f"-- live last point {pts[-1][0]}", file=sys.stderr)
+        e = "NULL,NULL" if open_ else f"'{ts(end)}','user'"
         out.append(f"INSERT INTO recording (id,resortId,startedAt,endedAt,endReason) VALUES ({blob(rid)},'{resort}','{ts(start)}',{e});")
         out.append(f"INSERT INTO restart VALUES ({blob(rid)},0,'{ts(start)}','start');")
         rows = [f"({blob(rid)},'{ts(t)}',{la:.6f},{lo:.6f},5,{a + 30:.1f},4,{s:.1f},{a - 750:.1f},'{ts(t)}',0)" for t, la, lo, a, s in pts]
