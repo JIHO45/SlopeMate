@@ -53,7 +53,9 @@ extension RecordCalendarView {
             ("방문일", "\(t.visitDays)", "일"),
             ("하강", "\(t.runs)", "회"),
             ("거리", String(km.dropLast(2)), "km"),
-            ("고도차", Int(t.drop.rounded()).formatted(), "m"),
+            t.drop >= 10_000   // 다섯 자리부터는 칸이 빡빡해 km로
+                ? ("고도차", String(RecordFormat.km(t.drop).dropLast(2)), "km")
+                : ("고도차", Int(t.drop.rounded()).formatted(), "m"),
         ]
         return HStack(spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { k, c in
