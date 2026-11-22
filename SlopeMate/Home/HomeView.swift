@@ -405,8 +405,8 @@ struct HomeView: View {
                             Spacer(minLength: 4)
                             Text("지도 기준").font(.footnote).foregroundStyle(Color.secondaryText)
                         }
-                        Spacer(minLength: 8)
                         Text("\(c.total)개").font(.largeTitle.bold()).monospacedDigit().foregroundStyle(Color.accentText)
+                            .padding(.top, 16)
                         DifficultyBar(counts: c).padding(.top, 10)
                         DifficultyLegend(counts: c).padding(.top, 10)
                         if c.unknown > 0 {
@@ -500,7 +500,7 @@ private extension View {
     }
 }
 
-/// 홈 기록 카드: 제목 블록 아래 (작은 머리말 +) 큰 숫자 + 보조 줄 블록을 남은 높이의 가운데에
+/// 홈 기록 카드: 제목 바로 아래 16에 (작은 머리말 +) 큰 숫자 + 보조 줄. 남는 높이는 카드 아래로
 private struct RecordCard: View {
     var icon: String
     var label: String
@@ -514,12 +514,12 @@ private struct RecordCard: View {
                 IconCircle(systemName: icon, size: 36)
                 Text(label).font(.headline).foregroundStyle(Color.primaryText)
             }
-            Spacer(minLength: 4)
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
                 if let caption { Text(caption).font(.subheadline).foregroundStyle(Color.secondaryText) }
                 Text(value).font(.largeTitle.bold()).monospacedDigit().foregroundStyle(Color.accentText)
                 Text(sub).font(.subheadline).foregroundStyle(Color.secondaryText)
             }
+            .padding(.top, 16)
             Spacer(minLength: 0)
         }
         .homeCard()
