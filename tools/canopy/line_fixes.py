@@ -1,13 +1,13 @@
 # 그린 슬로프 선(lines-<id>.json) 고침: 사용자가 앱 기준 대조 그림(review.py)으로 확인한 이름·난이도·연결·삭제·미운영·구간 (R9, R50, K).
 # 대상은 앱이 보여 주는 슬로프 ID로 고른다: "s09" = 그 OSM 슬로프에 이어진 선 전부, "d01" = 어디에도 안 이어진 선(파일 순서, 고치기 전 기준).
-# 한 번만 적용한다(파일에 "fixes" 날짜를 남기고, 있으면 건너뜀). lines.py로 선을 다시 만들면 다시 적용한다.
+# 묶음마다 한 번만 적용한다(파일 "fixes"에 묶음 표시를 남기고, 있으면 건너뜀). lines.py로 선을 다시 만들면 다시 적용한다.
 # 사용: python3 tools/canopy/line_fixes.py            (자체 확인만)
 #       python3 tools/canopy/line_fixes.py --write    (maps 폴더에 쓴다)
 import json, math, sys
 from pathlib import Path
 
 MAPS = Path(__file__).resolve().parents[2] / "SlopeMate/Resources/maps"
-STAMP = "2026-11-22"
+STAMP = "2026-11-22"   # 첫 묶음(FIXES). 이후 묶음은 MORE
 
 # 리조트: [(대상, 동작, 값)]. 동작: name 이름, difficulty 난이도, link 이 OSM 슬로프에 잇기(우리 ID 끝 sNN), delete 지우기,
 # closed 이번 시즌 미운영(숨김, 선은 남김), cut 두 점 사이만 남기기, split 가장 남쪽 점에서 둘로(값: (동쪽 연결, 서쪽 연결)),
@@ -28,6 +28,12 @@ FIXES = {
     "vivaldi": [("d01", "name", "테크노"), ("s11", "right", None), ("s10", "difficulty", "advanced"), ("s02", "add", "easy")],
     "yongpyong": [("d02", "link", "s02"), ("d02", "difficulty", "intermediate"), ("d03", "link", "s03"),   # 골드환타스틱·골드계곡
                   ("s27", "difficulty", "easy")],
+}
+
+
+# 이후 묶음: {표시: {리조트: [...]}}. 동작 join = 이 슬로프 선의 가까운 끝을 다른 슬로프(값) 선의 가까운 끝까지 곧게 잇는 선을 더함
+MORE = {
+    "2026-11-22b": {"yongpyong": [("s05", "join", "s34")]},   # 골드 파라다이스 끝 → 레드 파라다이스 위(그사이 숲에 막힌 길)
 }
 
 
@@ -66,7 +72,7 @@ def apply(rid, doc, osm, fixes):
             return [loose[int(target[1:]) - 1]]
         sid = f"{rid}-{target}"
         return [l for l in lines if l["slope"] == sid and l["difficulty"] == first.get(sid)]
-    picked = [(pick(t), op, v) for t, op, v in fixes if op != "add"]   # 고치기 전 기준으로 모두 고른 뒤 적용
+    picked = [(pick(t), op, v) for t, op, v in fixes if op not in ("add", "join")]   # 고치기 전 기준으로 모두 고른 뒤 적용
     gone = []
     for targets, op, v in picked:
         assert targets, (rid, op)
@@ -88,11 +94,16 @@ def apply(rid, doc, osm, fixes):
             l["line"], l["slope"] = east, f"{rid}-{v[0]}"
             lines.insert(next(j for j, x in enumerate(lines) if x is l) + 1, {**l, "line": west, "slope": f"{rid}-{v[1]}"})
     for t, op, v in fixes:
+        if op == "join":
+            a = [l for l in lines if l["slope"] == f"{rid}-{t}"]; b = [l for l in lines if l["slope"] == f"{rid}-{v}"]
+            ends = lambda ls: [p for l in ls for p in (l["line"][0], l["line"][-1])]
+            d = lambda p, q: math.hypot(p[0] - q[0], (p[1] - q[1]) * math.cos(math.radians(p[0])))
+            p, q = min(((p, q) for p in ends(a) for q in ends(b)), key=lambda pq: d(*pq))
+            lines.append({"slope": a[0]["slope"], "difficulty": a[0]["difficulty"], "line": [p, q]})
         if op == "add":
             s = next(s for s in osm["slopes"] if s["id"] == f"{rid}-{t}")
             lines += [{"slope": s["id"], "difficulty": v, "line": ln} for ln in s["lines"]]
     doc["lines"] = [l for l in lines if not any(l is g for g in gone)]
-    doc["fixes"] = STAMP
     return doc
 
 
@@ -105,7 +116,10 @@ def selftest():
     L = out["lines"]
     assert L[0]["name"] == "가" and len(L) == 4, L
     assert L[1]["line"] == [[-1, 3], [0, 4]] and L[1]["slope"] == "r-s01" and L[2]["line"] == [[0, 2], [-1, 3]] and L[2]["slope"] == "r-s02", L
-    assert L[3]["line"] == [[5, 5], [6, 6]] and out["fixes"] == STAMP
+    assert L[3]["line"] == [[5, 5], [6, 6]]
+    j = apply("r", {"lines": [{"slope": "r-s01", "difficulty": "easy", "line": [[0, 0], [1, 0]]},
+                              {"slope": "r-s02", "difficulty": "advanced", "line": [[3, 0], [4, 0]]}]}, osm, [("s01", "join", "s02")])
+    assert j["lines"][-1] == {"slope": "r-s01", "difficulty": "easy", "line": [[1, 0], [3, 0]]}, j["lines"][-1]
     c = cut([[37.0, 128.0], [37.001, 128.0], [37.002, 128.0]], [37.0005, 128.0001], [37.0015, 128.0])
     assert c == [[37.0005, 128.0], [37.001, 128.0], [37.0015, 128.0]], c
     print("ok")
@@ -114,11 +128,15 @@ def selftest():
 if __name__ == "__main__":
     selftest()
     if "--write" in sys.argv:
-        for rid, fixes in FIXES.items():
-            p = MAPS / f"lines-{rid}.json"; doc = json.loads(p.read_text())
-            if doc.get("fixes"):
-                print(f"{rid}: 이미 적용({doc['fixes']})"); continue
-            osm = json.loads((MAPS / f"osm-{rid}.json").read_text())
-            before = len(doc["lines"])
-            p.write_text(json.dumps(apply(rid, doc, osm, fixes), ensure_ascii=False, separators=(",", ":")) + "\n")
-            print(f"{rid}: 선 {before} → {len(doc['lines'])}, 고침 {len(fixes)}")
+        for stamp, group in [(STAMP, FIXES)] + list(MORE.items()):
+            for rid, fixes in group.items():
+                p = MAPS / f"lines-{rid}.json"; doc = json.loads(p.read_text())
+                done = (doc.get("fixes") or "").split(",")
+                if stamp in done:
+                    continue
+                osm = json.loads((MAPS / f"osm-{rid}.json").read_text())
+                before = len(doc["lines"])
+                doc = apply(rid, doc, osm, fixes)
+                doc["fixes"] = ",".join([x for x in done if x] + [stamp])
+                p.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")) + "\n")
+                print(f"{rid} {stamp}: 선 {before} → {len(doc['lines'])}, 고침 {len(fixes)}")

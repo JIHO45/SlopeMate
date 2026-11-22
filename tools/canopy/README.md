@@ -28,7 +28,7 @@ numpy, scipy, pillow가 필요하다. 마지막 네 값을 주면 그 범위를 
 docs/decisions.md 2026-11-22. 순서대로 돌린다(둘 다 `--write` 없으면 세기만, 인자 없이 돌리면 자체 확인).
 
     python islands.py ../../SlopeMate/Resources/maps --write       # 외딴 숲 덩어리 500㎡ 미만 빼기
-    python open_slopes.py ../../SlopeMate/Resources/maps --write   # 그린 선이 숲에 묻힌 구간 폭 10m로 열기
+    python open_slopes.py ../../SlopeMate/Resources/maps --write   # 그린 선 양쪽 15m(폭 30m) 숲 지우기
     python islands.py ../../SlopeMate/Resources/maps --write       # 열기로 생긴 조각 정리
 
 그린 선 고침은 `line_fixes.py`(이름·난이도·연결·삭제·미운영·구간, 한 번만 적용). 도구 환경은 `.venv`(git 제외, numpy·scipy·pillow).
