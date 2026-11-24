@@ -27,3 +27,6 @@ SlopeMate.xcodeproj/xcshareddata/
 tools/canopy/review/
 tools/canopy/.venv/
 tools/canopy/__pycache__/
+
+# 로컬 빌드 산출물 (xcodebuild -derivedDataPath build/dd 등)
+build/
