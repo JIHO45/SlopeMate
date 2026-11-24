@@ -22,5 +22,5 @@ if os.path.getmtime(todo) >= latest:
 
 print(json.dumps({
     "decision": "block",
-    "reason": "파일이 바뀌었는데 docs/todo.md는 그 뒤로 갱신되지 않았습니다. 이번에 끝낸 항목을 '- [x] … (YYYY-MM-DD)'로 체크하고, 새 할 일은 맞는 이정표에 추가하세요. 해당 항목이 없으면 그렇다고 한 줄로 말하고 끝내세요.",
+    "reason": "파일이 바뀌었는데 docs/todo.md는 그 뒤로 갱신되지 않았습니다. 이번에 끝낸 항목을 '- [x] … (YYYY-MM-DD)'로 체크하고, 새 할 일은 '앞으로 할 일'의 맞는 묶음에 추가하세요. 해당 항목이 없으면 그렇다고 한 줄로 말하고 끝내세요.",
 }, ensure_ascii=False))

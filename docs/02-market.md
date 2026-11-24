@@ -1,10 +1,10 @@
 # 02. 시장과 경쟁
 
-작성: 2026-11-07 · 깊이: 가볍게 · 상태: 검토 대기
+작성: 2026-11-07 · 깊이: 가볍게 · 상태: 승인 (2026-11-08)
 
 ## 범위와 방법
 
-- **질문:** 국내 스키어용 트래킹·기록 앱 시장에서 누가 무엇을 하고 있고, 01-idea의 차별점 D1~D5 중 어떤 것이 실제로 비어 있는가
+- **질문:** 국내 스키어용 트래킹·기록 앱 시장에서 누가 무엇을 하고 있고, 01-idea의 차별점 D1~D5·D7 중 어떤 것이 실제로 비어 있는가
 - **방법:** 한국 앱스토어 검색 API(`itunes.apple.com/search`, `country=kr`)로 앱 설명·평점·출시일을 조회하고, 웹 검색으로 보완했다. 모든 확인일은 2026-11-07이다.
 - **한계:** 앱을 직접 설치해 써 보지 않았다. 아래 기능 비교는 **앱 설명과 공식 자료 기준**이라, 실제 품질은 다를 수 있다. 직접 확인할 항목은 마지막 장에 모았다.
 
@@ -57,7 +57,7 @@
 | **비교** | 랭킹 | ● 단계적 | ○ | ○ | ○ | ● 점수·등급 | ○ |
 | **보조** | 리조트 날씨 | ● | ◐ 여행 화면의 리조트 상태 | ○ | ○ | ● | ● |
 | | 슬로프 운행 현황 | ○ 공식 링크만 | ◐ 북미 50여 곳만, 유료 | ○ | ○ | ○ | ● |
-| **가격** | | 기본 무료, 시즌 이용권 9,900원 | 기본 무료. 유료 연 $29.99 (미국, 자료 시점 불분명) | 무료 | 무료 | 무료 | 무료 |
+| **가격** | | 기본 무료, 시즌 이용권 9,900원(첫 시즌 4,900원) | 기본 무료. 유료 연 $29.99 (미국, 자료 시점 불분명) | 무료 | 무료 | 무료 | 무료 |
 
 출처: 한국 앱스토어 앱 설명, [Slopes 2,000+ resorts 발표](https://news.getslopes.com/slopes-app-expands-to-2-000-resorts-worldwide-on-interactive-3d-maps/), [Slopes Premium 블로그](https://blog.getslopes.com/discover-slopes-premium/), [Slopes Premium 안내](https://slopes.helpscoutdocs.com/article/19-what-is-slopes-premium), [Slopes 용평 페이지](https://getslopes.com/resorts/yongpyong), [Slopes 업데이트 내역](https://getslopes.com/whatsnew_ios)
 
